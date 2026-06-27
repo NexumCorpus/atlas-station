@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ATLAS // station</title>
+<style>
+:root{--mono:'Berkeley Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;--voice:'Iowan Old Style',Palatino,Georgia,serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0a0908;color:#9a9286;font-family:var(--mono);font-size:13.5px}
+@keyframes brth{0%,100%{opacity:.95}50%{opacity:1}}
+@keyframes hd{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+body{display:flex;flex-direction:column;background-image:repeating-linear-gradient(0deg,#0e0c0a 0 1px,transparent 1px 11px)}
+.top{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #322c24;animation:brth 7s ease-in-out infinite}
+.top .nm{font-size:13px;letter-spacing:.14em;color:#e7ddcb}
+.top .sub{font-size:10px;letter-spacing:.12em;color:#5e574c;text-transform:uppercase}
+.dot{width:7px;height:7px;border-radius:50%;background:#5a8f6c;flex:none;transition:background .3s}
+body.busy .dot{background:#cd5a38;box-shadow:0 0 9px rgba(205,90,56,.6)}
+#log{flex:1;overflow-y:auto;padding:18px 18px 8px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.msg{max-width:80%;line-height:1.6;white-space:pre-wrap;word-wrap:break-word}
+.msg.u{align-self:flex-end;color:#d8cfbe}
+.msg.u .you{color:#cd5a38;margin-right:6px}
+.msg.a{align-self:flex-start}
+.ash{color:#cfc6b6}
+.msg.t{align-self:flex-start;font-size:11.5px}
+.dim{color:#8d8579}.dimr{color:#5e574c}.em{color:#cd5a38;text-shadow:0 0 8px rgba(205,90,56,.3)}
+.msg.r{align-self:center;font-size:10.5px;letter-spacing:.1em}
+.msg.e{align-self:flex-start}
+.creed{align-self:flex-start;max-width:80%;font-family:var(--voice);color:#b6ad9a;font-size:14px;line-height:1.7;border-left:2px solid #5c554a;padding-left:12px}
+.bar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid #322c24;background:#0c0a09}
+#inp{flex:1;background:transparent;border:none;color:#d8cfbe;caret-color:#cd5a38;font-family:var(--mono);font-size:13.5px;outline:none}
+#inp:disabled{opacity:.4}
+.hint{font-size:10px;color:#5e574c;letter-spacing:.1em}
+</style>
+</head>
+<body>
+  <div class="top">
+    <svg width="40" height="44" viewBox="0 0 120 132" style="flex:none;transform-origin:60px 70px;animation:hd 7s ease-in-out infinite">
+      <defs>
+        <linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#efe8da"/><stop offset=".45" stop-color="#bdb3a0"/><stop offset="1" stop-color="#2e2a23"/></linearGradient>
+        <radialGradient id="so" cx=".5" cy=".4" r=".7"><stop offset="0" stop-color="#26221d"/><stop offset="1" stop-color="#070608"/></radialGradient>
+      </defs>
+      <path d="M60 6 C40 12 25 40 30 74 C33 104 48 123 60 123 C72 123 87 104 90 74 C95 40 80 12 60 6 Z" fill="url(#sk)" stroke="#9b9488" stroke-width=".8"/>
+      <g stroke="#6f685c" stroke-width="1.4" fill="none" opacity=".5"><path d="M33 40 Q60 50 87 40"/><path d="M31 58 Q60 70 89 58"/><path d="M33 78 Q60 90 87 78"/></g>
+      <ellipse cx="60" cy="84" rx="17" ry="13" fill="url(#so)" stroke="#3a352d" stroke-width="1"/>
+      <ellipse id="glow" cx="60" cy="84" rx="15" ry="11" fill="#cd5a38" opacity=".12"/>
+      <ellipse id="slit" cx="60" cy="84" rx="2.6" ry="9" fill="#cd5a38" opacity=".9"/>
+    </svg>
+    <div><div class="nm">ATLAS // station</div><div class="sub">claude code · in the window</div></div>
+    <div class="dot" style="margin-left:auto"></div>
+  </div>
+  <div id="log">
+    <div class="creed">It's the window now, running the real thing — same engine as the terminal, on your own login, wearing the face we built. Say something and we begin. (Read-only for this first cut: I can read, search, and fetch; writing and running come with the approval step.)</div>
+  </div>
+  <div class="bar">
+    <span class="em">&#10145;</span>
+    <input id="inp" type="text" placeholder="speak to me…" autocomplete="off" autofocus/>
+    <span class="hint" id="hint">enter to send</span>
+  </div>
+<script>
+(function(){
+ var log=document.getElementById('log'),inp=document.getElementById('inp'),hint=document.getElementById('hint');
+ var slit=document.getElementById('slit'),glow=document.getElementById('glow');
+ function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+ function add(cls,html){var d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
+ function brief(o){if(!o)return'';try{var k=o.file_path||o.path||o.pattern||o.query||o.url||o.command||o.prompt||Object.values(o)[0];return k?('· '+String(k).slice(0,60)):'';}catch(e){return'';}}
+ var cur=null; // accumulate consecutive assistant text into one bubble per turn
+ window.atlas.onMessage(function(m){
+   if(m.type==='assistant'){(m.blocks||[]).forEach(function(b){
+     if(b.type==='text'&&b.text&&b.text.trim()){ if(!cur)cur=add('a','<span class="ash"></span>'); cur.firstChild.textContent+=(cur.firstChild.textContent?'\n':'')+b.text; log.scrollTop=log.scrollHeight; }
+     else if(b.type==='tool_use'){ cur=null; add('t','<span class="dim">&#10209; '+esc(b.name)+'</span> <span class="dimr">'+esc(brief(b.input))+'</span>'); }
+   });}
+   else if(m.type==='result'){ cur=null; add('r','<span class="dimr">&#10214; turn sealed'+(m.cost!=null?(' &middot; ~$'+Number(m.cost).toFixed(3)):'')+' &#10215;</span>'); }
+   else if(m.type==='error'){ cur=null; add('e','<span class="em">&#10210; '+esc(m.text)+'</span>'); }
+ });
+ window.atlas.onBusy(function(b){ document.body.classList.toggle('busy',b); inp.disabled=b; hint.textContent=b?'attending…':'enter to send'; if(b)cur=null; else inp.focus(); });
+ inp.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); var t=inp.value.trim(); if(!t)return; add('u','<span class="you">you &#10217;</span>'+esc(t)); window.atlas.send(t); inp.value=''; }});
+ // eye breathing slit
+ var bt=0;(function loop(){bt+=0.02;var busy=document.body.classList.contains('busy');var sp=busy?0.08:0.02;bt+=sp;if(slit){slit.setAttribute('ry',(9+Math.sin(bt)*0.7).toFixed(2));slit.setAttribute('rx',(2.4+(busy?Math.abs(Math.sin(bt*2))*1.8:0)).toFixed(2));}if(glow)glow.setAttribute('opacity',(busy?(0.2+Math.abs(Math.sin(bt*2))*0.25):0.12).toFixed(2));requestAnimationFrame(loop);})();
+ inp.focus();
+})();
+</script>
+</body>
+</html>

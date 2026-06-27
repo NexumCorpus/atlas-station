@@ -1,0 +1,6 @@
+﻿node_modules/
+.env
+dist/
+_electron.log
+_gate_test.txt
+verify*.mjs
