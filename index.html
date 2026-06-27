@@ -33,6 +33,9 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
 #cwd{width:120px;color:#8d8579;border-right:0.5px solid #2c2720;padding-right:9px}
 #task{flex:1}
 .hint{font-size:10px;color:#5e574c;letter-spacing:.1em}
+.mode,.self{font-size:10px;letter-spacing:.08em;border:0.5px solid #322c24;padding:4px 8px;cursor:pointer;color:#8d8579;flex:none;user-select:none}
+.mode:hover,.self:hover{border-color:#5a3a2c;color:#cd5a38}
+.mode.build{color:#bd9b3c;border-color:#5c4a1e}
 </style>
 </head>
 <body>
@@ -65,10 +68,11 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
   <div id="brood"></div>
 
   <div class="bar">
-    <span class="em">⟁</span>
+    <span class="mode" id="mode" title="toggle read / build — build runs the agent in an isolated git worktree with full tool access">◷ read</span>
     <input id="cwd" type="text" placeholder="E:\\ (cwd)" value="E:\\"/>
     <input id="task" type="text" placeholder="dispatch an agent — describe the task…" autofocus/>
-    <span class="hint">enter to dispatch</span>
+    <span class="self" id="self" title="dispatch a preset batch of self-build tasks into isolated worktrees">⚒ self-build</span>
+    <span class="hint">enter</span>
   </div>
 
 <script>
@@ -95,12 +99,15 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
     COND=hx(cond.c); $('disp').textContent="⟨ "+cond.l+" ⟩";
     $('counts').textContent=work.length+" working · "+need.length+" need you · "+done.length+" done"+(fail.length?(" · "+fail.length+" failed"):"");
     $('lead').textContent = list.length ? (work.length?("The fleet is moving — "+work.length+" at work"+(need.length?(", "+need.length+" waiting on you"):"")+"."):(need.length?(need.length+" wait on you."):"All "+list.length+" settled.")) : "No agents yet. Dispatch one below and it joins the brood — live, not a picture.";
-    function row(a){ var col=COL[a.state]||"#6f685c"; return '<div class="arow"><span class="sig" style="color:'+col+'">'+(SIG[a.state]||"·")+'</span><span class="aid">'+esc(a.id)+'</span><span class="atask ell">'+esc(a.task||a.summary||"")+'</span><span class="atool dim ell">'+esc(a.lastTool||"")+'</span><span class="ast" style="color:'+col+'">'+esc(a.state)+'</span><span class="acost dim">'+(a.cost!=null?("$"+Number(a.cost).toFixed(2)):"")+'</span></div>'; }
+    function row(a){ var col=COL[a.state]||"#6f685c"; var br=a.branch?(' <span class="dim" style="font-size:9px">⟦'+esc(a.branch)+(a.commits?(' ·'+a.commits+'c'):'')+'⟧</span>'):''; return '<div class="arow"><span class="sig" style="color:'+col+'">'+(SIG[a.state]||"·")+'</span><span class="aid">'+esc(a.id)+'</span><span class="atask ell">'+esc(a.task||a.summary||"")+br+'</span><span class="atool dim ell">'+esc(a.lastTool||"")+'</span><span class="ast" style="color:'+col+'">'+esc(a.state)+'</span><span class="acost dim">'+(a.cost!=null?("$"+Number(a.cost).toFixed(2)):"")+'</span></div>'; }
     var ordered=need.concat(work,done,fail);
     $('brood').innerHTML = ordered.length ? ordered.map(row).join("") : '<div class="empty dim">the brood is empty — dispatch an agent below.</div>';
   }
   render();
-  $('task').addEventListener('keydown',function(e){ if(e.key==="Enter" && $('task').value.trim()){ var cwd=($('cwd').value||'').trim()||undefined; window.atlas.dispatch($('task').value.trim(), cwd); $('task').value=''; }});
+  var MODE="read";
+  $('mode').addEventListener('click',function(){ MODE=(MODE==="read"?"build":"read"); $('mode').textContent=(MODE==="build"?"⚒ build":"◷ read"); $('mode').classList.toggle('build',MODE==="build"); $('cwd').style.opacity=(MODE==="build"?0.4:1); });
+  $('self').addEventListener('click',function(){ window.atlas.selfBuild(); });
+  $('task').addEventListener('keydown',function(e){ if(e.key==="Enter" && $('task').value.trim()){ var cwd=(MODE==="build")?undefined:(($('cwd').value||'').trim()||undefined); window.atlas.dispatch($('task').value.trim(), cwd, MODE); $('task').value=''; }});
   // eye: lerp to aggregate condition + breathe
   var bt=0;(function loop(){ bt+=0.02; for(var i=0;i<3;i++)cur[i]+=(COND[i]-cur[i])*0.06; var c='rgb('+(cur[0]|0)+','+(cur[1]|0)+','+(cur[2]|0)+')';
     if(slit){slit.setAttribute('fill',c);slit.setAttribute('ry',(8+Math.sin(bt)*0.6).toFixed(2));} if(core)core.setAttribute('fill',c); if(glow){glow.setAttribute('fill',c);glow.setAttribute('opacity',(0.1+Math.abs(Math.sin(bt*0.7))*0.18).toFixed(2));}

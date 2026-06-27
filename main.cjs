@@ -40,7 +40,19 @@ function stopFleet() { try { if (fleet) fleet.kill(); } catch (_) {} fleet = nul
 ipcMain.on("dispatch", (_e, p) => {
   if (!fleet || !p || !p.task) return;
   counter++;
-  try { fleet.send({ t: "dispatch", id: "A-" + counter, task: p.task, cwd: p.cwd }); } catch (_) {}
+  const id = (p.mode === "build" ? "B-" : "A-") + counter;
+  try { fleet.send({ t: "dispatch", id, task: p.task, cwd: p.cwd, mode: p.mode }); } catch (_) {}
+});
+
+// The orchestrator on itself: a preset batch of additive self-build tasks.
+const SELF_BUILD = [
+  "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
+  "Create CHANGELOG.md for atlas-station from the git log (run: git log --oneline), grouping the commits into a readable changelog that tells the story (single CLI embed -> fleet engine -> fleet UI -> build mode). Then commit.",
+  "Review the repo for files that should be git-ignored but aren't (logs, worktree artifacts, scratch). Improve .gitignore ONLY (no other files). Then commit.",
+];
+ipcMain.on("self-build", () => {
+  if (!fleet) return;
+  for (const task of SELF_BUILD) { counter++; try { fleet.send({ t: "dispatch", id: "B-" + counter, task, mode: "build" }); } catch (_) {} }
 });
 
 app.whenReady().then(createWindow);

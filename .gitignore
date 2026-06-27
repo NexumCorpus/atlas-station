@@ -6,3 +6,4 @@ _gate_test.txt
 verify*.mjs
 verify*.cjs
 _rebuild.log
+_*.log

@@ -1,17 +1,23 @@
 // Fleet engine (plain-Node sidecar). Runs N AUTONOMOUS Claude agents
-// concurrently via the Agent SDK, each on its own task + cwd (worktree), and
-// emits their REAL state to the Electron parent over IPC. This is what makes
-// the harness real: the brood = live agents, the eye = aggregate state, the
-// opened egg = the agent that actually needs you.
+// concurrently via the Agent SDK, each emitting real state over IPC.
+//
+// Two dispatch modes:
+//   read  — the read-only gate (Read/Glob/Grep/Web/Todo/Task). Safe surveys.
+//   build — an ISOLATED git worktree on its own branch (fleet/<id>) with full
+//           tool access (bypassPermissions). The agent writes + commits real
+//           code; it CANNOT touch the user's main tree. The branch is the
+//           deliverable, reviewed and merged by the overseer. This is how the
+//           orchestrator does immense work — including on itself — safely.
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { execFileSync } from "child_process";
+import { mkdirSync } from "fs";
+import path from "path";
 
-// MVP gate: auto-allow read-only tools so agents run autonomously without
-// hanging. Write/exec will route to a human-approval round-trip (the opened
-// egg) once the UI is wired — for now they're denied so the fleet is safe.
+const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
+const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 
-const agents = new Map(); // id -> state record
-
+const agents = new Map();
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function set(id, patch) {
   const a = agents.get(id) || { id };
@@ -20,22 +26,50 @@ function set(id, patch) {
   send("agent", a);
 }
 
-async function runAgent(id, task, cwd) {
-  set(id, { state: "working", task, cwd, lastTool: null, cost: null, summary: "", turns: 0, session: null });
+function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
+
+function makeWorktree(id) {
+  const dir = path.join(WT_BASE, id);
+  const branch = "fleet/" + id;
+  mkdirSync(WT_BASE, { recursive: true });
+  try { gitC(["worktree", "remove", "--force", dir]); } catch (_) {}
+  try { gitC(["branch", "-D", branch]); } catch (_) {}
+  gitC(["worktree", "add", "-f", "-b", branch, dir, "HEAD"]);
+  return { dir, branch };
+}
+
+function branchStat(branch) {
+  try {
+    const stat = gitC(["diff", "--shortstat", "master.." + branch]).trim();
+    const commits = Number(gitC(["rev-list", "--count", "master.." + branch]).trim()) || 0;
+    return { branchStat: stat || "no diff yet", commits };
+  } catch (_) { return { branchStat: "?", commits: 0 }; }
+}
+
+const BUILD_NOTE = "\n\n[Working conditions] You are inside an ISOLATED git worktree on your own branch — your changes cannot affect the user's main tree until they review and merge. Keep scope tight: do exactly this task, nothing extra. When the code is written and sanity-checked, COMMIT it (git add -A && git commit -m \"...\"). Do not push, do not touch other branches.";
+
+async function runAgent(id, task, opts) {
+  opts = opts || {};
+  const build = opts.mode === "build";
+  let cwd = opts.cwd || REPO, branch = null;
+  set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", turns: 0 });
+  if (build) {
+    try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
+    catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; }
+  }
   try {
     for await (const m of query({
-      prompt: task,
+      prompt: build ? (task + BUILD_NOTE) : task,
       options: {
-        cwd: cwd || process.env.ATLAS_CWD || "E:\\",
+        cwd,
         systemPrompt: "claude_code",
-        canUseTool: async (name) => SAFE.has(name)
-          ? { behavior: "allow" }
-          : { behavior: "deny", message: "fleet MVP: read-only until the approval panel" },
+        ...(build
+          ? { permissionMode: "bypassPermissions" }
+          : { canUseTool: async (name) => SAFE.has(name) ? { behavior: "allow" } : { behavior: "deny", message: "read-only" } }),
       },
     })) {
-      if (m.type === "system" && m.subtype === "init") {
-        set(id, { session: m.session_id });
-      } else if (m.type === "assistant") {
+      if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id });
+      else if (m.type === "assistant") {
         const a = agents.get(id); const turns = (a.turns || 0) + 1;
         let patch = { state: "working", turns };
         for (const b of (m.message?.content ?? [])) {
@@ -44,11 +78,9 @@ async function runAgent(id, task, cwd) {
         }
         set(id, patch);
       } else if (m.type === "result") {
-        set(id, {
-          state: m.subtype === "success" ? "done" : "failed",
-          cost: m.total_cost_usd ?? null,
-          summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 220),
-        });
+        const done = m.subtype === "success";
+        const extra = (build && branch) ? branchStat(branch) : {};
+        set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 220), ...extra });
       }
     }
   } catch (e) {
@@ -58,8 +90,7 @@ async function runAgent(id, task, cwd) {
 
 process.on("message", (m) => {
   if (!m) return;
-  if (m.t === "dispatch") runAgent(m.id, m.task, m.cwd);
-  // future: m.t === "decision" for the human-approval round-trip
+  if (m.t === "dispatch") runAgent(m.id, m.task, { mode: m.mode, cwd: m.cwd });
 });
 
 send("ready", {});
