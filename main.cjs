@@ -1,59 +1,48 @@
-// ATLAS // station — Electron main. Hosts the REAL claude CLI by spawning a
-// plain-Node PTY sidecar (ptyhost.cjs) and bridging it to the xterm.js terminal
-// in the window. Electron never loads node-pty itself (avoids the Electron-ABI
-// rebuild); the sidecar runs under real Node 24 with the prebuilt PTY.
+// ATLAS // station — Electron main (FLEET). Spawns the fleet engine sidecar
+// (fleethost.mjs, plain Node + Agent SDK), relays live per-agent state to the
+// harness renderer, and dispatches new agents on request. The window is the
+// oversight surface for many agents — the station, not a single cell.
 const { app, BrowserWindow, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
-let win = null;
-let host = null;
+let win = null, fleet = null, counter = 0;
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1080, height: 820, backgroundColor: "#0a0908",
-    title: "ATLAS // station",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true, nodeIntegration: false,
-    },
+    width: 1120, height: 860, backgroundColor: "#0a0908", title: "ATLAS // station",
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
   });
   try { win.removeMenu(); } catch (_) {}
   win.loadFile("index.html");
-  win.webContents.on("did-finish-load", startHost);
-  win.on("closed", () => { stopHost(); win = null; });
+  win.webContents.on("did-finish-load", startFleet);
+  win.on("closed", () => { stopFleet(); win = null; });
 }
 
-function startHost() {
-  if (host) return;
+function startFleet() {
+  if (fleet) return;
   try {
-    host = spawn(NODE, [path.join(__dirname, "ptyhost.cjs")], {
-      cwd: __dirname, env: process.env,
-      stdio: ["pipe", "pipe", "pipe", "ipc"],
+    fleet = spawn(NODE, [path.join(__dirname, "fleethost.mjs")], {
+      cwd: __dirname, env: process.env, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
   } catch (e) {
-    if (win) win.webContents.send("pty-data", "\r\n\x1b[31m[failed to start PTY host: " + (e && e.message ? e.message : e) + "]\x1b[0m\r\n");
+    if (win) win.webContents.send("fleet", { type: "error", m: String((e && e.message) || e) });
     return;
   }
-  host.on("message", (m) => {
-    if (!win || !m) return;
-    if (m.t === "d") win.webContents.send("pty-data", m.d);
-    else if (m.t === "exit") win.webContents.send("pty-exit", m.code);
-    else if (m.t === "fatal") win.webContents.send("pty-data", "\r\n\x1b[31m[" + m.m + "]\x1b[0m\r\n");
-  });
-  if (host.stderr) host.stderr.on("data", (b) => {
-    if (win) win.webContents.send("pty-data", "\x1b[2m" + b.toString() + "\x1b[0m");
-  });
-  host.on("exit", () => { host = null; });
+  fleet.on("message", (m) => { if (win && m) win.webContents.send("fleet", m); });
+  if (fleet.stderr) fleet.stderr.on("data", () => {});
+  fleet.on("exit", () => { fleet = null; });
 }
 
-function stopHost() { try { if (host) host.kill(); } catch (_) {} host = null; }
+function stopFleet() { try { if (fleet) fleet.kill(); } catch (_) {} fleet = null; }
 
-ipcMain.on("pty-input", (_e, d) => { try { if (host) host.send({ t: "i", d }); } catch (_) {} });
-ipcMain.on("pty-resize", (_e, s) => { try { if (host && s) host.send({ t: "r", cols: s.cols, rows: s.rows }); } catch (_) {} });
-ipcMain.on("pty-restart", () => { stopHost(); startHost(); });
+ipcMain.on("dispatch", (_e, p) => {
+  if (!fleet || !p || !p.task) return;
+  counter++;
+  try { fleet.send({ t: "dispatch", id: "A-" + counter, task: p.task, cwd: p.cwd }); } catch (_) {}
+});
 
 app.whenReady().then(createWindow);
-app.on("window-all-closed", () => { stopHost(); if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => { stopFleet(); if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
