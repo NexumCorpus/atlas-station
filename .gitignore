@@ -7,3 +7,7 @@ verify*.mjs
 verify*.cjs
 _rebuild.log
 _*.log
+fleet-state.json
+*.jsonl
+logs/
+.agentlog-selftest/
