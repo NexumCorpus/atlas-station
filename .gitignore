@@ -4,3 +4,5 @@ dist/
 _electron.log
 _gate_test.txt
 verify*.mjs
+verify*.cjs
+_rebuild.log
