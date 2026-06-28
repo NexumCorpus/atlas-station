@@ -40,4 +40,9 @@ function listDeferred(dir) {
   return _load(dir);
 }
 
-module.exports = { deferTask, popPending, listDeferred };
+function peekPending(memDir) {
+  memDir = memDir || path.join(__dirname, 'memory');
+  return _load(memDir).filter(t => t.state === 'pending');
+}
+
+module.exports = { deferTask, popPending, listDeferred, peekPending };
