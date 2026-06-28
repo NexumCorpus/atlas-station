@@ -411,7 +411,51 @@ const resolveGoalTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool] });
+const memoryHealthTool = tool(
+  "memory_health",
+  "Report on memory store health: fact count by topic, proposal count, goal count, last pulse. Use to understand what's in memory before compacting or when something seems wrong.",
+  {},
+  async () => {
+    try {
+      const stats = _memstore ? _memstore.factStats(path.join(REPO, 'memory')) : { total: 0, byTopic: {} };
+      const goals = _goals ? _goals.listGoals(path.join(REPO, 'memory')) : [];
+      const activeGoals = goals.filter(g => g.state === 'active').length;
+      const lines = [
+        `Facts: ${stats.total} total`,
+        ...Object.entries(stats.byTopic).sort((a,b) => b[1]-a[1]).slice(0, 8).map(([t,n]) => `  ${t}: ${n}`),
+        `Goals: ${activeGoals} active / ${goals.length} total`,
+      ];
+      // Check proposals
+      try {
+        const _fs = _require('fs');
+        const pfile = path.join(REPO, 'memory', 'proposals.ndjson');
+        if (_fs.existsSync(pfile)) {
+          const plines = _fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
+          const pending = plines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).filter(p => p.state === 'pending');
+          lines.push(`Proposals: ${pending.length} pending`);
+        }
+      } catch {}
+      // Last pulse
+      try {
+        const _fs = _require('fs');
+        const pfile = path.join(REPO, 'memory', 'pulse.ndjson');
+        if (_fs.existsSync(pfile)) {
+          const plines = _fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
+          if (plines.length) {
+            const last = JSON.parse(plines[plines.length - 1]);
+            lines.push(`Last pulse: ${last.ts} (git ${last.git && last.git.clean ? 'clean' : 'dirty'})`);
+          }
+        }
+      } catch {}
+      send('memory_health', stats);
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Health check failed: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, memoryHealthTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -430,6 +474,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - set_goal(goal, priority, area) — record a persistent intention that outlasts this conversation. Use when you form a commitment that should carry across sessions (e.g. 'keep memory healthy', 'add web awareness'). Goals are yours — not proposals for Daniel.
 - list_goals() — review active, done, and abandoned goals. Check before setting a new one to avoid duplication.
 - resolve_goal(id, outcome) — mark a goal done or abandoned once you've acted on it.
+- memory_health() — report fact count, goal count, proposal count, last pulse. Use periodically to stay aware of memory state.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
