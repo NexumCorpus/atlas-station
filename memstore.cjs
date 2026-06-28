@@ -182,7 +182,32 @@ function recentRuns(n = 5, dir = DEFAULT_DIR) {
     .reverse();
 }
 
-module.exports = { appendFact, appendRun, recallFacts, recentRuns };
+/**
+ * lifetimeStats(dir?) — Aggregate totals across all stored runs.
+ *
+ * Returns:
+ *   totalRuns  {number}  All recorded runs.
+ *   buildRuns  {number}  Runs with mode === "build".
+ *   doneRuns   {number}  Runs with state === "done".
+ *   totalCost  {number}  Sum of all numeric cost fields (USD).
+ */
+function lifetimeStats(dir = DEFAULT_DIR) {
+  try {
+    const lines = _loadLines(path.join(dir, RUNS_FILE));
+    const runs = lines
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+    const totalCost = runs.reduce((s, r) => s + (typeof r.cost === 'number' ? r.cost : 0), 0);
+    const totalRuns = runs.length;
+    const buildRuns = runs.filter(r => r.mode === 'build').length;
+    const doneRuns  = runs.filter(r => r.state === 'done').length;
+    return { totalRuns, buildRuns, doneRuns, totalCost };
+  } catch {
+    return { totalRuns: 0, buildRuns: 0, doneRuns: 0, totalCost: 0 };
+  }
+}
+
+module.exports = { appendFact, appendRun, recallFacts, recentRuns, lifetimeStats };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memstore.cjs`

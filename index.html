@@ -124,6 +124,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     <span class="nm">ATLAS // station</span>
     <span class="dim">// orchestrator</span>
     <span id="counts"><span id="wcount">0</span> working · <span id="subcount">0</span> subagents · <span id="totalcost">$0.00</span></span>
+    <span id="lifetime" style="display:none; color:var(--dim); font-size:9px; margin-left:auto;"></span>
   </div>
 
   <div id="vitals">
@@ -307,6 +308,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if(health.length===0)health.push('fleet clean');
       thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false});
       renderThread();
+    } else if(m.type==="lifetime"){
+      if(m.totalRuns>0){
+        var li=$('lifetime');
+        if(li){
+          li.textContent=m.totalRuns+' runs · $'+(m.totalCost||0).toFixed(2)+' lifetime';
+          li.style.display='inline';
+        }
+      }
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
