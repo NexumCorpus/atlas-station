@@ -180,12 +180,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .ltask{flex:1;font-size:11px;color:#8b90ab}
 .lstate{font-size:9px;flex:none;letter-spacing:.06em;text-transform:uppercase}
 .lcost{font-size:9px;color:var(--acid);flex:none;width:52px;text-align:right;font-variant-numeric:tabular-nums}
-#kbbox{background:#0e0c18;border:1px solid var(--line);padding:20px 24px;max-width:340px;width:90%}
-.kbhd{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#eaf2ff;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.kbgrid{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;align-items:center}
-.kbkey{font-size:10px;color:var(--cyan);background:rgba(34,225,255,.08);border:1px solid rgba(34,225,255,.2);padding:2px 7px;border-radius:2px;white-space:nowrap;text-align:center;font-family:inherit;letter-spacing:.04em}
-.kbdesc{font-size:11px;color:#8b90ab}
-.kbfooter{font-size:9px;color:var(--dim);text-align:center;margin-top:14px;padding-top:8px;border-top:1px solid var(--line);letter-spacing:.1em}
+@keyframes kb-in{from{opacity:0;transform:translate(-50%,-50%) scale(.96)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+#kbbox{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(14,11,10,.97);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:0;z-index:500;display:none;min-width:480px;max-width:560px;backdrop-filter:blur(12px);box-shadow:0 24px 48px rgba(0,0,0,.7)}
+#kbbox.open{display:block;animation:kb-in .18s ease-out}
+.kb-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
+.kb-title{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(200,195,210,.8)}
+.kb-close{color:var(--dim);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:3px;transition:color .12s}
+.kb-close:hover{color:var(--fg)}
+.kb-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:12px 6px 16px}
+.kb-section{padding:6px 12px}
+.kb-section-title{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:rgba(157,107,255,.7);font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid rgba(157,107,255,.15)}
+.kb-row{display:flex;align-items:center;gap:10px;padding:3px 0;justify-content:space-between}
+.kb-row kbd{font-family:inherit;font-size:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-bottom-width:2px;border-radius:4px;padding:2px 6px;color:rgba(220,215,230,.8);white-space:nowrap;flex-shrink:0}
+.kb-row span{font-size:10px;color:var(--dim);text-align:right}
 #thread::-webkit-scrollbar,#brood::-webkit-scrollbar,#ledger::-webkit-scrollbar{width:4px}
 #thread::-webkit-scrollbar-track,#brood::-webkit-scrollbar-track,#ledger::-webkit-scrollbar-track{background:transparent}
 #thread::-webkit-scrollbar-thumb,#brood::-webkit-scrollbar-thumb,#ledger::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
@@ -434,7 +441,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <option value="read">read</option>
       <option value="build">build</option>
     </select>
-    <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="document.getElementById('kboverlay').style.display='flex'">?</span>
+    <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
     <span class="hint">enter</span>
   </div>
 
@@ -450,20 +457,41 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
 <div id="kboverlay" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(8,7,11,.85);backdrop-filter:blur(4px);align-items:center;justify-content:center">
   <div id="kbbox">
-    <div class="kbhd">keyboard shortcuts</div>
-    <div class="kbgrid">
-      <span class="kbkey">Enter</span><span class="kbdesc">send to ATLAS</span>
-      <span class="kbkey">Shift+Enter</span><span class="kbdesc">newline (ATLAS mode)</span>
-      <span class="kbkey">Ctrl+K</span><span class="kbdesc">focus input</span>
-      <span class="kbkey">Esc</span><span class="kbdesc">close panel / overlay</span>
-      <span class="kbkey">?</span><span class="kbdesc">this overlay</span>
-      <span class="kbkey">click agent</span><span class="kbdesc">open detail panel</span>
-      <span class="kbkey">✕ button</span><span class="kbdesc">cancel agent</span>
-      <span class="kbkey">Ctrl+F</span><span class="kbdesc">search thread</span>
-      <span class="kbkey">j / k</span><span class="kbdesc">navigate brood</span>
-      <span class="kbkey">Enter</span><span class="kbdesc">expand agent reply</span>
+    <div class="kb-header">
+      <span class="kb-title">ATLAS // Keyboard Reference</span>
+      <span class="kb-close" onclick="toggleKb()">✕</span>
     </div>
-    <div class="kbfooter">press Esc or ? to close</div>
+    <div class="kb-grid">
+      <div class="kb-section">
+        <div class="kb-section-title">Conversation</div>
+        <div class="kb-row"><kbd>Enter</kbd><span>send message</span></div>
+        <div class="kb-row"><kbd>Shift+Enter</kbd><span>new line</span></div>
+        <div class="kb-row"><kbd>Ctrl+F</kbd><span>search thread</span></div>
+        <div class="kb-row"><kbd>g</kbd><span>focus input</span></div>
+        <div class="kb-row"><kbd>Ctrl+K</kbd><span>focus input</span></div>
+      </div>
+      <div class="kb-section">
+        <div class="kb-section-title">Fleet / Brood</div>
+        <div class="kb-row"><kbd>j</kbd><span>next agent</span></div>
+        <div class="kb-row"><kbd>k</kbd><span>prev agent</span></div>
+        <div class="kb-row"><kbd>Enter</kbd><span>expand reply</span></div>
+        <div class="kb-row"><kbd>Esc</kbd><span>deselect agent</span></div>
+        <div class="kb-row"><kbd>✕ btn</kbd><span>cancel agent</span></div>
+      </div>
+      <div class="kb-section">
+        <div class="kb-section-title">Search</div>
+        <div class="kb-row"><kbd>Enter</kbd><span>next match</span></div>
+        <div class="kb-row"><kbd>Shift+Enter</kbd><span>prev match</span></div>
+        <div class="kb-row"><kbd>Esc</kbd><span>close search</span></div>
+      </div>
+      <div class="kb-section">
+        <div class="kb-section-title">Interface</div>
+        <div class="kb-row"><kbd>?</kbd><span>this help</span></div>
+        <div class="kb-row"><kbd>Esc</kbd><span>close overlays</span></div>
+        <div class="kb-row"><kbd>click eye</kbd><span>ATLAS status</span></div>
+        <div class="kb-row"><kbd>drag divider</kbd><span>resize columns</span></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1631,26 +1659,23 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         var s = $('say'); if (s) { s.focus(); }
       }
       if (e.key === 'Escape') {
-        var ov = $('kboverlay');
-        if (ov && ov.style.display !== 'none') {
-          ov.style.display = 'none'; e.preventDefault(); return;
+        var kb = $('kbbox');
+        if (kb && kb.classList.contains('open')) {
+          toggleKb(); e.preventDefault(); return;
         }
       }
       return;
     }
     if (e.key === 'Escape') {
-      var ov = $('kboverlay');
-      if (ov && ov.style.display !== 'none') { ov.style.display = 'none'; return; }
+      var kb = $('kbbox');
+      if (kb && kb.classList.contains('open')) { toggleKb(); return; }
       if (SEL) { SEL = null; renderBrood(); renderReply(); }
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault(); var s = $('say'); if (s) { s.focus(); s.select ? s.select() : null; }
     }
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      var ov = $('kboverlay');
-      if (ov) {
-        ov.style.display = ov.style.display === 'none' ? 'flex' : 'none';
-      }
+      toggleKb();
     }
     // Brood navigation (j/k/Enter/Escape) — only when not in an input
     if (!e.target.matches('input,textarea')) {
@@ -1807,10 +1832,24 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   $('say').focus();
 
+  // ── keyboard help overlay ───────────────────────────
+  window.toggleKb = function() {
+    var box = document.getElementById('kbbox');
+    var ov = document.getElementById('kboverlay');
+    if (!box) return;
+    var willOpen = !box.classList.contains('open');
+    if (willOpen) {
+      if (ov) ov.style.display = 'flex';
+      box.classList.add('open');
+    } else {
+      box.classList.remove('open');
+      if (ov) ov.style.display = 'none';
+    }
+  };
   var kbov = $('kboverlay');
   if (kbov) {
     kbov.addEventListener('click', function(e) {
-      if (e.target === kbov) kbov.style.display = 'none';
+      if (e.target === kbov) toggleKb();
     });
   }
 
