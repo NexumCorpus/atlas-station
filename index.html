@@ -267,6 +267,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           <ellipse cx="63" cy="79" rx="2.5" ry="1.8" fill="white" opacity=".12"/>
         </svg>
         <div><div class="chrom">ATLAS</div><div class="sub" id="status">overseer · idle</div></div>
+        <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
       </div>
       <div id="thread"></div>
     </div>
@@ -732,6 +733,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         vc.textContent = '$' + (m.total||0).toFixed(3);
         vc.style.color = m.total > 1.0 ? 'var(--amber)' : m.total > 0.5 ? 'var(--acid)' : 'var(--dim)';
       }
+    } else if(m.type==="export_conv_request"){
+      var lines2 = ['# ATLAS Conversation\n'];
+      thread.forEach(function(msg) {
+        if (msg.role === 'user') lines2.push('**Daniel:** ' + (msg.text || '') + '\n');
+        else if (msg.role === 'atlas') lines2.push('**ATLAS:** ' + (msg.text || '') + '\n');
+        else if (msg.role === 'system') lines2.push('*[system: ' + (msg.text || '') + ']*\n');
+      });
+      window.atlas.exportConversation({ title: m.title || '', content: lines2.join('\n') });
+    } else if(m.type==="conv_exported"){
+      thread.push({ role: 'system', text: 'conversation exported: ' + esc(m.filename), error: false });
+      renderThread();
     }
   });
 
@@ -1121,6 +1133,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (panel) { panel.style.display = 'flex'; }
       window.atlas.readMemory();
     }
+  });
+
+  var exportbtn = document.getElementById('exportbtn');
+  if (exportbtn) exportbtn.addEventListener('click', function() {
+    var lines = ['# ATLAS Conversation\n'];
+    thread.forEach(function(m) {
+      if (m.role === 'user') lines.push('**Daniel:** ' + (m.text || '') + '\n');
+      else if (m.role === 'atlas') lines.push('**ATLAS:** ' + (m.text || '') + '\n');
+      else if (m.role === 'system') lines.push('*[system: ' + (m.text || '') + ']*\n');
+    });
+    var content = lines.join('\n');
+    var title = thread.length > 0 ? (thread[0].text || 'conversation').slice(0, 40) : 'conversation';
+    window.atlas.exportConversation({ title: title, content: content });
   });
 
   var sayEl = $('say');
