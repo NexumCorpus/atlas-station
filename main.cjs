@@ -98,6 +98,19 @@ ipcMain.on("cancel", (_e, p) => {
   try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}
 });
 
+ipcMain.on("read-memory", (_e) => {
+  try {
+    const memDir = path.join(__dirname, "memory");
+    const file = path.join(memDir, "facts.jsonl");
+    if (!fs.existsSync(file)) { if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [] }); return; }
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    const facts = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse(); // newest first
+    if (win) win.webContents.send("fleet", { type: "memory_facts", facts: facts.slice(0, 100) });
+  } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [], error: String(e.message) });
+  }
+});
+
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
   "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
