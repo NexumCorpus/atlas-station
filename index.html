@@ -43,7 +43,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #counts{margin-left:auto;color:#8f96b6}
 #wcount{color:var(--cyan);text-shadow:0 0 8px rgba(34,225,255,.6);font-weight:400}
 #wcount.pulse{animation:cpulse .4s ease}
-#totalcost{color:var(--dim)}
+#totalcost{color:var(--dim);letter-spacing:.04em;font-variant-numeric:tabular-nums}
 #main{flex:1;min-height:0;display:flex;z-index:1}
 #convcol{flex:1.6;min-width:380px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);position:relative}
 #fleetcol{flex:1.1;min-width:320px;display:flex;flex-direction:column;min-height:0}
@@ -131,8 +131,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .modetoggle.dispatch{background:rgba(255,194,75,.1);border-color:rgba(255,194,75,.35);color:var(--amber)}
 .agentmode{background:#0d0b18;border:1px solid rgba(255,194,75,.3);color:var(--amber);font-family:inherit;font-size:11px;padding:2px 6px;outline:none;cursor:pointer;flex:none}
 .hint{font-size:10px;color:#56546e;letter-spacing:.1em;flex:none}
-.xcbtn{font-size:10px;padding:1px 5px;border:1px solid var(--dim);background:transparent;color:var(--dim);border-radius:2px;cursor:pointer;margin-left:auto;flex-shrink:0}
-.xcbtn:hover{color:var(--mag);border-color:var(--mag)}
+.xcbtn{background:none;border:1px solid rgba(255,100,100,.2);color:rgba(255,100,100,.5);border-radius:3px;font-size:9px;padding:1px 5px;cursor:pointer;transition:all .15s;flex-shrink:0}
+.xcbtn:hover{background:rgba(255,100,100,.1);border-color:rgba(255,100,100,.4);color:rgba(255,100,100,.8)}
 #replyrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--border);background:var(--panel)}
 .replylabel{font-size:10px;color:var(--dim);flex:none;letter-spacing:.08em}
 #agentreply{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:12px;outline:none;padding:2px 0}
@@ -333,6 +333,16 @@ input:focus-visible{outline:none}
 .vwave-active{animation-duration:.8s!important}
 @keyframes vwave-sync{0%,100%{stroke-opacity:.65}50%{stroke-opacity:1}}
 .vwave-active polyline{animation:vwave-sync .7s ease-in-out infinite}
+/* ── identity header ──────────────────────────── */
+.atlas-wordmark{font-size:12px;font-weight:800;letter-spacing:.25em;color:var(--fg);text-transform:uppercase}
+.atlas-tagline{font-size:10px;color:var(--accent);letter-spacing:.12em;opacity:.7}
+/* ── agent card ID badge ──────────────────────── */
+.card-id{font-size:9px;font-weight:700;color:rgba(157,107,255,.6);letter-spacing:.04em;flex-shrink:0;font-family:inherit}
+/* ── empty brood ──────────────────────────────── */
+#broodempty{color:var(--dim);font-size:11px;padding:20px 8px;text-align:center;opacity:.5;letter-spacing:.04em}
+/* ── system error messages ────────────────────── */
+.msg.system.error .msg-text{color:rgba(255,100,100,.7)}
+.msg.system.error .msg-avatar{background:rgba(255,100,100,.1);border-color:rgba(255,100,100,.25)}
 </style>
 </head>
 <body>
@@ -399,10 +409,15 @@ input:focus-visible{outline:none}
           <!-- Specular highlight -->
           <ellipse cx="63" cy="79" rx="2.5" ry="1.8" fill="white" opacity=".12"/>
         </svg>
-        <div><div class="chrom">ATLAS</div><div class="sub" id="status">overseer · idle</div></div>
+        <div><div class="atlas-wordmark">ATLAS</div><div class="atlas-tagline">// station</div><div class="sub" id="status">overseer · idle</div></div>
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
       </div>
       <div id="thread"></div>
+      <div id="threadhint" style="display:none;position:absolute;top:50px;left:0;right:0;bottom:60px;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:.25;pointer-events:none">
+        <div style="font-size:24px">◈</div>
+        <div style="font-size:11px;letter-spacing:.08em">type to talk to ATLAS</div>
+        <div style="font-size:9px;color:var(--dim)">? for shortcuts</div>
+      </div>
       <div id="typing"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">↓</button>
     </div>
@@ -1153,12 +1168,15 @@ input:focus-visible{outline:none}
     var wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     // Exclude pending atlas messages — #typing indicator handles that state
     var visible = thread.filter(function(msg) { return !msg.pending; });
+    var hint = document.getElementById('threadhint');
+    if (hint) hint.style.display = thread.length === 0 ? 'flex' : 'none';
     if (visible.length === 0) {
-      el.innerHTML = '<div class="empty"><span style="color:var(--violet);font-size:11px;letter-spacing:.08em">ATLAS online</span><br><span style="color:var(--dim);font-size:10.5px;line-height:1.7">direct the fleet · watch agents work<br>↓ type below to begin</span></div>';
+      el.innerHTML = '';
     } else {
       el.innerHTML = visible.map(function(msg, i) {
         var isUser = msg.role === 'user' || msg.role === 'you';
         var cls = msg.role === 'atlas' ? 'atlas' : isUser ? 'user' : 'system';
+        if (msg.error) cls += ' error';
         var avatar = msg.role === 'atlas' ? 'A' : isUser ? 'D' : '·';
         var roleLabel = msg.role === 'atlas' ? 'ATLAS' : isUser ? 'Daniel' : 'system';
         var isNew = (i === visible.length - 1);
@@ -1277,7 +1295,7 @@ input:focus-visible{outline:none}
     if(!el)return;
     var list=Array.from(agents.values()).filter(function(a){return a.id!=="ATLAS";});
     if(!list.length){
-      el.innerHTML='<div style="color:var(--dim);font-size:11px;padding:12px 8px;text-align:center">no subagents yet</div>';
+      el.innerHTML='<div id="broodempty">fleet idle</div>';
       updateBroodCount();
       return;
     }
@@ -1316,6 +1334,7 @@ input:focus-visible{outline:none}
       return '<div class="arow '+stateCls+(isNew?' spawning':'')+(selId===a.id?' sel':'')+'" data-k="agent" data-id="'+esc(a.id)+'">'
         +'<div class="arowmain">'
           +'<div class="card-state-dot"></div>'
+          +'<span class="card-id">'+esc(a.id)+'</span>'
           +'<div class="card-task">'+esc(taskFirst)+'</div>'
           +'<div class="card-badges">'+modebadge+modelbadge+cancelBtn+'</div>'
         +'</div>'
