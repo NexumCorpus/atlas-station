@@ -25,6 +25,21 @@ const DEFAULT_JOURNAL = path.join(
   '.claude', 'projects', 'E--atlas-station', 'memory', 'MEMORY.md'
 );
 
+// Self-model: injected at the end of every memory context block so ATLAS knows
+// the station's own source layout without needing to re-read it each turn.
+const STATION_BRIEF = `[Station Architecture]
+E:\\atlas-station source files:
+- main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status.
+- index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar. Uses window.atlas.* bridge.
+- preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
+- memcontext.cjs: Memory injection — prepends journal + runs + facts to every agent task.
+- memstore.cjs: Fact/run store — appendFact, appendRun, recallFacts, recentRuns, lifetimeStats. Files: memory/facts.ndjson, memory/runs.ndjson.
+- fact-extractor.cjs: Extracts inferred facts from ATLAS replies for persistent memory.
+- prune.mjs: Sprawl cleanup — removes merged fleet/* branches and their worktrees. Run: node prune.mjs.
+- instruct_atlas.mjs: Relay tool — spawns fleethost, sends one directive, reports reply.
+Fleet pattern: build agents use isolated git worktrees at E:\\atlas-wt\\<id> on branch fleet/<id>.`;
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -125,6 +140,8 @@ function buildContext(task, opts = {}) {
   }
 
   if (!parts.length) return '';
+  // Always include station architecture brief when there IS memory
+  parts.push(STATION_BRIEF);
   return `--- ATLAS MEMORY ---\n${parts.join('\n\n')}\n--- END MEMORY ---`;
 }
 
