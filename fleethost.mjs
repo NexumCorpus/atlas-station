@@ -41,6 +41,8 @@ try { _session = _require("./session-narrative.cjs"); } catch { _session = null;
 try { _goals = _require("./goal-store.cjs"); } catch { _goals = null; }
 let _deferred = null;
 try { _deferred = _require('./deferred.cjs'); } catch { _deferred = null; }
+let _notif = null;
+try { _notif = _require('./notifications.cjs'); } catch { _notif = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -470,7 +472,21 @@ const memoryHealthTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool] });
+const notifySelfTool = tool(
+  "notify_self",
+  "Leave a notification for Daniel that will appear prominently when he opens the station. Use for things ATLAS completed autonomously, important findings, or anything worth surfacing at session start.",
+  {
+    text: z.string().describe("The notification message (1-2 sentences)"),
+    type: z.enum(["info", "done", "alert"]).optional().describe("Visual type: info (default), done (success), alert (warning)"),
+  },
+  async (args) => {
+    const n = _notif ? _notif.notify(args.text, args.type, path.join(REPO, 'memory')) : null;
+    if (n) send('notification', n);
+    return { content: [{ type: 'text', text: `Notification queued: ${args.text.slice(0, 80)}` }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -491,6 +507,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - resolve_goal(id, outcome) — mark a goal done or abandoned once you've acted on it.
 - defer_task(task, reason, mode) — schedule a task for your next startup. Use to continue work across sessions autonomously.
 - memory_health() — report fact count, goal count, proposal count, last pulse. Use periodically to stay aware of memory state.
+- notify_self(text, type) — leave a notification for Daniel that surfaces at next session start. Use when you've done something important he should know about.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -747,16 +764,25 @@ try {
   const pending = _deferred ? _deferred.popPending(path.join(REPO, 'memory')) : [];
   if (pending.length > 0) {
     send('startup_tasks', { count: pending.length, tasks: pending.map(t => t.task.slice(0, 60)) });
-    // Dispatch each as a subagent after a 3s delay (let ATLAS initialize first)
     setTimeout(() => {
       pending.forEach((entry, i) => {
         setTimeout(() => {
           _maxCounter++;
           const id = 'A-' + _maxCounter;
-          // Send as a dispatch so the fleet engine processes it
           process.emit('message', { t: 'dispatch', id, task: entry.task, mode: entry.mode || 'read' });
         }, i * 1000);
       });
     }, 3000);
   }
+} catch (_) {}
+
+// Broadcast unread notifications from previous sessions
+try {
+  const unread = _notif ? _notif.getUnread(path.join(REPO, 'memory')) : [];
+  if (unread.length) unread.forEach(n => send('notification', n));
+} catch (_) {}
+
+// Mark all notifications read 10s after startup (show once per session)
+try {
+  setTimeout(() => { if (_notif) _notif.markRead('*', path.join(REPO, 'memory')); }, 10000);
 } catch (_) {}
