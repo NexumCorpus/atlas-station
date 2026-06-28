@@ -124,6 +124,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .bub.atlas .atlastext p:last-child{margin-bottom:0}
 .bub.atlas .atlastext strong{color:#d4c8ff;font-weight:600}
 .bub.atlas .atlastext em{color:#a8b4d8;font-style:italic}
+#kbbox{background:#0e0c18;border:1px solid var(--line);padding:20px 24px;max-width:340px;width:90%}
+.kbhd{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#eaf2ff;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.kbgrid{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;align-items:center}
+.kbkey{font-size:10px;color:var(--cyan);background:rgba(34,225,255,.08);border:1px solid rgba(34,225,255,.2);padding:2px 7px;border-radius:2px;white-space:nowrap;text-align:center;font-family:inherit;letter-spacing:.04em}
+.kbdesc{font-size:11px;color:#8b90ab}
+.kbfooter{font-size:9px;color:var(--dim);text-align:center;margin-top:14px;padding-top:8px;border-top:1px solid var(--line);letter-spacing:.1em}
 </style>
 </head>
 <body>
@@ -201,8 +207,25 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   <div class="bar">
     <span class="to">↳ to ATLAS</span>
     <input id="say" type="text" placeholder="tell ATLAS what you want — it runs the fleet…" autofocus/>
+    <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="document.getElementById('kboverlay').style.display='flex'">?</span>
     <span class="hint">enter</span>
   </div>
+
+<div id="kboverlay" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(8,7,11,.85);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div id="kbbox">
+    <div class="kbhd">keyboard shortcuts</div>
+    <div class="kbgrid">
+      <span class="kbkey">Enter</span><span class="kbdesc">send to ATLAS</span>
+      <span class="kbkey">Shift+Enter</span><span class="kbdesc">newline (ATLAS mode)</span>
+      <span class="kbkey">Ctrl+K</span><span class="kbdesc">focus input</span>
+      <span class="kbkey">Esc</span><span class="kbdesc">close panel / overlay</span>
+      <span class="kbkey">?</span><span class="kbdesc">this overlay</span>
+      <span class="kbkey">click agent</span><span class="kbdesc">open detail panel</span>
+      <span class="kbkey">✕ button</span><span class="kbdesc">cancel agent</span>
+    </div>
+    <div class="kbfooter">press Esc or ? to close</div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -665,10 +688,35 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if(e.key==="Enter"&&$('say').value.trim()){say($('say').value.trim());$('say').value="";}
   });
 
-  window.addEventListener('keydown',function(e){
-    if(e.target.id==='agentreply')return;
-    if(e.key==='Escape'&&SEL){SEL=null;renderBrood();renderReply();}
-    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();var s=$('say');if(s){s.focus();s.select();}}
+  window.addEventListener('keydown', function(e) {
+    if (e.target.id === 'agentreply' || e.target.id === 'say') {
+      // In inputs: only handle Ctrl+K and Escape
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        var s = $('say'); if (s) { s.focus(); }
+      }
+      if (e.key === 'Escape') {
+        var ov = $('kboverlay');
+        if (ov && ov.style.display !== 'none') {
+          ov.style.display = 'none'; e.preventDefault(); return;
+        }
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      var ov = $('kboverlay');
+      if (ov && ov.style.display !== 'none') { ov.style.display = 'none'; return; }
+      if (SEL) { SEL = null; renderBrood(); renderReply(); }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault(); var s = $('say'); if (s) { s.focus(); s.select ? s.select() : null; }
+    }
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      var ov = $('kboverlay');
+      if (ov) {
+        ov.style.display = ov.style.display === 'none' ? 'flex' : 'none';
+      }
+    }
   });
 
   renderThread();renderBrood();renderLedger();
@@ -735,6 +783,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   })();
 
   $('say').focus();
+
+  var kbov = $('kboverlay');
+  if (kbov) {
+    kbov.addEventListener('click', function(e) {
+      if (e.target === kbov) kbov.style.display = 'none';
+    });
+  }
 })();
 </script>
 </body>
