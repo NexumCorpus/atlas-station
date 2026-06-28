@@ -111,6 +111,13 @@ function buildContext(task, opts = {}) {
     parts.push(`[Station Journal — ${label} | loaded ${ts}]\n${journal}`);
   }
 
+  // 1.5. Session context (prior session narrative) ──────────────────────────
+  try {
+    const _sn = require('./session-narrative.cjs');
+    const sessionCtx = _sn.buildSessionContext(path.join(__dirname, 'memory'));
+    if (sessionCtx) parts.push(sessionCtx);
+  } catch (_) {}
+
   // 2. Recent run records ───────────────────────────────────────────────────
   const ms = _getMemstore();
   if (ms) {

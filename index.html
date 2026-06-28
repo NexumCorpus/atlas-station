@@ -526,6 +526,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           li.style.display='inline';
         }
       }
+    } else if(m.type==="sessionctx"&&m.text){
+      thread.push({role:'system',text:m.text,error:false});
+      renderThread();
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
