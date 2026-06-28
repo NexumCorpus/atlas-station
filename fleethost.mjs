@@ -35,8 +35,12 @@ const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrit
 let _memcontext = null, _memstore = null;
 try { _memcontext = _require("./memcontext.cjs"); } catch { _memcontext = null; }
 try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
+// Persistence module — survives window restarts.
+let _persist = null;
+try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
 
 const agents = new Map();
+let _maxCounter = 0;
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function set(id, patch) {
   const a = agents.get(id) || { id };
@@ -45,6 +49,7 @@ function set(id, patch) {
   agents.set(id, a);
   send("agent", a);
   persistAll();
+  if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter }); } catch {} }
 }
 
 function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
@@ -86,6 +91,10 @@ async function consume(id, iterable, build, branch) {
 }
 
 async function runAgent(id, task, opts) {
+  // Track the highest counter value seen so persistence knows where to resume.
+  const num = parseInt(id.replace(/^[A-Z]-/, ""), 10);
+  if (!isNaN(num)) _maxCounter = Math.max(_maxCounter, num);
+
   opts = opts || {}; const build = opts.mode === "build"; let cwd = opts.cwd || REPO, branch = null;
   set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null });
   const enrichedTask = _memcontext ? _memcontext.inject(task) : task;
@@ -115,6 +124,22 @@ process.on("message", (m) => {
   else if (m.t === "reply") replyAgent(m.id, m.text);
 });
 
+// Restore persisted agents before signalling ready.
+if (_persist) {
+  try {
+    const saved = _persist.load();
+    if (saved && Array.isArray(saved.agents)) {
+      for (const a of saved.agents) {
+        // Agents that were mid-run when the window closed died — mark interrupted.
+        if (a.state === "working") a.state = "interrupted";
+        agents.set(a.id, a);
+        send("agent", a);
+      }
+      _maxCounter = saved.maxCounter || 0;
+    }
+  } catch {}
+}
+send("counter", { value: _maxCounter });
 send("ready", {});
 
 // Restore persisted agents from a prior session.  Populate the in-memory map

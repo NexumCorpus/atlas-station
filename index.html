@@ -124,8 +124,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var slit=$('slit'), glow=$('glow'), core=$('core');
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   var agents=new Map(); var fresh=new Set(); var HIST={commits:[],runs:[]}; var SEL=null;
-  var COL={ "needs-you":"#ff2d95", "working":"#22e1ff", "done":"#49ff9e", "failed":"#ff4d4d" };
-  var SIG={ "needs-you":"◉", "working":"⟁", "done":"◇", "failed":"⊗" };
+  var COL={ "needs-you":"#ff2d95", "working":"#22e1ff", "done":"#49ff9e", "failed":"#ff4d4d", "interrupted":"#ffc24b" };
+  var SIG={ "needs-you":"◉", "working":"⟁", "done":"◇", "failed":"⊗", "interrupted":"⏸" };
   var COND=[0x22,0xe1,0xff], cur=[0x22,0xe1,0xff], ACT=0;
 
   window.atlas.onFleet(function(m){
@@ -144,6 +144,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       }
       render();
     } else if(m.type==="history"){ HIST={ commits:(m.commits||[]), runs:(m.runs||[]) }; renderLedger(); }
+    else if(m.type==="counter"){ /* counter sync from persist — no UI action needed */ }
   });
 
   function hx(h){h=h.replace('#','');return[parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}

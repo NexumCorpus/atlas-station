@@ -32,13 +32,8 @@ function startFleet() {
   }
   fleet.on("message", (m) => {
     if (win && m) win.webContents.send("fleet", m);
-    // On restore, advance counter past all persisted IDs so new dispatches
-    // never collide with agents the renderer just re-painted.
-    if (m && m.type === "restored" && Array.isArray(m.agents)) {
-      for (const a of m.agents) {
-        const n = parseInt((a.id || "").replace(/^[A-Z]-/, ""), 10);
-        if (!isNaN(n) && n > counter) counter = n;
-      }
+    if (m && m.type === "counter" && typeof m.value === "number") {
+      counter = Math.max(counter, m.value);
     }
   });
   if (fleet.stderr) fleet.stderr.on("data", () => {});
