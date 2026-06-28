@@ -110,6 +110,15 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #vcost{color:var(--amber);font-variant-numeric:tabular-nums;margin-left:auto}
 #vact{color:var(--dim);min-width:60px;text-align:right}
 @keyframes dotpulse{0%,100%{opacity:1}50%{opacity:.3}}
+.mdpre{background:#07060f;border:1px solid var(--line);border-left:3px solid var(--violet);padding:8px 10px;margin:6px 0;overflow-x:auto;white-space:pre;font-size:11.5px;line-height:1.5;border-radius:1px}
+.mdpre code{background:none;padding:0;border:none;color:#b8c4e0}
+.mdinline{background:#0e0c1c;border:1px solid rgba(157,107,255,.25);color:#c8b4ff;padding:1px 4px;border-radius:1px;font-size:11.5px}
+.mdlist{margin:4px 0 4px 16px;padding:0;color:#cdd3e3}
+.mdlist li{margin:2px 0;line-height:1.5}
+.bub.atlas .atlastext p{margin:0 0 4px;line-height:1.58}
+.bub.atlas .atlastext p:last-child{margin-bottom:0}
+.bub.atlas .atlastext strong{color:#d4c8ff;font-weight:600}
+.bub.atlas .atlastext em{color:#a8b4d8;font-style:italic}
 </style>
 </head>
 <body>
@@ -176,6 +185,42 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var slit=$('slit'),glow=$('glow'),core=$('core');
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
+  function renderMd(s) {
+    // Minimal markdown → safe HTML. Only handles common patterns from ATLAS replies.
+    if (!s) return '';
+    var h = String(s);
+    // Escape HTML first (safe base)
+    h = h.replace(/[&<>]/g, function(c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; });
+    // Fenced code blocks (``` ... ```)
+    h = h.replace(/```([a-z]*)\n?([\s\S]*?)```/g, function(_, lang, code) {
+      return '<pre class="mdpre"><code>' + code.trim() + '</code></pre>';
+    });
+    // Inline code (`...`)
+    h = h.replace(/`([^`\n]+)`/g, '<code class="mdinline">$1</code>');
+    // Bold (**...**)
+    h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    // Italic (*...*)
+    h = h.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+    // Bullet lists (lines starting with - or *)
+    h = h.replace(/((?:^|\n)[•\-\*] .+)+/g, function(block) {
+      var items = block.trim().split(/\n/).map(function(line) {
+        return '<li>' + line.replace(/^[•\-\*] /, '') + '</li>';
+      }).join('');
+      return '\n<ul class="mdlist">' + items + '</ul>';
+    });
+    // Numbered lists (lines starting with 1. 2. etc)
+    h = h.replace(/((?:^|\n)\d+\. .+)+/g, function(block) {
+      var items = block.trim().split(/\n/).map(function(line) {
+        return '<li>' + line.replace(/^\d+\. /, '') + '</li>';
+      }).join('');
+      return '\n<ol class="mdlist">' + items + '</ol>';
+    });
+    // Line breaks → <br> (preserve blank lines as paragraph breaks)
+    h = h.replace(/\n\n+/g, '</p><p>');
+    h = h.replace(/\n/g, '<br>');
+    return '<p>' + h + '</p>';
+  }
+
   var thread=[];
   var agents=new Map();
   var agentTools=new Map(); // id -> string[] max 5
@@ -195,12 +240,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var twIv=null;
   function typewrite(el,text){
     if(twIv){clearInterval(twIv);twIv=null;}
-    var i=0;
-    el.textContent='';
+    var i=0,len=text.length;
+    el.innerHTML='';
     twIv=setInterval(function(){
-      if(i>=text.length){clearInterval(twIv);twIv=null;return;}
-      i++;
-      el.textContent=text.slice(0,i)+(i<text.length?'▍':'');
+      if(i>=len){clearInterval(twIv);twIv=null;el.innerHTML=renderMd(text);return;}
+      i=Math.min(i+2,len); // 2 chars per tick for faster feel
+      el.textContent=text.slice(0,i)+(i<len?'▍':'');
     },18);
   }
 
@@ -365,7 +410,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         var label=toolLabel?'':esc(t.activity||"thinking");
         inner='<span class="pend"><span class="bubtxt">'+label+'</span>'+chip+'</span>';
       } else {
-        inner='<span class="atlastext">'+esc(t.text||"")+'</span>'
+        inner='<span class="atlastext">'+renderMd(t.text||"")+'</span>'
           +(t.cost!=null&&t.cost>0?'<span class="bubcost">$'+Number(t.cost).toFixed(2)+'</span>':'');
       }
       if(t.needsTypewrite){twEntry=t;t.needsTypewrite=false;}
@@ -523,7 +568,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       +'<span class="dim" style="font-size:9px;margin-left:4px">subagent · read-only</span>'
       +'<span class="rx" id="rx">close</span></div>'
       +(task?'<div class="rtask">▸ '+esc(task)+'</div>':'')
-      +'<div class="rbody">'+esc(body)+'</div>'
+      +'<div class="rbody">'+renderMd(body)+'</div>'
       +(hasSession
         ?'<div id="replyrow"><span class="replylabel">↳ reply</span><input id="agentreply" placeholder="continue this conversation…" autocomplete="off"></div>'
         :'<div id="replyrow" style="display:none"></div>');
