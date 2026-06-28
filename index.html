@@ -101,6 +101,15 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .bubcost{font-size:9px;color:var(--dim);display:block;text-align:right;margin-top:4px}
 .bub.system{border-left:3px solid var(--ember);background:rgba(255,106,61,.06);color:var(--ember);font-size:11px;align-self:flex-start}
 .broodempty{color:var(--dim);font-size:10px;padding:12px 8px;text-align:center;letter-spacing:.1em}
+#vitals{display:flex;align-items:center;gap:10px;padding:4px 14px;border-bottom:1px solid var(--line);background:var(--panel);font-size:9px;letter-spacing:.12em}
+.vdot{width:6px;height:6px;border-radius:50%;background:var(--dim);transition:background .4s,box-shadow .4s}
+.vdot.active{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.vdot.urgent{background:var(--mag);box-shadow:0 0 6px var(--mag);animation:dotpulse .9s infinite}
+.vdot.settled{background:var(--acid)}
+#vwave{flex-shrink:0;opacity:.7}
+#vcost{color:var(--amber);font-variant-numeric:tabular-nums;margin-left:auto}
+#vact{color:var(--dim);min-width:60px;text-align:right}
+@keyframes dotpulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
 </head>
 <body>
@@ -115,6 +124,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     <span class="nm">ATLAS // station</span>
     <span class="dim">// orchestrator</span>
     <span id="counts"><span id="wcount">0</span> working · <span id="subcount">0</span> subagents · <span id="totalcost">$0.00</span></span>
+  </div>
+
+  <div id="vitals">
+    <span class="vdot" id="vd-work" title="working"></span>
+    <span class="vdot" id="vd-need" title="needs-you"></span>
+    <span class="vdot" id="vd-done" title="done"></span>
+    <svg id="vwave" width="120" height="18" viewBox="0 0 120 18">
+      <polyline id="vwaveline" points="0,9 120,9" fill="none" stroke="var(--cyan)" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>
+    <span id="vcost">$0.00</span>
+    <span id="vact">IDLE</span>
   </div>
 
   <div id="main">
@@ -366,6 +386,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       ?list.map(rowOf).join("")
       :'<div class="broodempty">no agents deployed</div>';
     updateFleetStats(list);
+    updateVitals();
     var workCount=list.filter(function(a){return a.state==="working";}).length;
     document.title=workCount>0?'ATLAS ['+workCount+' working] // station':'ATLAS // station';
   }
@@ -507,6 +528,41 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   renderThread();renderBrood();renderLedger();
 
+  // ── vitals strip ────────────────────────────────────
+  function updateVitals(){
+    var all=[...agents.values()];
+    var working=all.filter(function(a){return a.state==="working"&&a.id!=="ATLAS";}).length;
+    var needed=all.filter(function(a){return a.state==="needs-you";}).length;
+    var done=all.filter(function(a){return a.state==="done";}).length;
+    var totalCost=all.reduce(function(s,a){return s+(a.cost||0);},0);
+    var wd=$('vd-work'),wn=$('vd-need'),wdone=$('vd-done');
+    if(wd){wd.className='vdot'+(working>0?' active':'');}
+    if(wn){wn.className='vdot'+(needed>0?' urgent':'');}
+    if(wdone){wdone.className='vdot'+(done>0?' settled':'');}
+    var cost=$('vcost');
+    if(cost)cost.textContent='$'+totalCost.toFixed(2);
+    var act=$('vact');
+    if(act){
+      act.textContent=needed>0?('REPLY ×'+needed):working>0?('ACTIVE ×'+working):done>0?'SETTLED':'IDLE';
+      act.style.color=needed>0?'var(--mag)':working>0?'var(--cyan)':'var(--dim)';
+    }
+    tickWave(working+needed*2);
+  }
+
+  var _wt=0,_wamp=0;
+  function tickWave(activity){
+    _wamp+=((Math.min(1,activity/3)*6)-_wamp)*0.15;
+    _wt+=0.15+_wamp*0.05;
+    var pts=[];
+    for(var i=0;i<=12;i++){
+      var x=i*10;
+      var y=9+Math.sin(_wt+i*0.7)*_wamp;
+      pts.push(x+','+y.toFixed(1));
+    }
+    var wl=$('vwaveline');
+    if(wl)wl.setAttribute('points',pts.join(' '));
+  }
+
   // ── eye rAF loop ────────────────────────────────────
   var bt=0;
   (function loop(){
@@ -517,6 +573,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if(slit){slit.setAttribute('fill',c);slit.setAttribute('ry',(8+p*0.7+ACT*2.2).toFixed(2));slit.setAttribute('rx',(2.6+ACT*0.8).toFixed(2));}
     if(core)core.setAttribute('fill',c);
     if(glow){glow.setAttribute('fill',c);glow.setAttribute('opacity',(0.08+ACT*0.34+Math.abs(p)*(0.06+ACT*0.12)).toFixed(3));}
+    tickWave(ACT*3);
     requestAnimationFrame(loop);
   })();
 
