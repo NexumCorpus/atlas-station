@@ -44,7 +44,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #wcount.pulse{animation:cpulse .4s ease}
 #totalcost{color:var(--dim)}
 #main{flex:1;min-height:0;display:flex;z-index:1}
-#convcol{flex:1.6;min-width:380px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+#convcol{flex:1.6;min-width:380px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);position:relative}
 #fleetcol{flex:1.1;min-width:320px;display:flex;flex-direction:column;min-height:0}
 .convhd{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);flex:none}
 .chrom{color:#eaf2ff;letter-spacing:.16em;font-size:12px;text-shadow:0 0 10px rgba(157,107,255,.5)}
@@ -206,6 +206,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .mfmeta{font-size:8.5px;color:var(--dim);display:flex;gap:8px}
 .mftopic{color:var(--violet);opacity:.8}
 .mfconf{opacity:.6}
+#srchbar{position:absolute;top:8px;right:14px;z-index:20;display:flex;gap:6px;align-items:center;background:#0e0c1a;border:1px solid var(--violet);padding:4px 10px;border-radius:3px}
+#srchbar:not(.open){display:none}
+#srchinput{background:transparent;border:none;color:var(--ink);font-family:inherit;font-size:12px;width:180px;outline:none}
+#srchinput::placeholder{color:var(--dim)}
+#srchcount{font-size:9px;color:var(--dim);letter-spacing:.06em;white-space:nowrap}
+.bub.match{outline:1px solid rgba(157,107,255,.5);background:#100d1e!important}
+.bub.match-active{outline:2px solid var(--violet)!important}
 </style>
 </head>
 <body>
@@ -238,6 +245,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   <div id="main">
     <div id="convcol" class="boot-seq">
+      <div id="srchbar">
+        <input id="srchinput" placeholder="search..." autocomplete="off"/>
+        <span id="srchcount"></span>
+        <span id="srchclose" style="cursor:pointer;color:var(--dim);font-size:12px;padding:0 2px" title="close (Esc)">✕</span>
+      </div>
       <div class="convhd">
         <svg id="eye" viewBox="0 0 120 132" width="50" height="55" style="flex:none;transform-origin:60px 70px;animation:hd 7s ease-in-out infinite;cursor:pointer">
           <!-- Outer aura ring -->
@@ -321,6 +333,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <span class="kbkey">?</span><span class="kbdesc">this overlay</span>
       <span class="kbkey">click agent</span><span class="kbdesc">open detail panel</span>
       <span class="kbkey">✕ button</span><span class="kbdesc">cancel agent</span>
+      <span class="kbkey">Ctrl+F</span><span class="kbdesc">search thread</span>
     </div>
     <div class="kbfooter">press Esc or ? to close</div>
   </div>
@@ -416,6 +429,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     h = h.replace(/\n/g, '<br>');
     return '<p>' + h + '</p>';
   }
+
+  var srchMatches = [], srchIdx = 0;
 
   var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t:[];}catch(e){return[];}})();
   var agents=new Map();
@@ -729,6 +744,52 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   function hx(h){h=h.replace('#','');return[parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}
 
+  // ── conversation search ─────────────────────────────
+  function openSearch() {
+    var bar = document.getElementById('srchbar');
+    if (bar) { bar.classList.add('open'); document.getElementById('srchinput').focus(); }
+  }
+  function closeSearch() {
+    var bar = document.getElementById('srchbar');
+    if (bar) bar.classList.remove('open');
+    clearSearch();
+    document.getElementById('srchinput').value = '';
+  }
+  function clearSearch() {
+    document.querySelectorAll('.bub.match,.bub.match-active').forEach(function(el){
+      el.classList.remove('match','match-active');
+    });
+    srchMatches = []; srchIdx = 0;
+    var cnt = document.getElementById('srchcount');
+    if (cnt) cnt.textContent = '';
+  }
+  function runSearch(q) {
+    clearSearch();
+    if (!q) return;
+    q = q.toLowerCase();
+    var bubbles = document.querySelectorAll('.bub');
+    bubbles.forEach(function(b) {
+      var txt = (b.textContent || '').toLowerCase();
+      if (txt.includes(q)) { b.classList.add('match'); srchMatches.push(b); }
+    });
+    if (srchMatches.length) {
+      srchMatches[0].classList.add('match-active');
+      srchMatches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      srchIdx = 0;
+    }
+    var cnt = document.getElementById('srchcount');
+    if (cnt) cnt.textContent = srchMatches.length ? (1 + '/' + srchMatches.length) : 'no results';
+  }
+  function nextMatch(dir) {
+    if (!srchMatches.length) return;
+    srchMatches[srchIdx].classList.remove('match-active');
+    srchIdx = (srchIdx + dir + srchMatches.length) % srchMatches.length;
+    srchMatches[srchIdx].classList.add('match-active');
+    srchMatches[srchIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var cnt = document.getElementById('srchcount');
+    if (cnt) cnt.textContent = (srchIdx+1) + '/' + srchMatches.length;
+  }
+
   // ── render thread ───────────────────────────────────
   function renderThread(){
     var th=$('thread');
@@ -762,6 +823,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       }
     }
     th.scrollTop=th.scrollHeight;
+    // Re-apply search highlights after re-render
+    var si = document.getElementById('srchinput');
+    if (si && si.value) runSearch(si.value);
   }
 
   // ── agent row builder ───────────────────────────────
@@ -1165,6 +1229,25 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   });
 
   renderThread();renderBrood();renderLedger();
+
+  // ── search events ───────────────────────────────────
+  var srchinput = document.getElementById('srchinput');
+  if (srchinput) {
+    srchinput.addEventListener('input', function(){ runSearch(this.value); });
+    srchinput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') nextMatch(e.shiftKey ? -1 : 1);
+      if (e.key === 'Escape') closeSearch();
+    });
+  }
+  var srchclose = document.getElementById('srchclose');
+  if (srchclose) srchclose.addEventListener('click', closeSearch);
+
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      openSearch();
+    }
+  });
 
   // ── vitals strip ────────────────────────────────────
   function updateVitals(){
