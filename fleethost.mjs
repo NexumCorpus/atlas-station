@@ -40,6 +40,7 @@ try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
+const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 
@@ -61,22 +62,25 @@ function pruneAgent(id) {
 function set(id, patch) {
   const a = agents.get(id) || { id };
   // Clear timeout before transitioning to a terminal state
-  if ((patch.state === "done" || patch.state === "failed") && a.timeoutHandle) {
-    clearTimeout(a.timeoutHandle);
-    a.timeoutHandle = null;
+  if ((patch.state === "done" || patch.state === "failed") && timeoutHandles.has(id)) {
+    clearTimeout(timeoutHandles.get(id));
+    timeoutHandles.delete(id);
   }
   Object.assign(a, patch);
+  if (a.timeoutHandle) delete a.timeoutHandle; // strip any legacy/persisted handle field
   a.ts = new Date().toISOString();
   agents.set(id, a);
-  // Start timeout when first entering working state
-  if (patch.state === "working" && !a.timeoutHandle) {
+  // Start timeout when first entering working state. The handle lives in
+  // timeoutHandles (a side map), NEVER on the agent record — a Timeout object is
+  // circular and would throw "Converting circular structure to JSON" on send/persist.
+  if (patch.state === "working" && !timeoutHandles.has(id)) {
     const ms = a.timeoutMs != null ? a.timeoutMs : DEFAULT_TIMEOUT_MS;
     if (ms > 0) {
-      a.timeoutHandle = setTimeout(() => {
+      timeoutHandles.set(id, setTimeout(() => {
         const ctrl = abortControllers.get(id);
         if (ctrl) ctrl.abort();
         set(id, { state: "failed", summary: "timeout — agent exceeded " + Math.round(ms / 60000) + "min limit" });
-      }, ms);
+      }, ms));
     }
   }
   send("agent", a);
