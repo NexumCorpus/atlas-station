@@ -179,17 +179,37 @@ function buildContext(task, opts = {}) {
   // Always include station architecture brief when there IS memory
   parts.push(STATION_BRIEF);
 
-  // Budget trim: if assembled context exceeds maxContextChars, trim the largest section
+  // Priority-ordered budget trim. We trim in order of decreasing expendability:
+  // 1. Temporal context (git log/status — least task-relevant)
+  // 2. Session narrative (cross-session continuity — build agents don't need it)
+  // 3. Journal (ATLAS's inner life — beautiful but expensive)
+  // 4. Recent runs (trim to fewer entries)
+  // 5. Facts (trim to fewer, keep highest confidence)
+  // NEVER trim: STATION_BRIEF (last part by construction)
+  const TRIM_ORDER = [
+    /^\[Now\]/,
+    /^\[Session Context/,
+    /^\[Station Journal/,
+    /^\[Recent Fleet Runs\]/,
+    /^\[Relevant Facts/,
+  ];
   let body = parts.join('\n\n');
   if (body.length > maxContextChars) {
-    let largestIdx = 0;
-    for (let i = 1; i < parts.length; i++) {
-      if (parts[i].length > parts[largestIdx].length) largestIdx = i;
+    for (const pattern of TRIM_ORDER) {
+      if (body.length <= maxContextChars) break;
+      const idx = parts.findIndex(p => pattern.test(p));
+      if (idx === -1) continue;
+      const excess = body.length - maxContextChars;
+      if (excess >= parts[idx].length - 50) {
+        // Drop this section entirely
+        parts.splice(idx, 1);
+      } else {
+        // Partial trim: keep first N chars
+        const keep = Math.max(100, parts[idx].length - excess);
+        parts[idx] = parts[idx].slice(0, keep) + '\n[... trimmed]';
+      }
+      body = parts.join('\n\n');
     }
-    const excess = body.length - maxContextChars;
-    const floor = Math.max(200, parts[largestIdx].length - excess);
-    parts[largestIdx] = parts[largestIdx].slice(0, floor) + '\n[... trimmed for context budget]';
-    body = parts.join('\n\n');
   }
   return `--- ATLAS MEMORY ---\n${body}\n--- END MEMORY ---`;
 }
