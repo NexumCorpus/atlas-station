@@ -207,7 +207,28 @@ function lifetimeStats(dir = DEFAULT_DIR) {
   }
 }
 
-module.exports = { appendFact, appendRun, recallFacts, recentRuns, lifetimeStats };
+function compactFacts(topic, dir) {
+  dir = dir || path.join(__dirname, 'memory');
+  try {
+    const lines = fs.readFileSync(path.join(dir, FACTS_FILE), 'utf8').trim().split('\n').filter(Boolean);
+    const all = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    const matching = topic ? all.filter(f => (f.topic || '').toLowerCase().includes(topic.toLowerCase())) : all;
+    return matching;
+  } catch { return []; }
+}
+
+function factStats(dir) {
+  dir = dir || path.join(__dirname, 'memory');
+  try {
+    const lines = fs.readFileSync(path.join(dir, FACTS_FILE), 'utf8').trim().split('\n').filter(Boolean);
+    const all = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    const byTopic = {};
+    all.forEach(f => { const t = f.topic || 'general'; byTopic[t] = (byTopic[t] || 0) + 1; });
+    return { total: all.length, byTopic };
+  } catch { return { total: 0, byTopic: {} }; }
+}
+
+module.exports = { appendFact, appendRun, recallFacts, recentRuns, lifetimeStats, compactFacts, factStats };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memstore.cjs`

@@ -622,6 +622,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           setTimeout(function(){vs.style.background='';},400);
         }
       }
+    } else if(m.type==="memory_health"){
+      var vfacts = document.getElementById('vfacts');
+      if (!vfacts) {
+        var vpulse = document.getElementById('vpulse');
+        var ref = vpulse || document.getElementById('vact');
+        if (ref && ref.parentNode) {
+          vfacts = document.createElement('span');
+          vfacts.id = 'vfacts';
+          vfacts.style.cssText = 'font-size:8.5px;color:var(--dim);letter-spacing:.08em;border-left:1px solid var(--line);padding-left:10px;';
+          ref.parentNode.insertBefore(vfacts, ref.nextSibling);
+        }
+      }
+      if (vfacts) vfacts.textContent = (m.total || 0) + ' facts';
     }
   });
 
