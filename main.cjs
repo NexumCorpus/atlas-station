@@ -111,6 +111,38 @@ ipcMain.on("read-memory", (_e) => {
   }
 });
 
+ipcMain.on("read-graph", () => {
+  try {
+    const memDir = path.join(__dirname, "memory");
+    // Read facts
+    const factsFile = path.join(memDir, "facts.jsonl");
+    let facts = [];
+    if (fs.existsSync(factsFile)) {
+      facts = fs.readFileSync(factsFile, "utf8").trim().split("\n").filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .slice(-80); // last 80 facts
+    }
+    // Read graph edges
+    const graphFile = path.join(memDir, "fact_graph.ndjson");
+    let edges = [];
+    if (fs.existsSync(graphFile)) {
+      edges = fs.readFileSync(graphFile, "utf8").trim().split("\n").filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    }
+    // Read stale keys
+    const staleFile = path.join(memDir, "stale_facts.ndjson");
+    let staleKeys = [];
+    if (fs.existsSync(staleFile)) {
+      staleKeys = fs.readFileSync(staleFile, "utf8").trim().split("\n").filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .map(s => s.key);
+    }
+    if (win) win.webContents.send("fleet", { type: "graph_data", facts, edges, staleKeys });
+  } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "graph_data", facts: [], edges: [], staleKeys: [], error: String(e.message) });
+  }
+});
+
 ipcMain.on("export-conversation", (_e, p) => {
   try {
     const convDir = path.join(__dirname, "memory", "conversations");

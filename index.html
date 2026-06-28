@@ -329,7 +329,7 @@ input:focus-visible{outline:none}
 #jumptobottom.new-msg-alert{animation:jmp-pulse 1s ease-out;background:var(--accent)}
 @keyframes jmp-pulse{0%{transform:scale(1.3);box-shadow:0 0 0 0 rgba(157,107,255,.6)}100%{transform:scale(1);box-shadow:0 0 0 8px rgba(157,107,255,0)}}
 @keyframes panel-open{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-#proposals,#goals,#memfacts,#docs,#metrics{animation:panel-open .15s ease-out}
+#proposals,#goals,#memfacts,#docs,#metrics,#cosmos{animation:panel-open .15s ease-out}
 .vwave-active{animation-duration:.8s!important}
 @keyframes vwave-sync{0%,100%{stroke-opacity:.65}50%{stroke-opacity:1}}
 .vwave-active polyline{animation:vwave-sync .7s ease-in-out infinite}
@@ -442,6 +442,15 @@ input:focus-visible{outline:none}
       <div id="metrics">
         <div id="metricsinner"></div>
       </div>
+      <div id="cosmoslab" class="panel-hd"><span class="ph-title">✦ Cosmos</span><span class="ph-chevron">›</span></div>
+      <div id="cosmos" style="display:none">
+        <div style="padding:6px 8px;display:flex;gap:6px;align-items:center">
+          <button onclick="window.loadConstellation()" style="font-size:11px;padding:2px 8px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer">refresh</button>
+          <span id="cosmosstatus" style="font-size:11px;color:var(--dim)">—</span>
+        </div>
+        <canvas id="constellationCanvas" width="260" height="240" style="display:block;margin:0 auto;cursor:crosshair"></canvas>
+        <div id="cosmostooltip" style="font-size:10px;color:var(--fg);padding:4px 8px;min-height:28px;word-break:break-all"></div>
+      </div>
       <div class="lab" style="border-top:1px solid var(--border)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
       <div id="timelinelab">⬡ activity</div>
@@ -526,7 +535,7 @@ input:focus-visible{outline:none}
     try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
   }
   function getPanelStates() {
-    var ids = ['proposals','goals','memfacts','docs','metrics'];
+    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos'];
     var s = {};
     ids.forEach(function(id) {
       var el = document.getElementById(id);
@@ -598,6 +607,8 @@ input:focus-visible{outline:none}
       if (docsLab) docsLab.classList.toggle('open', !!p.panels.docs);
       var metricsLab = document.getElementById('metricslab');
       if (metricsLab) metricsLab.classList.toggle('open', !!p.panels.metrics);
+      var cosmosLab = document.getElementById('cosmoslab');
+      if (cosmosLab) cosmosLab.classList.toggle('open', !!p.panels.cosmos);
     }
   })();
 
@@ -1106,6 +1117,8 @@ input:focus-visible{outline:none}
     } else if(m.type==="runs_data"){
       runsData = m.runs || [];
       renderMetrics();
+    } else if(m.type==="graph_data"){
+      initConstellation(m.facts || [], m.edges || [], m.staleKeys || []);
     }
   });
 
@@ -1636,6 +1649,187 @@ input:focus-visible{outline:none}
       '<div class="mbar" title="last 20 runs: █=done ░=failed">' + esc(spark) + '</div>';
   }
 
+  // ── Constellation (fact graph) ────────────────────────────────────────────
+  var constellationNodes = [];
+  var constellationEdges = [];
+  var constellationFrame = null;
+  var constellationHover = null;
+  var EDGE_COLORS = { supports: '#4e9', contradicts: '#e55', elaborates: '#68f', supersedes: '#888', related_to: '#555' };
+
+  function loadConstellation() {
+    var st = document.getElementById('cosmosstatus');
+    if (st) st.textContent = 'loading…';
+    window.atlas.readGraph();
+  }
+
+  function initConstellation(facts, edges, staleKeys) {
+    var canvas = document.getElementById('constellationCanvas');
+    if (!canvas) return;
+    var W = canvas.width, H = canvas.height;
+    var staleSet = new Set(staleKeys || []);
+
+    // Build node map from facts
+    var nodeMap = {};
+    facts.forEach(function(f, i) {
+      var key = f.topic || f.key || ('fact-' + i);
+      if (!nodeMap[key]) {
+        nodeMap[key] = {
+          key: key,
+          label: key.slice(0, 18),
+          fact: f.fact || '',
+          confidence: f.confidence || 'low',
+          stale: staleSet.has(key),
+          x: W * 0.1 + Math.random() * W * 0.8,
+          y: H * 0.1 + Math.random() * H * 0.8,
+          vx: 0, vy: 0,
+          mass: 1,
+        };
+      }
+    });
+
+    // Add edge endpoint nodes if not already present
+    edges.forEach(function(e) {
+      if (!nodeMap[e.fromKey]) nodeMap[e.fromKey] = { key: e.fromKey, label: e.fromKey.slice(0,18), fact: '', confidence: 'low', stale: false, x: Math.random()*W, y: Math.random()*H, vx:0, vy:0, mass:1 };
+      if (!nodeMap[e.toKey]) nodeMap[e.toKey] = { key: e.toKey, label: e.toKey.slice(0,18), fact: '', confidence: 'low', stale: false, x: Math.random()*W, y: Math.random()*H, vx:0, vy:0, mass:1 };
+    });
+
+    constellationNodes = Object.values(nodeMap);
+    constellationEdges = edges;
+
+    var st = document.getElementById('cosmosstatus');
+    if (st) st.textContent = constellationNodes.length + ' facts, ' + edges.length + ' edges';
+
+    // Force-directed simulation
+    if (constellationFrame) cancelAnimationFrame(constellationFrame);
+    var ticks = 0;
+    var maxTicks = 200;
+
+    function tick() {
+      ticks++;
+      var nodes = constellationNodes;
+      var K = 40; // repulsion constant
+      var edgeLength = 60; // ideal spring length
+      var damping = 0.85;
+
+      // Repulsion: all pairs
+      for (var i = 0; i < nodes.length; i++) {
+        for (var j = i+1; j < nodes.length; j++) {
+          var dx = nodes[j].x - nodes[i].x;
+          var dy = nodes[j].y - nodes[i].y;
+          var d = Math.sqrt(dx*dx + dy*dy) || 1;
+          var f = K * K / d;
+          var fx = (dx/d) * f;
+          var fy = (dy/d) * f;
+          nodes[i].vx -= fx * 0.01;
+          nodes[i].vy -= fy * 0.01;
+          nodes[j].vx += fx * 0.01;
+          nodes[j].vy += fy * 0.01;
+        }
+      }
+
+      // Spring attraction: edges
+      constellationEdges.forEach(function(e) {
+        var a = nodeMap[e.fromKey], b = nodeMap[e.toKey];
+        if (!a || !b) return;
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var d = Math.sqrt(dx*dx + dy*dy) || 1;
+        var f = (d - edgeLength) * 0.01;
+        var fx = (dx/d) * f, fy = (dy/d) * f;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      });
+
+      // Center gravity
+      var cx = W/2, cy = H/2;
+      nodes.forEach(function(n) {
+        n.vx += (cx - n.x) * 0.001;
+        n.vy += (cy - n.y) * 0.001;
+        n.vx *= damping; n.vy *= damping;
+        n.x += n.vx; n.y += n.vy;
+        n.x = Math.max(12, Math.min(W-12, n.x));
+        n.y = Math.max(12, Math.min(H-12, n.y));
+      });
+
+      drawConstellation(canvas, nodeMap);
+      if (ticks < maxTicks) constellationFrame = requestAnimationFrame(tick);
+    }
+
+    constellationFrame = requestAnimationFrame(tick);
+
+    // Hover: show fact content
+    canvas.onmousemove = function(ev) {
+      var rect = canvas.getBoundingClientRect();
+      var mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+      var scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+      var cx2 = mx * scaleX, cy2 = my * scaleY;
+      var closest = null, minD = 14;
+      constellationNodes.forEach(function(n) {
+        var d = Math.sqrt((n.x-cx2)*(n.x-cx2)+(n.y-cy2)*(n.y-cy2));
+        if (d < minD) { minD = d; closest = n; }
+      });
+      if (closest !== constellationHover) {
+        constellationHover = closest;
+        var tip = document.getElementById('cosmostooltip');
+        if (closest) {
+          tip.textContent = closest.key + (closest.stale ? ' [stale]' : '') + ': ' + (closest.fact || '').slice(0, 120);
+        } else {
+          tip.textContent = '';
+        }
+      }
+    };
+  }
+
+  function drawConstellation(canvas, nodeMap) {
+    var ctx = canvas.getContext('2d');
+    var W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Background
+    ctx.fillStyle = '#0a0814';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw edges
+    constellationEdges.forEach(function(e) {
+      var a = nodeMap[e.fromKey], b = nodeMap[e.toKey];
+      if (!a || !b) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = (EDGE_COLORS[e.relation] || '#444') + '88';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // Draw nodes
+    constellationNodes.forEach(function(n) {
+      var r = n.stale ? 2.5 : 3.5;
+      var color = n.stale ? '#333' : (n.confidence === 'verified' ? '#4ef' : n.confidence === 'high' ? '#9ef' : '#56a');
+      if (n === constellationHover) { color = '#fff'; r = 5; }
+
+      // Glow
+      var grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r*2.5);
+      grad.addColorStop(0, color + 'cc');
+      grad.addColorStop(1, color + '00');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r*2.5, 0, Math.PI*2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Core
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Label for hovered node
+      if (n === constellationHover) {
+        ctx.fillStyle = '#ffffffcc';
+        ctx.font = '9px monospace';
+        ctx.fillText(n.label, n.x + 6, n.y - 2);
+      }
+    });
+  }
+
   function selectDoc(filename) {
     docsSelectedFile = filename;
     renderDocsList();
@@ -1673,6 +1867,19 @@ input:focus-visible{outline:none}
       panel.style.display = opening ? 'block' : 'none';
       metricslab.classList.toggle('open', opening);
       if (opening) window.atlas.readRuns();
+      savePrefs({ panels: getPanelStates() });
+    });
+  }
+
+  var cosmoslab = document.getElementById('cosmoslab');
+  if (cosmoslab) {
+    cosmoslab.addEventListener('click', function() {
+      var panel = document.getElementById('cosmos');
+      if (!panel) return;
+      var opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      cosmoslab.classList.toggle('open', opening);
+      if (opening) loadConstellation();
       savePrefs({ panels: getPanelStates() });
     });
   }
@@ -1837,6 +2044,7 @@ input:focus-visible{outline:none}
   // Expose inline-onclick helpers to global scope
   window.scrollThread = scrollThread;
   window.copyMsg = copyMsg;
+  window.loadConstellation = loadConstellation;
 
   // ── search events ───────────────────────────────────
   var srchinput = document.getElementById('srchinput');
