@@ -172,6 +172,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .pauth:hover{background:rgba(73,255,158,.1)}
 .pdism{font-size:9px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);background:transparent;cursor:pointer;font-family:inherit}
 .pdism:hover{color:var(--mag);border-color:var(--mag)}
+.notif{display:flex;gap:10px;padding:10px 16px;border-bottom:2px solid var(--violet);background:rgba(157,107,255,.08);animation:bubin .3s ease-out;align-items:flex-start}
+.notif.done{border-bottom-color:var(--acid);background:rgba(73,255,158,.06)}
+.notif.alert{border-bottom-color:var(--amber);background:rgba(255,194,75,.06)}
+.nicon{font-size:14px;flex:none;line-height:1.4}
+.nbody{flex:1;font-size:11.5px;color:#cfd6e6;line-height:1.5}
+.nts{font-size:8px;color:var(--dim);margin-top:2px}
+.ndism{font-size:9px;border:none;background:none;color:var(--dim);cursor:pointer;padding:0 4px;float:right}
+.ndism:hover{color:var(--mag)}
 .grow{display:flex;align-items:flex-start;gap:8px;padding:7px 14px;border-bottom:1px solid #110f1f;background:rgba(73,255,158,.03)}
 .grow.gdone{opacity:.35}
 .gpri{font-size:7.5px;padding:1px 4px;border-radius:2px;flex:none;font-weight:700}
@@ -244,6 +252,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="thread"></div>
     </div>
     <div id="fleetcol" class="boot-seq">
+      <div id="notiftray" style="display:none"></div>
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
       <div class="lab">⟦ the fleet — what ATLAS is running ⟧</div>
       <div id="brood"></div>
@@ -594,6 +603,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
+    } else if(m.type==="notification"){
+      var tray = document.getElementById('notiftray');
+      if (!tray) return;
+      tray.style.display = '';
+      var icons = { info: '◈', done: '✓', alert: '⚠' };
+      var row = document.createElement('div');
+      row.className = 'notif ' + esc(m.type || 'info');
+      row.dataset.nid = m.id;
+      row.innerHTML = '<span class="nicon">' + (icons[m.type] || '◈') + '</span>'
+        + '<span class="nbody">' + esc(m.text || '')
+        + '<div class="nts">' + esc((m.ts||'').replace('T',' ').slice(0,16)) + '</div></span>'
+        + '<button class="ndism" data-nid="' + esc(m.id) + '">×</button>';
+      tray.insertBefore(row, tray.firstChild);
     } else if(m.type==="pulse"){
       // Show last pulse time in vitals strip
       var vpulse=document.getElementById('vpulse');
@@ -1091,6 +1113,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         var pl2 = document.getElementById('proposallab');
         if (pl2) pl2.style.display = 'none';
       }
+    }
+    if (e.target.matches('.ndism')) {
+      var nrow = e.target.closest('[data-nid]');
+      if (nrow) nrow.remove();
+      var tray2 = document.getElementById('notiftray');
+      if (tray2 && !tray2.children.length) tray2.style.display = 'none';
     }
   });
 })();

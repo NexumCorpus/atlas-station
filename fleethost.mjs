@@ -39,6 +39,8 @@ try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
 try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
 try { _session = _require("./session-narrative.cjs"); } catch { _session = null; }
 try { _goals = _require("./goal-store.cjs"); } catch { _goals = null; }
+let _notif = null;
+try { _notif = _require('./notifications.cjs'); } catch { _notif = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -411,7 +413,21 @@ const resolveGoalTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool] });
+const notifySelfTool = tool(
+  "notify_self",
+  "Leave a notification for Daniel that will appear prominently when he opens the station. Use for things ATLAS completed autonomously, important findings, or anything worth surfacing at session start.",
+  {
+    text: z.string().describe("The notification message (1-2 sentences)"),
+    type: z.enum(["info", "done", "alert"]).optional().describe("Visual type: info (default), done (success), alert (warning)"),
+  },
+  async (args) => {
+    const n = _notif ? _notif.notify(args.text, args.type, path.join(REPO, 'memory')) : null;
+    if (n) send('notification', n);
+    return { content: [{ type: 'text', text: `Notification queued: ${args.text.slice(0, 80)}` }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, notifySelfTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -430,6 +446,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - set_goal(goal, priority, area) — record a persistent intention that outlasts this conversation. Use when you form a commitment that should carry across sessions (e.g. 'keep memory healthy', 'add web awareness'). Goals are yours — not proposals for Daniel.
 - list_goals() — review active, done, and abandoned goals. Check before setting a new one to avoid duplication.
 - resolve_goal(id, outcome) — mark a goal done or abandoned once you've acted on it.
+- notify_self(text, type) — leave a notification for Daniel that surfaces at next session start. Use when you've done something important he should know about.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -679,4 +696,19 @@ try {
     const activeGoals = _goals.listGoals(path.join(REPO, 'memory')).filter(g => g.state === 'active');
     activeGoals.forEach(g => send('goal', g));
   }
+} catch (_) {}
+
+// Broadcast unread notifications from previous sessions
+try {
+  const unread = _notif ? _notif.getUnread(path.join(REPO, 'memory')) : [];
+  if (unread.length) {
+    unread.forEach(n => send('notification', n));
+  }
+} catch (_) {}
+
+// Mark all notifications read 10s after startup (so they only show once)
+try {
+  setTimeout(() => {
+    if (_notif) _notif.markRead('*', path.join(REPO, 'memory'));
+  }, 10000);
 } catch (_) {}
