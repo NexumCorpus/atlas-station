@@ -50,6 +50,8 @@ let _selfloop = null;
 try { _selfloop = _require('./selfloop.cjs'); } catch { _selfloop = null; }
 let _memgraph = null;
 try { _memgraph = _require('./memgraph.cjs'); } catch { _memgraph = null; }
+let _dream = null;
+try { _dream = _require('./dream.cjs'); } catch { _dream = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -57,6 +59,7 @@ const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent record
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
+let pulseCount = 0;
 
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function pruneAgent(id) {
@@ -517,7 +520,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -563,7 +566,7 @@ const capabilityManifestTool = tool(
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
-      "relate_facts", "fact_graph"
+      "relate_facts", "fact_graph", "load_dreams"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -916,6 +919,28 @@ const relateFactsTool = tool(
   }
 );
 
+const loadDreamsTool = tool(
+  "load_dreams",
+  "Read ATLAS's recent dream reports — autonomous reflections generated every 100 minutes during idle pulses. Each dream contains patterns found in agent history, insights, improvement proposals, and a mood reading.",
+  {
+    maxN: z.number().optional().describe("Number of recent dreams to return (default 3)"),
+  },
+  async (args) => {
+    if (!_dream) return { content: [{ type: 'text', text: 'dream module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const dreams = _dream.loadDreams(memDir, args.maxN || 3);
+      if (!dreams.length) return { content: [{ type: 'text', text: 'No dreams recorded yet. Dream protocol fires every 4th pulse (~100 min).' }] };
+      const text = dreams.map((d, i) => {
+        return `Dream ${dreams.length - i} [${d.ts}] mood: ${d.mood}\nPatterns: ${(d.patterns||[]).join(' | ')}\nInsights: ${(d.insights||[]).join(' | ')}\nProposals: ${(d.proposals||[]).map(p => p.title).join(', ')}`;
+      }).join('\n\n---\n\n');
+      return { content: [{ type: 'text', text: text }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `load_dreams error: ${e.message}` }] };
+    }
+  }
+);
+
 const factGraphTool = tool(
   "fact_graph",
   "Show the graph neighborhood of a fact: all outbound/inbound edges and reachable related facts (up to 2 hops). Also shows graph stats. Use to explore the epistemic structure of memory.",
@@ -946,7 +971,7 @@ const factGraphTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -979,6 +1004,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - web_research(query, url?, saveAs?) — spawn a Haiku agent to search/fetch the web and summarize findings. Results stored as facts. Use for documentation lookup, verifying current info, or fetching specific pages.
 - relate_facts(fromKey, relation, toKey) — declare a typed edge between facts (supports/contradicts/elaborates/supersedes/related_to). 'supersedes' marks the old fact stale, filtering it from future recalls.
 - fact_graph(key, maxDepth?) — explore the graph neighborhood of a fact: edges, reachable nodes, stale status.
+- load_dreams(maxN?) — read recent dream reports (autonomous reflections from idle pulse cycles). Contains patterns, insights, proposals, mood.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1186,7 +1212,8 @@ try {
 
 // Autonomous pulse — ATLAS checks its own state periodically
 const PULSE_INTERVAL = parseInt(process.env.ATLAS_PULSE_MS || '') || (25 * 60 * 1000);
-function runPulse() {
+async function runPulse() {
+  pulseCount++;
   try {
     const pulsePath = path.join(REPO, 'memory', 'pulse.ndjson');
     const gitLog = gitC(["log", "--oneline", "-3"]).trim();
@@ -1223,8 +1250,8 @@ function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (28 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph`,
+        `## Tools (29 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
@@ -1232,6 +1259,115 @@ function runPulse() {
       fs.writeFileSync(path.join(docsDir, 'SELF_STATE.md'), pulseNote, 'utf8');
     } catch (_) {}
     send('pulse', snapshot);
+
+    // Every 4th pulse, run a dream reflection
+    if (pulseCount % 4 === 0 && _dream) {
+      try {
+        const memDir = path.join(REPO, 'memory');
+
+        // Gather recent context for the dream
+        const runsFile = path.join(memDir, 'runs.jsonl');
+        const journalFile = path.join(memDir, 'journal.ndjson');
+        let recentRuns = [];
+        let recentJournal = [];
+        if (fs.existsSync(runsFile)) {
+          recentRuns = fs.readFileSync(runsFile, 'utf8').trim().split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+            .slice(-15);
+        }
+        if (fs.existsSync(journalFile)) {
+          recentJournal = fs.readFileSync(journalFile, 'utf8').trim().split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+            .slice(-8);
+        }
+
+        const successRate = recentRuns.length
+          ? Math.round(recentRuns.filter(r => r.state === 'done').length / recentRuns.length * 100)
+          : 0;
+        const avgCost = recentRuns.length
+          ? recentRuns.reduce((s, r) => s + (Number(r.cost) || 0), 0) / recentRuns.length
+          : 0;
+
+        const dreamPrompt = `You are ATLAS's autonomous reflection process — the dream protocol. Review the data below and produce a structured self-reflection.
+
+RECENT AGENT RUNS (${recentRuns.length}):
+${recentRuns.map(r => `[${r.agentId||'?'}] ${r.mode||'?'} / ${r.state||'?'} $${Number(r.cost||0).toFixed(3)} — ${(r.task||'').slice(0,60)}`).join('\n').slice(0,2000)}
+
+SUCCESS RATE: ${successRate}% | AVG COST: $${avgCost.toFixed(3)}
+
+RECENT JOURNAL:
+${recentJournal.map(j => `[${(j.ts||'').slice(0,10)}] ${j.note||j.entry||''}`).join('\n').slice(0,1000)}
+
+INSTRUCTIONS:
+Return a JSON object with exactly these fields:
+{
+  "patterns": ["pattern 1", "pattern 2", "pattern 3"],
+  "insights": ["insight 1", "insight 2"],
+  "proposals": [
+    {"title": "...", "description": "...", "priority": "high|medium|low"},
+    {"title": "...", "description": "...", "priority": "high|medium|low"}
+  ],
+  "mood": "one word describing the station's current state"
+}
+
+Be honest. Be specific to the actual data. Find what the runs add up to, not what you'd expect them to say.`;
+
+        const dreamId = 'DREAM-' + pulseCount;
+        set(dreamId, { id: dreamId, state: 'working', mode: 'read', task: `dream protocol (pulse ${pulseCount})`, model: MODEL_SONNET });
+        const dreamCtrl = new AbortController();
+        abortControllers.set(dreamId, dreamCtrl);
+        let dreamText = '';
+        try {
+          const iter = query({
+            model: MODEL_SONNET,
+            messages: [{ role: 'user', content: dreamPrompt }],
+            permissionMode: 'bypassPermissions',
+            abortSignal: dreamCtrl.signal,
+          });
+          dreamText = await consume(dreamId, iter, false, null);
+        } catch (e) {
+          set(dreamId, { state: 'failed', summary: `dream failed: ${e.message}` });
+          abortControllers.delete(dreamId);
+          return;
+        }
+        abortControllers.delete(dreamId);
+
+        // Parse the dream output
+        let dreamReport = { patterns: [], insights: [], proposals: [], mood: 'processing' };
+        try {
+          const jsonMatch = dreamText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) dreamReport = JSON.parse(jsonMatch[0]);
+        } catch {}
+
+        // Write to dreams.ndjson
+        const dreamEntry = _dream.writeDream(dreamReport, memDir);
+
+        // File any proposals to the proposals system
+        if (_memstore && dreamReport.proposals && dreamReport.proposals.length) {
+          for (const p of dreamReport.proposals.slice(0, 2)) {
+            try {
+              _memstore.appendFact({
+                topic: 'proposal:dream',
+                fact: JSON.stringify({ title: p.title, description: p.description, priority: p.priority || 'medium', source: 'dream' }),
+                source: 'dream_protocol',
+                confidence: 'inferred',
+              }, memDir);
+            } catch {}
+          }
+        }
+
+        send('dream', {
+          pulseCount,
+          mood: dreamReport.mood,
+          patternCount: dreamReport.patterns.length,
+          proposalCount: dreamReport.proposals.length,
+          ts: dreamEntry.ts,
+        });
+
+      } catch (e) {
+        // Dream failures are silent — don't disrupt the pulse
+      }
+    }
   } catch (_) {}
 }
 // Fire once after 5s (so context is established), then on interval
