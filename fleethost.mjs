@@ -457,3 +457,30 @@ try {
     send("lifetime", stats);
   }
 } catch (_) {}
+
+// Autonomous pulse — ATLAS checks its own state periodically
+const PULSE_INTERVAL = parseInt(process.env.ATLAS_PULSE_MS || '') || (25 * 60 * 1000);
+function runPulse() {
+  try {
+    const pulsePath = path.join(REPO, 'memory', 'pulse.ndjson');
+    const gitLog = gitC(["log", "--oneline", "-3"]).trim();
+    const gitStatus = gitC(["status", "--short"]).trim();
+    const allA = [...agents.values()];
+    const snapshot = {
+      ts: new Date().toISOString(),
+      git: { log: gitLog, clean: gitStatus === '' },
+      fleet: {
+        total: allA.length,
+        working: allA.filter(a => a.state === 'working').length,
+        done: allA.filter(a => a.state === 'done').length,
+      },
+    };
+    const line = JSON.stringify(snapshot) + '\n';
+    const fs = _require('fs');
+    fs.appendFileSync(pulsePath, line, 'utf8');
+    send('pulse', snapshot);
+  } catch (_) {}
+}
+// Fire once after 5s (so context is established), then on interval
+setTimeout(runPulse, 5000);
+setInterval(runPulse, PULSE_INTERVAL);
