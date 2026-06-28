@@ -247,6 +247,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if(!m)return;
     if(m.type==="agent"){
       if(m.id==="ATLAS"){
+        if(m.partial){
+          agents.set("ATLAS",m);
+          var atlasBubs=document.querySelectorAll('.bub.atlas');
+          var lastBub=atlasBubs.length>0?atlasBubs[atlasBubs.length-1]:null;
+          if(lastBub&&lastBub.dataset.streaming==="1"){
+            var bubtxt=lastBub.querySelector('.bubtxt');
+            if(bubtxt&&m.summary)bubtxt.textContent=m.summary;
+            updateVitals();
+          } else {
+            renderThread();
+          }
+          return;
+        }
         agents.set("ATLAS",m);
         var pend=lastPendingAtlas();
         if(m.state==="working"){
@@ -265,6 +278,18 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         renderThread();
       } else {
         var prev=agents.get(m.id);
+        if(m.partial){
+          agents.set(m.id,m);
+          var row=document.querySelector('[data-id="'+m.id+'"]');
+          if(row){
+            var txt=row.querySelector('.atask');
+            if(txt&&m.summary)txt.textContent=m.summary.slice(0,100)+(m.summary.length>100?'…':'');
+            updateVitals();
+          } else {
+            renderBrood();
+          }
+          return;
+        }
         // update per-agent tool history
         if(m.lastTool&&(!prev||prev.lastTool!==m.lastTool)){
           var hist=agentTools.get(m.id)||[];
@@ -338,13 +363,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         var toolLabel=t.lastTool?(t.lastTool+(t.lastToolArg?' ← '+t.lastToolArg:'')):null;
         var chip=toolLabel?'<span class="toolchip">◈ '+esc(toolLabel)+'</span>':'';
         var label=toolLabel?'':esc(t.activity||"thinking");
-        inner='<span class="pend">'+label+chip+'</span>';
+        inner='<span class="pend"><span class="bubtxt">'+label+'</span>'+chip+'</span>';
       } else {
         inner='<span class="atlastext">'+esc(t.text||"")+'</span>'
           +(t.cost!=null&&t.cost>0?'<span class="bubcost">$'+Number(t.cost).toFixed(2)+'</span>':'');
       }
       if(t.needsTypewrite){twEntry=t;t.needsTypewrite=false;}
-      return '<div class="bub '+t.role+(t.pending?' pending':'')+'"><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
+      return '<div class="bub '+t.role+(t.pending?' pending':'')+'"'+(t.role==="atlas"&&t.pending?' data-streaming="1"':'')+'><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
     }).join(''):'<div class="empty">Tell ATLAS what you want. It decides what to do, spawns and manages subagents to do it, and reports back. You watch the fleet work on the right — you never have to command them yourself.</div>';
     th.innerHTML=html;
     if(twEntry){
