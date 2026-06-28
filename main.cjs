@@ -111,6 +111,21 @@ ipcMain.on("read-memory", (_e) => {
   }
 });
 
+ipcMain.on("export-conversation", (_e, p) => {
+  try {
+    const convDir = path.join(__dirname, "memory", "conversations");
+    if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const title = (p && p.title) ? p.title.replace(/[^a-z0-9-_ ]/gi, '').trim().slice(0, 40) : 'conversation';
+    const filename = `${ts}-${title.replace(/\s+/g, '-')}.md`;
+    const content = p && p.content ? p.content : '';
+    fs.writeFileSync(path.join(convDir, filename), content, 'utf8');
+    if (win) win.webContents.send("fleet", { type: "conv_exported", filename, path: path.join(convDir, filename) });
+  } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "error", m: "export failed: " + e.message });
+  }
+});
+
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
   "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
