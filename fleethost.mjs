@@ -12,11 +12,19 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync } from "child_process";
 import { mkdirSync } from "fs";
 import path from "path";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 const MODEL = process.env.ATLAS_MODEL || "claude-sonnet-4-6"; // dispatch Sonnet by default
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
+
+// Memory modules — loaded at startup; if absent or broken, dispatch falls through cleanly.
+// A memory failure must never crash or stall the fleet.
+let _memcontext = null, _memstore = null;
+try { _memcontext = _require('./memcontext.cjs'); } catch { _memcontext = null; }
+try { _memstore   = _require('./memstore.cjs');   } catch { _memstore   = null; }
 
 const agents = new Map();
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
@@ -54,13 +62,16 @@ async function runAgent(id, task, opts) {
   const build = opts.mode === "build";
   let cwd = opts.cwd || REPO, branch = null;
   set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", turns: 0 });
+  // Enrich task with memory context (journal + recent facts + runs).
+  // Falls back to bare task silently on any error — memcontext is never required.
+  const enrichedTask = _memcontext ? _memcontext.inject(task) : task;
   if (build) {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; }
   }
   try {
     for await (const m of query({
-      prompt: build ? (task + BUILD_NOTE) : task,
+      prompt: build ? (enrichedTask + BUILD_NOTE) : enrichedTask,
       options: {
         cwd,
         model: MODEL,
@@ -85,6 +96,20 @@ async function runAgent(id, task, opts) {
         const done = m.subtype === "success";
         const extra = (build && branch) ? branchStat(branch) : {};
         set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 220), ...extra });
+        // Record this run in the structured memory store.
+        // Uses `task` (original), NOT `enrichedTask` — avoids circular context in the store.
+        if (_memstore) try {
+          _memstore.appendRun({
+            agentId: id,
+            task,
+            mode:    build ? "build" : "read",
+            state:   done ? "done" : "failed",
+            cost:    m.total_cost_usd ?? null,
+            summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 500),
+            branch:  branch ?? null,
+            transcriptPath: null,
+          });
+        } catch { /* never crash fleet on memory write failure */ }
       }
     }
   } catch (e) {
