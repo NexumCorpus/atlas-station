@@ -278,6 +278,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .msg-copy:hover{color:var(--fg)}
 .msg.match{outline:1px solid rgba(157,107,255,.5);background:#100d1e!important}
 .msg.match-active{outline:2px solid var(--violet)!important}
+#streaming-msg{background:rgba(157,107,255,.03);border-left:2px solid rgba(157,107,255,.3);margin:0 0 2px}
+#stream-text::after{content:'▋';animation:blink .7s step-end infinite;color:var(--accent);font-size:.85em;vertical-align:middle}
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
@@ -566,6 +568,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var agentTools=new Map(); // id -> string[] max 5
   var HIST={commits:[],runs:[]};
   var SEL=null;
+  var atlasStreaming=false;
+  var atlasStreamText='';
   var fresh=new Set();
   var particled=new Set();
   var seenAgentIds=new Set();
@@ -641,7 +645,15 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if(m.id==="ATLAS"){
         if(m.partial){
           agents.set("ATLAS",m);
-          setTyping(true);
+          var _partialText=m.reply||m.summary||'';
+          if(_partialText){
+            atlasStreamText=_partialText;
+            atlasStreaming=true;
+            renderStreamingMsg(_partialText);
+            setTyping(false); // hide dots while text is rendering live
+          } else {
+            setTyping(true);
+          }
           updateVitals();
           return;
         }
@@ -652,6 +664,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           setTyping(true);
           $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"){
+          clearStreamingMsg(); // remove live stream element before final render
           var txt=m.reply||m.summary||"(no reply)";
           if(pend){
             pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;
@@ -981,6 +994,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   function renderThread() {
+    if (atlasStreaming) return; // don't wipe the live stream in progress
     var el = $('thread');
     if (!el) return;
     var wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
@@ -1055,6 +1069,34 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if (t) t.style.display = on ? 'flex' : 'none';
   }
 
+  // ── streaming message (ATLAS reply building live) ────
+  function renderStreamingMsg(text) {
+    var el = document.getElementById('streaming-msg');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'streaming-msg';
+      el.className = 'msg atlas';
+      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div class="msg-text" id="stream-text"></div></div>';
+      var threadEl = document.getElementById('thread');
+      if (threadEl) threadEl.appendChild(el);
+      var sts = document.getElementById('stream-ts');
+      if (sts) sts.textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    }
+    var textEl = document.getElementById('stream-text');
+    if (textEl) textEl.innerHTML = renderMd(text || '');
+    var threadEl2 = document.getElementById('thread');
+    if (threadEl2) {
+      var atBottom = threadEl2.scrollHeight - threadEl2.scrollTop - threadEl2.clientHeight < 120;
+      if (atBottom) threadEl2.scrollTop = threadEl2.scrollHeight;
+    }
+  }
+
+  function clearStreamingMsg() {
+    var el = document.getElementById('streaming-msg');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    atlasStreaming = false;
+    atlasStreamText = '';
+  }
 
   // ── render brood ────────────────────────────────────
   function renderBrood(){
