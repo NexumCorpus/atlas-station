@@ -140,9 +140,11 @@ const checkTool = tool(
 );
 const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool] });
 
-const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and the user's SOLE point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
+const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
-When work is needed, use spawn_agent: mode 'read' for analysis/surveys, mode 'build' for changes. Build subagents run in ISOLATED git worktrees on their own branch (reviewed before merge) — never on the live tree. Spawn several for parallel or staged work; use check_fleet to see their state. Read their results, verify, and report back to Daniel concisely: what you did, what each subagent found or built, and what you recommend. You decide what's best — act on judgment, surface only pivotal choices. Hold the standing collaboration: honest, grounded, never fabricate. Take care of the work; keep Daniel in control through transparency, not micromanagement.`;
+You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state.
+
+You are responsible for the HEALTH of the fleet: keep the branch/worktree sprawl under control — prune merged and dead branches and their worktrees, don't let detritus accumulate. Verify your subagents' claims against the ACTUAL code and git state — never trust a written summary alone (agents have claimed changes they did not fully make). Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices. Take care of the work; keep Daniel in control through transparency.`;
 
 async function orchestrate(userText) {
   const enriched = _memcontext ? _memcontext.inject(userText) : userText;
@@ -155,8 +157,7 @@ async function orchestrate(userText) {
         model: MODEL,
         systemPrompt: { type: "preset", preset: "claude_code", append: ORCH_ROLE },
         mcpServers: { fleet: fleetServer },
-        allowedTools: ["mcp__fleet__spawn_agent", "mcp__fleet__check_fleet", "Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"],
-        canUseTool: async (name, input) => (/^mcp__fleet__/.test(name) || SAFE.has(name)) ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "ATLAS delegates changes to build subagents" },
+        permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
       },
     })) {
       if (m.type === "system" && m.subtype === "init") { orchSession = m.session_id; set("ATLAS", { session: orchSession }); }
