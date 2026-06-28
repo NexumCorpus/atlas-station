@@ -538,7 +538,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, verify_build`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -582,9 +582,11 @@ const capabilityManifestTool = tool(
       "set_goal", "list_goals", "resolve_goal",
       "self_assess", "defer_task", "notify_self", "memory_health",
       "capability_manifest", "trigger_selfloop",
+      "session_stats", "export_conversation",
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
-      "relate_facts", "fact_graph", "load_dreams", "resonance_stats", "verify_build"
+      "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
+      "signal_propagate", "generate_tool", "verify_build"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -1011,6 +1013,82 @@ const resonanceStatsTool = tool(
   }
 );
 
+const signalPropagateTool = tool(
+  "signal_propagate",
+  "Propagate a fact's epistemic signal through the memory graph. Facts connected via 'supports' edges have their recall priority boosted; those connected via 'contradicts' edges are flagged for review. Call after recording an important insight to update related knowledge.",
+  {
+    factKey: z.string().describe("The fact key whose signal to propagate"),
+  },
+  async (args) => {
+    if (!_memgraph) return { content: [{ type: 'text', text: 'memgraph not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const result = _memgraph.propagateSignal(args.factKey, memDir);
+
+      // Record flagged facts as review targets
+      if (_memstore && result.flagged.length) {
+        _memstore.appendFact({
+          topic: `review_flag:${args.factKey}`,
+          fact: `Signal propagation flagged ${result.flagged.length} contradicted facts for review: ${result.flagged.join(', ')}`,
+          source: 'signal_propagate',
+          confidence: 'inferred',
+        }, memDir);
+      }
+
+      const lines = [];
+      if (result.reinforced.length) lines.push(`Reinforced (supports): ${result.reinforced.join(', ')}`);
+      if (result.flagged.length) lines.push(`Flagged for review (contradicts): ${result.flagged.join(', ')}`);
+      if (!lines.length) lines.push('No connected facts found — graph may not have edges from this key yet.');
+      return { content: [{ type: 'text', text: `Signal propagated from: ${args.factKey}\n${lines.join('\n')}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `signal_propagate error: ${e.message}` }] };
+    }
+  }
+);
+
+const generateToolTool = tool(
+  "generate_tool",
+  "Meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs. Describe what you want the tool to do and ATLAS will implement it. The tool is written, tested syntactically, and registered in the fleet server. After the build completes, run verify_build() to confirm the addition. Use to extend your own capabilities from within a conversation.",
+  {
+    toolName: z.string().describe("Snake_case name for the new tool (becomes the tool() name string)"),
+    description: z.string().describe("What the tool does — this becomes the tool's description string visible to ATLAS"),
+    inputSchema: z.string().describe("JSON description of input parameters: e.g. 'query: string (required), maxResults: number (optional, default 5)'"),
+    behavior: z.string().describe("Detailed description of what the tool handler should do: what it reads, computes, calls, and returns"),
+    rationale: z.string().optional().describe("Why you want this tool — helps the build agent understand context"),
+  },
+  async (args) => {
+    const taskPrompt = `You are adding a new fleet tool to ATLAS Station at E:\\atlas-station. Read fleethost.mjs in full before editing.
+
+## New Tool Spec
+
+Tool name: ${args.toolName}
+Description: ${args.description}
+Input schema: ${args.inputSchema}
+Behavior: ${args.behavior}
+${args.rationale ? `Rationale: ${args.rationale}` : ''}
+
+## Implementation Instructions
+
+1. Define the tool using the existing \`tool(name, description, schema, handler)\` pattern used by all other fleet tools in fleethost.mjs
+2. Use zod (already imported as \`z\`) for input schema
+3. The handler should be \`async (args) => { ... }\` returning \`{ content: [{ type: 'text', text: '...' }] }\`
+4. Add the tool constant before the \`const fleetServer = createSdkMcpServer\` line
+5. Add it to the fleetServer tools array
+6. Add it to the ORCH_ROLE tool index (compact one-liner)
+7. Update self_assess and capability_manifest tool lists
+8. Update SELF_STATE.md pulse to increment the tool count by 1
+9. Update memcontext.cjs STATION_BRIEF tool count accordingly
+
+Follow ALL patterns exactly as done in the 30+ existing tools. Keep the handler defensive (try/catch, soft errors).
+
+Commit: feat(harness): add ${args.toolName} tool — [brief description]
+Report: commit hash and a 1-sentence description of what was implemented.`;
+
+    runSubagent(taskPrompt, "build", 20 * 60 * 1000, null).catch(() => {});
+    return { content: [{ type: 'text', text: `generate_tool: spawned build agent to implement '${args.toolName}'. Monitor with check_fleet, then run verify_build() after it completes.` }] };
+  }
+);
+
 const verifyBuildTool = tool(
   "verify_build",
   "Verify the current working tree after a merge: syntax-check recently modified JS/CJS/MJS files using node --check, report any errors, and store the verdict as a fact. Call this after every merge to close the build loop autonomously.",
@@ -1085,7 +1163,7 @@ const verifyBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, verifyBuildTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1122,6 +1200,8 @@ relate_facts(fromKey,relation,toKey) — typed edge between facts (supports/cont
 fact_graph(key,maxDepth?) — graph neighborhood of a fact
 load_dreams(maxN?) — recent autonomous dream reports
 resonance_stats(task) — preview institutional memory for a task before spawning
+signal_propagate(factKey) — propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
+generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 
 **Fleet health is yours to own:**
@@ -1431,8 +1511,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (31 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, verify_build`,
+        `## Tools (33 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,

@@ -81,4 +81,18 @@ function graphStats(memDir) {
   return { totalEdges: edges.length, relationCounts: counts, staleCount: stale.size };
 }
 
-module.exports = { addEdge, edgesFrom, edgesTo, traverse, loadStale, graphStats, RELATIONS };
+// Propagate a new fact's signal through the graph.
+// 'supports' edges: returns keys that now have reinforced support
+// 'contradicts' edges: returns keys flagged for review
+// 'elaborates' and 'related_to' are neutral — returned in neither list
+// Returns { reinforced: string[], flagged: string[] }
+function propagateSignal(fromKey, memDir) {
+  const edges = loadEdges(memDir);
+  const stale = loadStale(memDir);
+  const outbound = edges.filter(e => e.fromKey === fromKey && !stale.has(e.toKey));
+  const reinforced = outbound.filter(e => e.relation === 'supports').map(e => e.toKey);
+  const flagged = outbound.filter(e => e.relation === 'contradicts').map(e => e.toKey);
+  return { reinforced, flagged };
+}
+
+module.exports = { addEdge, edgesFrom, edgesTo, traverse, loadStale, graphStats, propagateSignal, RELATIONS };
