@@ -63,6 +63,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .rx:hover{color:var(--mag);border-color:var(--mag);box-shadow:0 0 10px -4px var(--mag)}
 .rtask{padding:9px 14px 4px;color:#8b90ab;font-size:11px;font-style:italic;border-bottom:1px solid #141225}
 .rbody{padding:12px 14px 18px;color:#d8deec;font-size:12.5px;line-height:1.58;white-space:pre-wrap;word-break:break-word}
+.rask{padding:7px 14px;color:var(--mag);font-size:10px;letter-spacing:.1em;border-bottom:1px solid #141225;text-shadow:0 0 8px rgba(255,45,149,.5)}
+.rfoot{display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid var(--line);background:#0a0911;position:sticky;bottom:0}
+.rfoot .ra{color:var(--cyan);text-shadow:0 0 8px var(--cyan)}
+.rfoot input{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:12.5px;outline:none}
 .bar{display:flex;align-items:center;gap:9px;padding:10px 16px;border-top:1px solid var(--line);background:#09080e;flex:none;z-index:2}
 .bar input{background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:13px;outline:none}
 #cwd{width:96px;color:#7e7c9a;border-right:1px solid var(--line);padding-right:9px}
@@ -163,16 +167,21 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   function renderReply(){
     var box=$('reply'); if(!SEL){ box.className=""; box.innerHTML=""; return; }
-    var rid="",state="",cost="",task="",body="",col="#d8deec",branch="";
+    var rid="",state="",cost="",task="",body="",col="#d8deec",branch="",canReply=false;
     if(SEL.kind==="agent"){ var a=agents.get(SEL.id); if(!a){box.className="";return;} rid=a.id; state=a.state; col=COL[a.state]||"#d8deec";
       cost=(a.cost!=null?("$"+Number(a.cost).toFixed(2)):""); task=a.task||""; branch=a.branch||"";
-      body=a.reply||a.summary||(a.state==="working"?"◌ working — "+(a.lastTool||"thinking")+" …":"(no reply captured)"); }
+      body=a.reply||a.summary||(a.state==="working"?"◌ working — "+(a.lastTool||"thinking")+" …":"(no reply captured)"); canReply=true; }
     else if(SEL.kind==="run"){ var r=HIST.runs.slice().reverse()[SEL.id]; if(!r){box.className="";return;} rid=r.agentId||"run"; state=r.state; col=COL[r.state]||"#d8deec";
       cost=(r.cost!=null?("$"+Number(r.cost).toFixed(2)):""); task=r.task||""; branch=r.branch||""; body=r.summary||"(only a summary was recorded)"; }
+    var asking = state==="done" && /\?\s*$/.test((body||"").trim());
     box.className="open";
     box.innerHTML='<div class="rhd"><span class="rid">'+esc(rid)+'</span><span style="color:'+col+';font-size:10px;text-transform:uppercase;text-shadow:0 0 8px '+col+'">'+esc(state)+'</span>'+(branch?'<span class="dim" style="font-size:10px">⟦'+esc(branch)+'⟧</span>':'')+'<span class="dim" style="font-size:10px">'+esc(cost)+'</span><span class="rx" id="rx">close</span></div>'
-      +(task?'<div class="rtask">▸ '+esc(task)+'</div>':'')+'<div class="rbody">'+esc(body)+'</div>';
+      +(asking?'<div class="rask">⟲ this agent is waiting on your reply — answer below</div>':'')
+      +(task?'<div class="rtask">▸ '+esc(task)+'</div>':'')
+      +'<div class="rbody">'+esc(body)+'</div>'
+      +(canReply?'<div class="rfoot"><span class="ra">↳</span><input id="rin" placeholder="reply to '+esc(rid)+' — continue the conversation…" autocomplete="off"/><span class="hint">enter</span></div>':'');
     var rx=$('rx'); if(rx) rx.addEventListener('click',function(e){ e.stopPropagation(); SEL=null; render(); renderLedger(); renderReply(); });
+    var rin=$('rin'); if(rin){ rin.addEventListener('keydown',function(e){ if(e.key==="Enter"&&rin.value.trim()){ var t=rin.value.trim(); window.atlas.replyAgent(SEL.id, t); rin.value=""; var rb=box.querySelector('.rbody'); if(rb) rb.textContent="◌ continuing… (you said: "+t+")"; } }); if(asking) rin.focus(); }
   }
 
   function onClick(e){ var row=e.target.closest('[data-k]'); if(!row) return; var k=row.getAttribute('data-k'); select(k, k==="run"?Number(row.getAttribute('data-id')):row.getAttribute('data-id')); }
