@@ -8,6 +8,7 @@
   --bg:#08070b;--panel:#0b0a11;--line:#1c1830;
   --cyan:#22e1ff;--mag:#ff2d95;--ember:#ff6a3d;--acid:#49ff9e;--amber:#ffc24b;--violet:#9d6bff;
   --ink:#cfd6e6;--dim:#5a5870;--voice:'Iowan Old Style',Palatino,Georgia,serif;
+  --accent:var(--violet);--fg:var(--ink);--border:var(--line);
 }
 @keyframes scan{0%{background-position:0 0}100%{background-position:0 -240px}}
 @keyframes drift{0%{transform:translateY(0)}100%{transform:translateY(-12px)}}
@@ -49,7 +50,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .convhd{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);flex:none}
 .chrom{color:#eaf2ff;letter-spacing:.16em;font-size:12px;text-shadow:0 0 10px rgba(157,107,255,.5)}
 .sub{font-size:10px;letter-spacing:.12em;color:#6c6a86;text-transform:uppercase}
-#thread{flex:1;min-height:0;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+#thread{flex:1;overflow-y:auto;padding:12px 0;display:flex;flex-direction:column;gap:2px;scroll-behavior:smooth}
 .bub{max-width:84%;padding:10px 15px;border:1px solid var(--line);font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;animation:bubin .25s ease-out}
 .bub .who{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;margin-bottom:4px;opacity:.75}
 .bub.you{align-self:flex-end;color:#e6f8ff;border-color:#214a5c;background:linear-gradient(180deg,rgba(34,225,255,.07),transparent)}
@@ -226,6 +227,46 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #srchcount{font-size:9px;color:var(--dim);letter-spacing:.06em;white-space:nowrap}
 .bub.match{outline:1px solid rgba(157,107,255,.5);background:#100d1e!important}
 .bub.match-active{outline:2px solid var(--violet)!important}
+
+/* ── New terminal-style message thread ────────────── */
+.msg{padding:8px 14px;line-height:1.55;position:relative;display:flex;gap:10px;align-items:flex-start}
+.msg:hover{background:rgba(255,255,255,.025)}
+.msg-avatar{width:18px;height:18px;border-radius:50%;flex-shrink:0;margin-top:2px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700;letter-spacing:0}
+.msg.atlas .msg-avatar{background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35)}
+.msg.user .msg-avatar{background:rgba(180,220,255,.12);color:#a8c8e8;border:1px solid rgba(180,220,255,.2)}
+.msg.system .msg-avatar{background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--border)}
+.msg-body{flex:1;min-width:0}
+.msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.msg-role{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.msg.atlas .msg-role{color:var(--accent)}
+.msg.user .msg-role{color:#7ab8e8}
+.msg.system .msg-role{color:var(--dim)}
+.msg-time{font-size:9px;color:var(--dim);opacity:.6}
+.msg-text{font-size:13px;line-height:1.6;word-break:break-word}
+.msg.system .msg-text{font-size:11px;color:var(--dim);font-style:italic}
+.msg-text pre{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:4px;padding:8px 10px;overflow-x:auto;margin:6px 0;font-size:11px}
+.msg-text code{background:rgba(255,255,255,.07);padding:1px 4px;border-radius:3px;font-size:.9em}
+.msg-text strong{color:var(--fg);font-weight:600}
+.msg-copy{position:absolute;right:10px;top:8px;font-size:10px;color:var(--dim);cursor:pointer;opacity:0;transition:opacity .15s;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.05);border:1px solid var(--border)}
+.msg:hover .msg-copy{opacity:1}
+.msg-copy:hover{color:var(--fg)}
+/* Search highlight on new .msg structure */
+.msg.match{outline:1px solid rgba(157,107,255,.5);background:#100d1e!important}
+.msg.match-active{outline:2px solid var(--violet)!important}
+/* Typing indicator */
+#typing{padding:8px 14px;display:none;align-items:center;gap:10px}
+#typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.typing-dots{display:flex;gap:4px}
+.typing-dots span{width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.4;animation:tdot 1.2s ease-in-out infinite}
+.typing-dots span:nth-child(2){animation-delay:.2s}
+.typing-dots span:nth-child(3){animation-delay:.4s}
+@keyframes tdot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+/* Jump-to-bottom button */
+#jumptobottom{position:absolute;bottom:80px;right:20px;background:var(--accent);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:none;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4);z-index:10;transition:opacity .2s}
+#jumptobottom:hover{opacity:.85}
+/* Fade-in animation for new messages */
+@keyframes msgfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.msg.new-msg{animation:msgfade .18s ease-out forwards}
 </style>
 </head>
 <body>
@@ -295,6 +336,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
       </div>
       <div id="thread"></div>
+      <div id="typing"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
+      <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">↓</button>
     </div>
     <div id="fleetcol" class="boot-seq">
       <div id="notiftray" style="display:none"></div>
@@ -535,30 +578,25 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if(m.id==="ATLAS"){
         if(m.partial){
           agents.set("ATLAS",m);
-          var atlasBubs=document.querySelectorAll('.bub.atlas');
-          var lastBub=atlasBubs.length>0?atlasBubs[atlasBubs.length-1]:null;
-          if(lastBub&&lastBub.dataset.streaming==="1"){
-            var bubtxt=lastBub.querySelector('.bubtxt');
-            if(bubtxt&&m.summary)bubtxt.textContent=m.summary;
-            updateVitals();
-          } else {
-            renderThread();
-          }
+          setTyping(true);
+          updateVitals();
           return;
         }
         agents.set("ATLAS",m);
         var pend=lastPendingAtlas();
         if(m.state==="working"){
           if(pend){pend.lastTool=m.lastTool||null;pend.lastToolArg=m.lastToolArg||null;pend.activity=m.summary||null;}
+          setTyping(true);
           $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"){
           var txt=m.reply||m.summary||"(no reply)";
           if(pend){
             pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;
-            pend.needsTypewrite=true;
+            pend.ts=pend.ts||Date.now();
           } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
-            thread.push({role:"atlas",text:txt,cost:m.cost});
+            thread.push({role:"atlas",text:txt,cost:m.cost,ts:Date.now()});
           }
+          setTyping(false);
           $('status').textContent="overseer · idle";
         }
         renderThread();
@@ -621,7 +659,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
             if(a.id==="ATLAS"&&(a.reply||a.summary)){
               var _rt=a.reply||a.summary;
               if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===_rt))
-                thread.push({role:"atlas",text:_rt,cost:a.cost,restored:true});
+                thread.push({role:"atlas",text:_rt,cost:a.cost,restored:true,ts:Date.now()});
             }
           }
         });
@@ -635,7 +673,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if(m.wtCount>0)health.push(m.wtCount+' live worktree'+(m.wtCount>1?'s':''));
       if(m.branchCount>0)health.push(m.branchCount+' fleet branch'+(m.branchCount>1?'es':''));
       if(health.length===0)health.push('fleet clean');
-      thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false});
+      thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false,ts:Date.now()});
       renderThread();
     } else if(m.type==="lifetime"){
       if(m.totalRuns>0){
@@ -646,7 +684,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         }
       }
     } else if(m.type==="sessionctx"&&m.text){
-      thread.push({role:'system',text:m.text,error:false});
+      thread.push({role:'system',text:m.text,error:false,ts:Date.now()});
       renderThread();
     } else if(m.type==="proposal"){
       var pl = document.getElementById('proposallab');
@@ -685,12 +723,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       var el = document.querySelector('[data-gid="' + m.id + '"]');
       if (el) el.classList.add('gdone');
     } else if(m.type==="startup_tasks"&&m.count){
-      thread.push({role:'system',text:'⟳ running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session',error:false});
+      thread.push({role:'system',text:'⟳ running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session',error:false,ts:Date.now()});
       renderThread();
     } else if(m.type==="deferred"){
       // Show brief confirmation in vitals or just ignore (low noise)
     } else if(m.type==="error"){
-      thread.push({role:"system",text:m.m||"fleet error",error:true});
+      thread.push({role:"system",text:m.m||"fleet error",error:true,ts:Date.now()});
       renderThread();
     } else if(m.type==="notification"){
       var tray = document.getElementById('notiftray');
@@ -790,7 +828,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       });
       window.atlas.exportConversation({ title: m.title || '', content: lines2.join('\n') });
     } else if(m.type==="conv_exported"){
-      thread.push({ role: 'system', text: 'conversation exported: ' + esc(m.filename), error: false });
+      thread.push({ role: 'system', text: 'conversation exported: ' + esc(m.filename), error: false, ts: Date.now() });
       renderThread();
     } else if(m.type==="docs_list"){
       docsList = m.files || [];
@@ -823,7 +861,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     document.getElementById('srchinput').value = '';
   }
   function clearSearch() {
-    document.querySelectorAll('.bub.match,.bub.match-active').forEach(function(el){
+    document.querySelectorAll('.bub.match,.bub.match-active,.msg.match,.msg.match-active').forEach(function(el){
       el.classList.remove('match','match-active');
     });
     srchMatches = []; srchIdx = 0;
@@ -834,7 +872,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     clearSearch();
     if (!q) return;
     q = q.toLowerCase();
-    var bubbles = document.querySelectorAll('.bub');
+    var bubbles = document.querySelectorAll('.msg');
     bubbles.forEach(function(b) {
       var txt = (b.textContent || '').toLowerCase();
       if (txt.includes(q)) { b.classList.add('match'); srchMatches.push(b); }
@@ -858,41 +896,85 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   // ── render thread ───────────────────────────────────
-  function renderThread(){
-    var th=$('thread');
-    var twEntry=null;
-    var html=thread.length?thread.map(function(t){
-      if(t.role==="system"){
-        var sc = t.error ? "system" : "info";
-        return '<div class="bub '+sc+'"><div class="who">'+(t.error?"system":"station")+'</div>'+esc(t.text||"")+'</div>';
-      }
-      var who=t.role==="you"?"you":"ATLAS";
-      var inner;
-      if(t.role==="atlas"&&t.pending){
-        var toolLabel=t.lastTool?(t.lastTool+(t.lastToolArg?' ← '+t.lastToolArg:'')):null;
-        var chip=toolLabel?'<span class="toolchip">◈ '+esc(toolLabel)+'</span>':'';
-        var label=toolLabel?'':esc(t.activity||"thinking");
-        inner='<span class="pend"><span class="bubtxt">'+label+'</span>'+chip+'</span>';
-      } else {
-        inner='<span class="atlastext">'+renderMd(t.text||"")+'</span>'
-          +(t.cost!=null&&t.cost>0?'<span class="bubcost">$'+Number(t.cost).toFixed(2)+'</span>':'');
-      }
-      if(t.needsTypewrite){twEntry=t;t.needsTypewrite=false;}
-      return '<div class="bub '+t.role+(t.pending?' pending':'')+'"'+(t.role==="atlas"&&t.pending?' data-streaming="1"':'')+'><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
-    }).join(''):'<div class="empty"><span style="color:var(--violet);font-size:11px;letter-spacing:.08em">ATLAS online</span><br><span style="color:var(--dim);font-size:10.5px;line-height:1.7">direct the fleet · watch agents work<br>↓ type below to begin</span></div>';
-    th.innerHTML=html;
-    try{localStorage.setItem('atlas_thread',JSON.stringify(thread.filter(function(t){return t.role!=="atlas"||!t.pending;}).slice(-150).map(function(t){return {role:t.role,text:t.text||"",cost:t.cost,error:!!t.error};})));}catch(e){}
-    if(twEntry){
-      var bubbles=th.querySelectorAll('.bub.atlas:not(.pending)');
-      if(bubbles.length){
-        var span=bubbles[bubbles.length-1].querySelector('.atlastext');
-        if(span)typewrite(span,twEntry.text||"");
-      }
+  function formatTs(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }
+
+  function renderThread() {
+    var el = $('thread');
+    if (!el) return;
+    var wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    // Exclude pending atlas messages — #typing indicator handles that state
+    var visible = thread.filter(function(msg) { return !msg.pending; });
+    if (visible.length === 0) {
+      el.innerHTML = '<div class="empty"><span style="color:var(--violet);font-size:11px;letter-spacing:.08em">ATLAS online</span><br><span style="color:var(--dim);font-size:10.5px;line-height:1.7">direct the fleet · watch agents work<br>↓ type below to begin</span></div>';
+    } else {
+      el.innerHTML = visible.map(function(msg, i) {
+        var isUser = msg.role === 'user' || msg.role === 'you';
+        var cls = msg.role === 'atlas' ? 'atlas' : isUser ? 'user' : 'system';
+        var avatar = msg.role === 'atlas' ? 'A' : isUser ? 'D' : '·';
+        var roleLabel = msg.role === 'atlas' ? 'ATLAS' : isUser ? 'Daniel' : 'system';
+        var isNew = (i === visible.length - 1);
+        var tsStr = formatTs(msg.ts);
+        var costHtml = (msg.role === 'atlas' && msg.cost != null && msg.cost > 0)
+          ? '<span style="font-size:9px;color:var(--dim);margin-left:auto;opacity:.5">$' + Number(msg.cost).toFixed(2) + '</span>' : '';
+        return '<div class="msg ' + cls + (isNew ? ' new-msg' : '') + '">' +
+          '<div class="msg-avatar">' + avatar + '</div>' +
+          '<div class="msg-body">' +
+            '<div class="msg-meta"><span class="msg-role">' + roleLabel + '</span>' +
+            (tsStr ? '<span class="msg-time">' + esc(tsStr) + '</span>' : '') +
+            (msg.restored ? '<span class="msg-time">earlier</span>' : '') +
+            costHtml +
+            '</div>' +
+            '<div class="msg-text">' + renderMd(msg.text || '') + '</div>' +
+          '</div>' +
+          '<span class="msg-copy" onclick="copyMsg(' + i + ')">copy</span>' +
+        '</div>';
+      }).join('');
     }
-    th.scrollTop=th.scrollHeight;
+    // Persist thread (excluding pending)
+    try {
+      localStorage.setItem('atlas_thread', JSON.stringify(
+        thread.filter(function(t) { return t.role !== 'atlas' || !t.pending; })
+          .slice(-150)
+          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts}; })
+      ));
+    } catch(e) {}
+    // Show/hide typing indicator based on pending atlas state
+    var hasPending = thread.some(function(msg) { return msg.pending; });
+    setTyping(hasPending);
+    if (wasAtBottom) scrollThread();
+    updateJumpBtn();
     // Re-apply search highlights after re-render
     var si = document.getElementById('srchinput');
     if (si && si.value) runSearch(si.value);
+  }
+
+  function scrollThread() {
+    var el = $('thread');
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  function updateJumpBtn() {
+    var el = $('thread');
+    var btn = $('jumptobottom');
+    if (!el || !btn) return;
+    var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    btn.style.display = atBottom ? 'none' : 'flex';
+  }
+
+  function copyMsg(idx) {
+    var visible = thread.filter(function(msg) { return !msg.pending; });
+    var msg = visible[idx];
+    if (!msg) return;
+    try { navigator.clipboard.writeText(msg.text || ''); } catch(e) {}
+  }
+
+  function setTyping(on) {
+    var t = $('typing');
+    if (t) t.style.display = on ? 'flex' : 'none';
   }
 
   // ── agent row builder ───────────────────────────────
@@ -1177,8 +1259,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   function say(text){
-    thread.push({role:"you",text:text});
-    thread.push({role:"atlas",text:"",pending:true,activity:"thinking",lastTool:null});
+    thread.push({role:"user",text:text,ts:Date.now()});
+    thread.push({role:"atlas",text:"",pending:true,activity:"thinking",lastTool:null,ts:Date.now()});
     window.atlas.say(text);
     renderThread();
   }
@@ -1345,7 +1427,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (dispatchMode) {
         var mode = agentmode ? agentmode.value : 'read';
         window.atlas.dispatch(text, null, mode);
-        thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + text.slice(0, 60), error: false });
+        thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + text.slice(0, 60), error: false, ts: Date.now() });
         renderThread();
       } else {
         say(text);
@@ -1422,6 +1504,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   renderDocsList();
   window.atlas.listDocs();
   window.atlas.readRuns();
+  // Scroll listener for jump-to-bottom button
+  var _threadEl = document.getElementById('thread');
+  if (_threadEl) _threadEl.addEventListener('scroll', updateJumpBtn);
+  // Expose inline-onclick helpers to global scope
+  window.scrollThread = scrollThread;
+  window.copyMsg = copyMsg;
 
   // ── search events ───────────────────────────────────
   var srchinput = document.getElementById('srchinput');
