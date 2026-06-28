@@ -37,7 +37,7 @@ body.booting::before{opacity:0;transition:opacity 0.8s ease 0.2s}
 body.booted::before{opacity:.5;transition:opacity 0.6s ease}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:#9aa0b8;font-family:'Berkeley Mono',ui-monospace,Consolas,monospace;font-size:14px;overflow:hidden}
-body{display:flex;flex-direction:column;position:relative}
+body{display:flex;flex-direction:column;position:relative;background-image:radial-gradient(circle at 20% 80%, rgba(157,107,255,.03) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(100,180,255,.02) 0%, transparent 50%)}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);animation:scan 9s linear infinite;opacity:.5}
 body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;background:radial-gradient(60% 40% at 30% 0%,rgba(34,225,255,.06),transparent 70%),radial-gradient(50% 40% at 90% 100%,rgba(255,45,149,.05),transparent 70%);animation:drift 11s ease-in-out infinite alternate}
 .dim{color:var(--dim)}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -263,10 +263,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .msg-copy{position:absolute;right:10px;top:8px;font-size:10px;color:var(--dim);cursor:pointer;opacity:0;transition:opacity .15s;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.05);border:1px solid var(--border)}
 .msg:hover .msg-copy{opacity:1}
 .msg-copy:hover{color:var(--fg)}
-/* Search highlight on new .msg structure */
 .msg.match{outline:1px solid rgba(157,107,255,.5);background:#100d1e!important}
 .msg.match-active{outline:2px solid var(--violet)!important}
-/* Typing indicator */
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
@@ -274,12 +272,28 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .typing-dots span:nth-child(2){animation-delay:.2s}
 .typing-dots span:nth-child(3){animation-delay:.4s}
 @keyframes tdot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
-/* Jump-to-bottom button */
 #jumptobottom{position:absolute;bottom:80px;right:20px;background:var(--accent);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:14px;display:none;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4);z-index:10;transition:opacity .2s}
 #jumptobottom:hover{opacity:.85}
-/* Fade-in animation for new messages */
 @keyframes msgfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .msg.new-msg{animation:msgfade .18s ease-out forwards}
+/* ── toast notifications ──────────────────────── */
+#toastbox{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:1000;pointer-events:none;align-items:center}
+.toast{background:rgba(20,16,14,.92);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:11px;color:var(--dim);backdrop-filter:blur(6px);pointer-events:none;animation:toast-in .2s ease-out;max-width:360px;text-align:center}
+.toast.t-done{border-color:rgba(100,255,140,.3);color:rgba(180,255,200,.8)}
+.toast.t-failed{border-color:rgba(255,100,100,.3);color:rgba(255,160,160,.8)}
+.toast.t-pulse{border-color:rgba(157,107,255,.3);color:rgba(200,160,255,.8)}
+.toast.t-info{border-color:rgba(100,180,255,.2);color:rgba(160,210,255,.7)}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toast-out{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.94)}}
+.toast.fading{animation:toast-out .25s ease-in forwards}
+/* ── vitals dot ──────────────────────────────── */
+.vdot.live{background:#64ff8c;box-shadow:0 0 6px #64ff8c80;animation:vdot-pulse 2s ease-in-out infinite}
+.vdot.warn{background:var(--amber);box-shadow:0 0 5px rgba(255,180,0,.5)}
+@keyframes vdot-pulse{0%,100%{box-shadow:0 0 4px #64ff8c60}50%{box-shadow:0 0 10px #64ff8caa}}
+/* ── draggable column divider ─────────────────── */
+#coldivider{width:5px;background:transparent;cursor:col-resize;flex-shrink:0;position:relative;transition:background .15s}
+#coldivider:hover,#coldivider.dragging{background:rgba(157,107,255,.3)}
+#coldivider::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:1px;height:40px;background:var(--border);border-radius:1px}
 </style>
 </head>
 <body>
@@ -306,6 +320,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <polyline id="vwaveline" points="0,9 120,9" fill="none" stroke="var(--cyan)" stroke-width="1.2" stroke-linejoin="round"/>
     </svg>
     <span id="vagents" style="color:var(--dim);font-size:9px;letter-spacing:.08em;">0 agents</span>
+    <span class="vdot" id="vd-main" title="fleet status"></span>
     <span id="vcost">$0.00</span>
     <span id="vact">IDLE</span>
   </div>
@@ -352,6 +367,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="typing"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">↓</button>
     </div>
+    <div id="coldivider"></div>
     <div id="fleetcol" class="boot-seq">
       <div id="notiftray" style="display:none"></div>
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
@@ -420,6 +436,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   </div>
 </div>
 
+<div id="toastbox"></div>
+
 <script>
 (function(){
   // Boot sequence
@@ -462,6 +480,22 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   var $=function(i){return document.getElementById(i);};
   var slit=$('slit'),glow=$('glow'),core=$('core');
+
+  // ── toast notifications ─────────────────────────────
+  var prevAgentStates=new Map();
+  function showToast(msg,type,durationMs){
+    var box=document.getElementById('toastbox');
+    if(!box)return;
+    var el=document.createElement('div');
+    el.className='toast'+(type?' t-'+type:'');
+    el.textContent=msg;
+    box.appendChild(el);
+    var dur=durationMs||3000;
+    setTimeout(function(){
+      el.classList.add('fading');
+      setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},260);
+    },dur);
+  }
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
   function elapsed(ts) {
@@ -637,6 +671,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           agentTools.set(m.id,hist);
         }
         agents.set(m.id,m);
+        // ── toast on state transition ───────────────
+        var _prevSt=prevAgentStates.get(m.id);
+        if(m.state==='done'&&_prevSt!=='done')showToast((m.id||'agent')+' done'+(m.cost?' $'+Number(m.cost).toFixed(3):''),'done',2500);
+        if(m.state==='failed'&&_prevSt!=='failed')showToast((m.id||'agent')+' failed','failed',3500);
+        prevAgentStates.set(m.id,m.state);
         // In-place update: if this card is currently expanded, refresh its detail panel now
         if(m.reply||m.summary){
           var replyCard=document.querySelector('.arow[data-id="'+m.id+'"]');
@@ -768,6 +807,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         + '<button class="ndism" data-nid="' + esc(m.id) + '">×</button>';
       tray.insertBefore(row, tray.firstChild);
     } else if(m.type==="pulse"){
+      showToast('♡ pulse','pulse',2000);
       // Show last pulse time in vitals strip
       var vpulse=document.getElementById('vpulse');
       if(!vpulse){
@@ -832,6 +872,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       window._memFacts = m.facts || [];
       renderMemFacts(window._memFacts);
     } else if(m.type==="fact_written"){
+      showToast('fact: '+esc((m.key||'').slice(0,30)),'info',2000);
       if (document.getElementById('memfacts') && document.getElementById('memfacts').style.display !== 'none') {
         window.atlas.readMemory();
       }
@@ -843,6 +884,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         vc.textContent = '$' + (m.total||0).toFixed(3);
         vc.style.color = m.total > 1.0 ? 'var(--amber)' : m.total > 0.5 ? 'var(--acid)' : 'var(--dim)';
       }
+      updateVitalsDot();
     } else if(m.type==="export_conv_request"){
       var lines2 = ['# ATLAS Conversation\n'];
       thread.forEach(function(msg) {
@@ -1068,6 +1110,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     }
     updateFleetStats(list);
     updateVitals();
+    updateVitalsDot();
     var workCount=list.filter(function(a){return a.state==='working';}).length;
     document.title=workCount>0?'ATLAS ['+workCount+' working] // station':'ATLAS // station';
     updateBroodCount();
@@ -1483,6 +1526,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (e.key === 'k') { e.preventDefault(); kbBroodFocus(kbBroodIdx - 1 >= 0 ? kbBroodIdx - 1 : 0); }
       if (e.key === 'Enter' && kbBroodIdx >= 0) { e.preventDefault(); kbBroodEnter(); }
       if (e.key === 'Escape' && kbBroodIdx >= 0) { kbBroodFocus(-1); document.querySelectorAll('.arow.sel').forEach(function(r){ r.classList.remove('sel'); }); }
+      if (e.key === 'g') { e.preventDefault(); var inp=document.getElementById('inp')||$('say'); if(inp)inp.focus(); }
     }
   });
 
@@ -1543,6 +1587,16 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     tickWave(working+needed*2);
   }
 
+  // ── main status dot (live/warn/dead) ────────────────
+  function updateVitalsDot(){
+    var dot=document.getElementById('vd-main');
+    if(!dot)return;
+    var active=document.querySelectorAll('#brood .arow.st-working').length;
+    var costEl=document.getElementById('vcost');
+    var cost=parseFloat((costEl?costEl.textContent:'')||'0')||0;
+    dot.className='vdot '+(active>0?'live':cost>0.5?'warn':'');
+  }
+
   var _wt=0,_wamp=0;
   function tickWave(activity){
     _wamp+=((Math.min(1,activity/3)*6)-_wamp)*0.15;
@@ -1587,6 +1641,36 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       }
     });
   }, 5000);
+
+  // ── draggable column divider ────────────────────────
+  (function(){
+    var divider=document.getElementById('coldivider');
+    var convcol=document.getElementById('convcol');
+    var fleetcol=document.getElementById('fleetcol');
+    if(!divider||!convcol||!fleetcol)return;
+    var dragging=false,startX=0,startConvW=0,totalW=0;
+    divider.addEventListener('mousedown',function(e){
+      dragging=true;
+      startX=e.clientX;
+      startConvW=convcol.getBoundingClientRect().width;
+      totalW=convcol.parentElement.getBoundingClientRect().width;
+      divider.classList.add('dragging');
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove',function(e){
+      if(!dragging)return;
+      var dx=e.clientX-startX;
+      var newConvPct=Math.max(30,Math.min(75,(startConvW+dx)/totalW*100));
+      convcol.style.flex='none';
+      convcol.style.width=newConvPct+'%';
+      fleetcol.style.flex='1';
+    });
+    document.addEventListener('mouseup',function(){
+      if(!dragging)return;
+      dragging=false;
+      divider.classList.remove('dragging');
+    });
+  })();
 
   $('say').focus();
 
