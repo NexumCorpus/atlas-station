@@ -11,3 +11,4 @@ fleet-state.json
 *.jsonl
 logs/
 .agentlog-selftest/
+memory/
