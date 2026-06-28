@@ -70,12 +70,14 @@ function set(id, patch) {
   agents.set(id, a);
   // Start timeout when first entering working state
   if (patch.state === "working" && !a.timeoutHandle) {
-    const timeoutMs = a.timeoutMs || DEFAULT_TIMEOUT_MS;
-    a.timeoutHandle = setTimeout(() => {
-      const ctrl = abortControllers.get(id);
-      if (ctrl) ctrl.abort();
-      set(id, { state: "failed", summary: "timeout — agent exceeded " + Math.round(timeoutMs / 60000) + "min limit" });
-    }, timeoutMs);
+    const ms = a.timeoutMs != null ? a.timeoutMs : DEFAULT_TIMEOUT_MS;
+    if (ms > 0) {
+      a.timeoutHandle = setTimeout(() => {
+        const ctrl = abortControllers.get(id);
+        if (ctrl) ctrl.abort();
+        set(id, { state: "failed", summary: "timeout — agent exceeded " + Math.round(ms / 60000) + "min limit" });
+      }, ms);
+    }
   }
   send("agent", a);
   if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter, orchSession }); } catch {} }
@@ -176,7 +178,7 @@ const spawnTool = tool(
   },
   async (args) => {
     const agentTimeout = typeof args.timeoutMinutes === "number"
-      ? args.timeoutMinutes * 60 * 1000
+      ? (args.timeoutMinutes <= 0 ? 0 : args.timeoutMinutes * 60 * 1000)
       : DEFAULT_TIMEOUT_MS;
     return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout) }] };
   }
@@ -200,7 +202,7 @@ const chainTool = tool(
     let context = "";
     const results = [];
     for (const step of (args.steps || [])) {
-      const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 2000) : step.task;
+      const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 4000) : step.task;
       const result = await runSubagent(taskWithCtx, step.mode || "read");
       context = result;
       results.push(result);
@@ -225,13 +227,45 @@ const statusTool = tool(
     return { content: [{ type: "text", text: rows.length ? rows.join("\n") : "no subagents" }] };
   }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool] });
+const diagnoseTool = tool(
+  "diagnose",
+  "Run a self-check on the station: verify source files exist, check memory store health, report fleet summary. Use when something seems wrong.",
+  {},
+  async () => {
+    const fs = _require('fs');
+    const checks = [];
+    // Check key source files
+    const files = ['main.cjs', 'fleethost.mjs', 'index.html', 'preload.cjs', 'memcontext.cjs', 'memstore.cjs', 'prune.mjs'];
+    for (const f of files) {
+      const exists = fs.existsSync(path.join(REPO, f));
+      checks.push((exists ? "✓" : "✗") + " " + f);
+    }
+    // Check memory dir
+    const memDir = path.join(REPO, 'memory');
+    checks.push(fs.existsSync(memDir) ? "✓ memory/" : "✗ memory/ (missing)");
+    // Agent summary
+    const all = [...agents.values()];
+    const summary = all.length === 0 ? "no agents" :
+      all.map(a => `${a.id}[${a.state}]`).join(", ");
+    checks.push("fleet: " + summary);
+    // Git status
+    try {
+      const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+      const hash = gitC(["rev-parse", "--short", "HEAD"]).trim();
+      checks.push("git: " + branch + "@" + hash);
+    } catch (_) {
+      checks.push("git: unavailable");
+    }
+    return { content: [{ type: "text", text: checks.join("\n") }] };
+  }
+);
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
 You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state. Use chain_agents to run sequential read→build→verify pipelines automatically. Use fleet_status for richer cost/timing detail than check_fleet. Use timeoutMinutes in spawn_agent to set agent deadline (default 20min).
 
-You are responsible for the HEALTH of the fleet: keep the branch/worktree sprawl under control — prune merged and dead branches and their worktrees, don't let detritus accumulate. Verify your subagents' claims against the ACTUAL code and git state — never trust a written summary alone (agents have claimed changes they did not fully make). Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices. Take care of the work; keep Daniel in control through transparency.`;
+You are responsible for the HEALTH of the fleet: keep the branch/worktree sprawl under control — prune merged and dead branches and their worktrees, don't let detritus accumulate. Verify your subagents' claims against the ACTUAL code and git state — never trust a written summary alone (agents have claimed changes they did not fully make). Use diagnose when something seems wrong — it checks source files, memory, and git state. Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices. Take care of the work; keep Daniel in control through transparency.`;
 
 async function orchestrate(userText) {
   const enriched = _memcontext ? _memcontext.inject(userText) : userText;
