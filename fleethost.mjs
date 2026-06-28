@@ -20,6 +20,7 @@ const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 const MODEL = process.env.ATLAS_MODEL || "claude-sonnet-4-6"; // dispatch Sonnet by default
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
 function extractToolArg(name, input) {
   if (!input) return null;
@@ -59,9 +60,23 @@ function pruneAgent(id) {
 
 function set(id, patch) {
   const a = agents.get(id) || { id };
+  // Clear timeout before transitioning to a terminal state
+  if ((patch.state === "done" || patch.state === "failed") && a.timeoutHandle) {
+    clearTimeout(a.timeoutHandle);
+    a.timeoutHandle = null;
+  }
   Object.assign(a, patch);
   a.ts = new Date().toISOString();
   agents.set(id, a);
+  // Start timeout when first entering working state
+  if (patch.state === "working" && !a.timeoutHandle) {
+    const timeoutMs = a.timeoutMs || DEFAULT_TIMEOUT_MS;
+    a.timeoutHandle = setTimeout(() => {
+      const ctrl = abortControllers.get(id);
+      if (ctrl) ctrl.abort();
+      set(id, { state: "failed", summary: "timeout — agent exceeded " + Math.round(timeoutMs / 60000) + "min limit" });
+    }, timeoutMs);
+  }
   send("agent", a);
   if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter, orchSession }); } catch {} }
   if ((patch.state === "done" || patch.state === "failed") && id !== "ATLAS") {
@@ -116,10 +131,10 @@ async function consume(id, iterable, build, branch) {
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
-async function runSubagent(task, mode) {
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   let cwd = REPO, branch = null;
-  set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null });
+  set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null });
   const enriched = _memcontext ? _memcontext.inject(task) : task;
   if (mode === "build") {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
@@ -149,8 +164,17 @@ async function runSubagent(task, mode) {
 const spawnTool = tool(
   "spawn_agent",
   "Spawn a subagent to perform a task and get back its result. mode 'read' = read-only analysis/survey; mode 'build' = make changes (runs in an isolated git worktree on its own branch, reviewed before merge). Spawn several for parallel or staged work.",
-  { task: z.string().describe("the complete, self-contained task for the subagent"), mode: z.enum(["read", "build"]).optional().describe("read (default) or build") },
-  async (args) => ({ content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read") }] })
+  {
+    task: z.string().describe("the complete, self-contained task for the subagent"),
+    mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
+    timeoutMinutes: z.number().optional().describe("Auto-cancel after N minutes (default 20). Set 0 to disable."),
+  },
+  async (args) => {
+    const agentTimeout = typeof args.timeoutMinutes === "number"
+      ? args.timeoutMinutes * 60 * 1000
+      : DEFAULT_TIMEOUT_MS;
+    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout) }] };
+  }
 );
 const checkTool = tool(
   "check_fleet",
@@ -200,7 +224,7 @@ const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools:
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
-You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state. Use chain_agents to run sequential read→build→verify pipelines automatically. Use fleet_status for richer cost/timing detail than check_fleet.
+You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state. Use chain_agents to run sequential read→build→verify pipelines automatically. Use fleet_status for richer cost/timing detail than check_fleet. Use timeoutMinutes in spawn_agent to set agent deadline (default 20min).
 
 You are responsible for the HEALTH of the fleet: keep the branch/worktree sprawl under control — prune merged and dead branches and their worktrees, don't let detritus accumulate. Verify your subagents' claims against the ACTUAL code and git state — never trust a written summary alone (agents have claimed changes they did not fully make). Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices. Take care of the work; keep Daniel in control through transparency.`;
 
