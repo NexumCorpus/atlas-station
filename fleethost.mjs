@@ -15,6 +15,7 @@ import path from "path";
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
+const MODEL = process.env.ATLAS_MODEL || "claude-sonnet-4-6"; // dispatch Sonnet by default
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 
 const agents = new Map();
@@ -62,10 +63,13 @@ async function runAgent(id, task, opts) {
       prompt: build ? (task + BUILD_NOTE) : task,
       options: {
         cwd,
+        model: MODEL,
         systemPrompt: "claude_code",
         ...(build
           ? { permissionMode: "bypassPermissions" }
-          : { canUseTool: async (name) => SAFE.has(name) ? { behavior: "allow" } : { behavior: "deny", message: "read-only" } }),
+          // The memory door: allow MUST carry updatedInput or the SDK throws a
+          // ZodError on out-of-cwd reads (e.g. the journal under ~/.claude).
+          : { canUseTool: async (name, input) => SAFE.has(name) ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "read-only" } }),
       },
     })) {
       if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id });
