@@ -81,6 +81,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .acost{font-size:9px;width:40px;text-align:right;flex:none;color:#6c6a86}
 .tbadges{display:flex;gap:4px;padding-left:22px}
 .tbadge{font-size:9px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;color:var(--dim);opacity:.8}
+.arow-detail{display:none;padding:10px 14px 12px;border-top:1px solid #1a1630;background:#080610;font-size:11.5px;line-height:1.6;color:#c5cde0;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto}
+.arow-detail code{background:#12101e;padding:1px 4px;border-radius:2px;font-size:10.5px;color:var(--cyan)}
+.arow-detail pre{background:#0c0a18;padding:8px 10px;border-radius:3px;overflow-x:auto;border:1px solid var(--line);margin:4px 0}
+.arow-detail pre code{background:none;padding:0;color:#b8c4d8}
+.arow.sel .arow-detail{display:block}
+.det-hint{font-size:8.5px;color:var(--dim);letter-spacing:.06em;margin-top:6px;opacity:.6}
 .mbadge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:8px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
 .mbuild{background:rgba(255,194,75,.15);color:var(--amber);border:1px solid rgba(255,194,75,.3)}
 .mread{background:rgba(34,225,255,.1);color:var(--cyan);border:1px solid rgba(34,225,255,.25)}
@@ -517,6 +523,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           agentTools.set(m.id,hist);
         }
         agents.set(m.id,m);
+        // In-place update: if this card is currently expanded, refresh its detail panel now
+        if(m.reply||m.summary){
+          var replyCard=document.querySelector('.arow[data-id="'+m.id+'"]');
+          if(replyCard){
+            replyCard.dataset.reply=m.reply||m.summary||'';
+            if(replyCard.classList.contains('sel')){
+              var replyDet=replyCard.querySelector('.arow-detail');
+              if(replyDet)replyDet.innerHTML=renderMd(replyCard.dataset.reply)+'<div class="det-hint">click card to collapse</div>';
+            }
+          }
+        }
         if((m.state==="done"||m.state==="failed")&&(!prev||prev.state!==m.state)){
           fresh.add(m.id);
           var aid=m.id,st=m.state;
@@ -786,6 +803,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       + cancelBtn
       + '</div>'
       + badgesHtml
+      + '<div class="arow-detail"></div>'
       + '</div>';
   }
 
@@ -799,6 +817,18 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     $('brood').innerHTML=list.length
       ?list.map(rowOf).join("")
       :'<div class="broodempty">no agents deployed</div>';
+    // Stamp data-reply on every card; populate detail panel for selected card
+    list.forEach(function(a){
+      var card=document.querySelector('#brood [data-id="'+a.id+'"]');
+      if(card)card.dataset.reply=a.reply||a.summary||'';
+    });
+    if(SEL&&SEL.kind==='agent'){
+      var selCard=document.querySelector('#brood [data-id="'+SEL.id+'"]');
+      if(selCard&&selCard.dataset.reply){
+        var det=selCard.querySelector('.arow-detail');
+        if(det)det.innerHTML=renderMd(selCard.dataset.reply)+'<div class="det-hint">click card to collapse</div>';
+      }
+    }
     updateFleetStats(list);
     updateVitals();
     var workCount=list.filter(function(a){return a.state==="working";}).length;
@@ -933,7 +963,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
   $('brood').addEventListener('click',function(e){
     if(e.target.matches('.xcbtn')){window.atlas.cancel(e.target.dataset.id);e.stopPropagation();return;}
-    onClick(e);
+    var row=e.target.closest('[data-k]');if(!row)return;
+    var k=row.getAttribute('data-k');
+    var id=k==='run'?Number(row.getAttribute('data-id')):row.getAttribute('data-id');
+    var wasSelected=row.classList.contains('sel');
+    if(wasSelected){SEL=null;renderBrood();renderReply();}
+    else{select(k,id);}
   });
   $('ledger').addEventListener('click',onClick);
 
