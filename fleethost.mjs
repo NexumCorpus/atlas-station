@@ -506,7 +506,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -551,7 +551,7 @@ const capabilityManifestTool = tool(
       "self_assess", "defer_task", "notify_self", "memory_health",
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
-      "run_script"
+      "run_script", "memory_consolidate"
     ];
     const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -728,7 +728,6 @@ const runScriptTool = tool(
       const { spawnSync } = _require('child_process');
       const cmd = args.command || '';
       if (!cmd.trim()) return { content: [{ type: 'text', text: 'No command provided' }] };
-      // Safety: block destructive or escalation patterns
       const blocked = /rm\s+-rf|del\s+\/[sq]|rmdir\s+\/s|git\s+push|git\s+reset\s+--hard|shutdown|format\s+[a-z]:/i;
       if (blocked.test(cmd)) return { content: [{ type: 'text', text: `Blocked: command matches destructive pattern` }] };
       const parts = cmd.trim().split(/\s+/);
@@ -749,7 +748,88 @@ const runScriptTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool] });
+const memConsolidateTool = tool(
+  "memory_consolidate",
+  "Synthesize recent memory into a higher-order insight. Spawns a read agent that analyzes the last N facts and journal entries, extracts patterns and themes, then writes a 'consolidation' fact back to memory. Use weekly or when the fact store feels noisy.",
+  {
+    maxFacts: z.number().optional().describe("How many recent facts to analyze (default 20, max 50)"),
+    focus: z.string().optional().describe("Optional theme or question to focus the synthesis on"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const factsFile = path.join(memDir, 'facts.jsonl');
+      const journalFile = path.join(memDir, 'journal.ndjson');
+      const maxFacts = Math.min(args.maxFacts || 20, 50);
+
+      let facts = [];
+      if (fs.existsSync(factsFile)) {
+        facts = fs.readFileSync(factsFile, 'utf8').trim().split('\n').filter(Boolean)
+          .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+          .slice(-maxFacts);
+      }
+      let journal = [];
+      if (fs.existsSync(journalFile)) {
+        journal = fs.readFileSync(journalFile, 'utf8').trim().split('\n').filter(Boolean)
+          .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+          .slice(-10);
+      }
+
+      if (!facts.length && !journal.length) {
+        return { content: [{ type: 'text', text: 'No memory to consolidate yet.' }] };
+      }
+
+      const focusLine = args.focus ? `\nFocus especially on: "${args.focus}"\n` : '';
+      const prompt = `You are synthesizing ATLAS's memory. Below are recent facts and journal entries. Extract 3-5 key patterns, themes, or insights as a short synthesis note. Write it as plain text, 100-200 words. Do not list the individual facts — find what they add up to.${focusLine}
+
+FACTS (${facts.length}):
+${facts.map(f => `[${f.topic || '?'}] ${f.fact || JSON.stringify(f)}`).join('\n').slice(0, 2000)}
+
+JOURNAL (last ${journal.length}):
+${journal.map(j => `[${j.ts || '?'}] ${j.note || j.entry || JSON.stringify(j)}`).join('\n').slice(0, 1000)}
+
+Write the synthesis note now:`;
+
+      const consolidationId = 'MC-' + Date.now();
+      set(consolidationId, { id: consolidationId, state: 'working', mode: 'read', task: 'memory consolidation', model: MODEL_HAIKU });
+      let synthesis = '';
+      const ctrl = new AbortController();
+      abortControllers.set(consolidationId, ctrl);
+      try {
+        const iter = query({
+          model: MODEL_HAIKU,
+          messages: [{ role: 'user', content: prompt }],
+          permissionMode: 'bypassPermissions',
+          abortSignal: ctrl.signal,
+        });
+        synthesis = await consume(consolidationId, iter, false, null);
+      } catch (e) {
+        set(consolidationId, { state: 'failed', summary: e.message });
+        return { content: [{ type: 'text', text: `Consolidation agent failed: ${e.message}` }] };
+      } finally {
+        abortControllers.delete(consolidationId);
+      }
+
+      if (_memstore && synthesis) {
+        try {
+          _memstore.appendFact({
+            topic: 'consolidation',
+            fact: synthesis,
+            source: 'memory_consolidate',
+            confidence: 'inferred',
+          }, memDir);
+          send('fact_written', { key: 'consolidation', value: synthesis.slice(0, 80) + '...' });
+        } catch (_) {}
+      }
+      return { content: [{ type: 'text', text: `Consolidated ${facts.length} facts + ${journal.length} journal entries:\n\n${synthesis}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `memory_consolidate error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -778,6 +858,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - read_doc(filename) — read a file from docs/. Check before writing to avoid overwriting.
 - list_docs() — list all files in docs/.
 - run_script(command, cwd?, timeoutMs?) — execute a shell command or node script in the repo and return output (up to 3000 chars). Use for self-testing, git queries, npm lint checks. Destructive patterns blocked.
+- memory_consolidate(maxFacts?, focus?) — synthesize recent facts + journal into a higher-order insight via a Haiku read agent. Writes the synthesis as a 'consolidation' fact. Good for compressing noise into signal.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
