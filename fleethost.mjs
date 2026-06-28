@@ -43,6 +43,20 @@ let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
+function pruneAgent(id) {
+  const a = agents.get(id);
+  if (!a || !a.branch || !a.cwd) return;
+  try {
+    // Only prune if branch is merged to master
+    gitC(["merge-base", "--is-ancestor", a.branch, "master"]);
+    // Branch is merged — remove worktree then branch
+    try { gitC(["worktree", "remove", "--force", a.cwd]); } catch (_) {}
+    try { gitC(["branch", "-d", a.branch]); } catch (_) { try { gitC(["branch", "-D", a.branch]); } catch (_) {} }
+  } catch (_) {
+    // Not merged yet — leave it
+  }
+}
+
 function set(id, patch) {
   const a = agents.get(id) || { id };
   Object.assign(a, patch);
@@ -50,6 +64,12 @@ function set(id, patch) {
   agents.set(id, a);
   send("agent", a);
   if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter, orchSession }); } catch {} }
+  if ((patch.state === "done" || patch.state === "failed") && id !== "ATLAS") {
+    const cur = agents.get(id);
+    if (cur && cur.branch && cur.mode === "build") {
+      setTimeout(() => pruneAgent(id), 5000);
+    }
+  }
 }
 
 function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
