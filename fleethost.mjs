@@ -506,7 +506,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -550,7 +550,8 @@ const capabilityManifestTool = tool(
       "set_goal", "list_goals", "resolve_goal",
       "self_assess", "defer_task", "notify_self", "memory_health",
       "capability_manifest", "trigger_selfloop",
-      "write_doc", "read_doc", "list_docs"
+      "write_doc", "read_doc", "list_docs",
+      "run_script"
     ];
     const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -714,7 +715,41 @@ const listDocsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool] });
+const runScriptTool = tool(
+  "run_script",
+  "Execute a Node.js script or short shell command in the repo directory and return its stdout/stderr (truncated to 3000 chars). Use for self-testing, running build checks, reading git history with custom format, or executing any script in docs/ or memory/. NOT for long-running processes.",
+  {
+    command: z.string().describe("The command to run (e.g. 'node memcontext.cjs' or 'git log --oneline -10' or 'npm run lint')"),
+    cwd: z.string().optional().describe("Working directory — defaults to repo root"),
+    timeoutMs: z.number().optional().describe("Timeout in ms (default 10000, max 30000)"),
+  },
+  async (args) => {
+    try {
+      const { spawnSync } = _require('child_process');
+      const cmd = args.command || '';
+      if (!cmd.trim()) return { content: [{ type: 'text', text: 'No command provided' }] };
+      // Safety: block destructive or escalation patterns
+      const blocked = /rm\s+-rf|del\s+\/[sq]|rmdir\s+\/s|git\s+push|git\s+reset\s+--hard|shutdown|format\s+[a-z]:/i;
+      if (blocked.test(cmd)) return { content: [{ type: 'text', text: `Blocked: command matches destructive pattern` }] };
+      const parts = cmd.trim().split(/\s+/);
+      const timeout = Math.min(args.timeoutMs || 10000, 30000);
+      const res = spawnSync(parts[0], parts.slice(1), {
+        cwd: args.cwd || REPO,
+        encoding: 'utf8',
+        timeout,
+        shell: true,
+      });
+      const out = [res.stdout, res.stderr].filter(Boolean).join('\n').trim();
+      const truncated = out.length > 3000 ? out.slice(0, 3000) + '\n[... truncated]' : out;
+      const status = res.status != null ? ` (exit ${res.status})` : '';
+      return { content: [{ type: 'text', text: (truncated || '(no output)') + status }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `run_script error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -742,6 +777,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - write_doc(filename, content, message?) — write/update a markdown file in docs/ and commit it to git. Use to document capabilities, decisions, architecture, how-tos. ATLAS maintains its own docs autonomously.
 - read_doc(filename) — read a file from docs/. Check before writing to avoid overwriting.
 - list_docs() — list all files in docs/.
+- run_script(command, cwd?, timeoutMs?) — execute a shell command or node script in the repo and return output (up to 3000 chars). Use for self-testing, git queries, npm lint checks. Destructive patterns blocked.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
