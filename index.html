@@ -617,6 +617,24 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           setTimeout(function(){vs.style.background='';},400);
         }
       }
+    } else if(m.type==="git_event"){
+      if(m.type2==="new_commits"||m.commits!=null){
+        // Show a git event flash in the thread as a system message
+        var gitmsg = '⟦ git: ' + (m.commits ? m.commits.split('\n')[0] : m.to) + ' ⟧';
+        var bub = document.createElement('div');
+        bub.className = 'bub info';
+        bub.style.cssText = 'font-size:10px;opacity:.7;align-self:center;max-width:none;text-align:center;border-color:rgba(73,255,158,.2);color:var(--acid)';
+        bub.textContent = gitmsg;
+        var th = document.getElementById('thread');
+        if(th){ th.appendChild(bub); th.scrollTop = th.scrollHeight; }
+        // Also flash the vitals strip green
+        var vs = document.getElementById('vitals');
+        if(vs){
+          vs.style.transition='background .15s';
+          vs.style.background='rgba(73,255,158,.06)';
+          setTimeout(function(){vs.style.background='';},600);
+        }
+      }
     }
   });
 

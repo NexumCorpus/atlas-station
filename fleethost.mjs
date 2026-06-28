@@ -662,6 +662,36 @@ function runPulse() {
 setTimeout(runPulse, 5000);
 setInterval(runPulse, PULSE_INTERVAL);
 
+// Git commit monitor — detect new commits while the station is running
+let _lastKnownCommit = null;
+function startGitMonitor() {
+  try {
+    _lastKnownCommit = gitC(["rev-parse", "HEAD"]).trim();
+  } catch { return; }
+  setInterval(() => {
+    try {
+      const current = gitC(["rev-parse", "HEAD"]).trim();
+      if (current !== _lastKnownCommit) {
+        const prev = _lastKnownCommit;
+        _lastKnownCommit = current;
+        // Get new commits since previous HEAD
+        let newCommits = '';
+        try {
+          newCommits = gitC(["log", "--oneline", prev + ".." + current]).trim();
+        } catch {}
+        send('git_event', {
+          type2: 'new_commits',
+          from: prev.slice(0, 7),
+          to: current.slice(0, 7),
+          commits: newCommits,
+          ts: new Date().toISOString(),
+        });
+      }
+    } catch {}
+  }, 15000); // check every 15 seconds
+}
+startGitMonitor();
+
 // Broadcast pending proposals so the GUI can populate on startup
 try {
   const fs = _require('fs');
