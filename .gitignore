@@ -13,3 +13,7 @@ fleet-agents.json
 logs/
 .agentlog-selftest/
 memory/
+orch_test.mjs
+gui.mjs
+upgrade1.mjs
+designmemory.mjs
