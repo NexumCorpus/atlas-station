@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld("atlas", {
   dispatch: (task, cwd, mode) => ipcRenderer.send("dispatch", { task, cwd, mode }),
   replyAgent: (id, text) => ipcRenderer.send("reply", { id, text }),
   selfBuild: () => ipcRenderer.send("self-build"),
+  cancel: (id) => ipcRenderer.send("cancel", { id }),
   onFleet: (cb) => ipcRenderer.on("fleet", (_e, m) => cb(m)),
 });

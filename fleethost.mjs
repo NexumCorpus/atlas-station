@@ -21,12 +21,24 @@ const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 const MODEL = process.env.ATLAS_MODEL || "claude-sonnet-4-6"; // dispatch Sonnet by default
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 
+function extractToolArg(name, input) {
+  if (!input) return null;
+  if (name === "Read") return (input.file_path || "").split(/[/\\]/).pop().slice(0, 40) || null;
+  if (name === "Bash") return (input.command || "").slice(0, 50) || null;
+  if (name === "Grep") return (input.pattern || "").slice(0, 30) || null;
+  if (name === "Glob") return (input.pattern || "").slice(0, 30) || null;
+  if (name === "WebFetch" || name === "WebSearch") return (input.url || input.query || "").slice(0, 40) || null;
+  if (name === "spawn_agent") return ("spawning: " + (input.task || "").slice(0, 40));
+  return null;
+}
+
 let _memcontext = null, _memstore = null, _persist = null;
 try { _memcontext = _require("./memcontext.cjs"); } catch { _memcontext = null; }
 try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
 try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
 
 const agents = new Map();
+const abortControllers = new Map();
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 
@@ -65,14 +77,18 @@ async function consume(id, iterable, build, branch) {
     else if (m.type === "assistant") {
       const a = agents.get(id); const turns = (a?.turns || 0) + 1; let patch = { state: "working", turns };
       for (const b of (m.message?.content ?? [])) {
-        if (b.type === "tool_use") patch.lastTool = (b.name || "").replace(/^mcp__fleet__/, "");
+        if (b.type === "tool_use") {
+          const n = (b.name || "").replace(/^mcp__fleet__/, "");
+          patch.lastTool = n;
+          patch.lastToolArg = extractToolArg(n, b.input);
+        }
         else if (b.type === "text" && b.text.trim()) patch.summary = b.text.trim().slice(0, 160);
       }
       set(id, patch);
     } else if (m.type === "result") {
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
       final = String(m.result ?? agents.get(id)?.summary ?? "");
-      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), ...extra });
+      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...extra });
       if (_memstore) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null }); } catch {}
     }
   }
@@ -91,8 +107,21 @@ async function runSubagent(task, mode) {
   }
   const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   let final = "";
-  try { final = await consume(id, query({ prompt: mode === "build" ? (enriched + BUILD_NOTE) : enriched, options }), mode === "build", branch); }
-  catch (e) { set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); final = "(subagent errored: " + String(e?.message ?? e).slice(0, 120) + ")"; }
+  const ac = new AbortController();
+  abortControllers.set(id, ac);
+  try {
+    final = await consume(id, query({ prompt: mode === "build" ? (enriched + BUILD_NOTE) : enriched, options: { ...options, abortSignal: ac.signal } }), mode === "build", branch);
+  } catch (e) {
+    if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
+      set(id, { state: "interrupted", summary: "cancelled by user" });
+      final = "(cancelled)";
+    } else {
+      set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
+      final = "(subagent errored: " + String(e?.message ?? e).slice(0, 120) + ")";
+    }
+  } finally {
+    abortControllers.delete(id);
+  }
   return "Subagent " + id + (branch ? (" on branch " + branch) : "") + " result:\n" + (final || "(no output)");
 }
 
@@ -116,10 +145,11 @@ const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and t
 When work is needed, use spawn_agent: mode 'read' for analysis/surveys, mode 'build' for changes. Build subagents run in ISOLATED git worktrees on their own branch (reviewed before merge) — never on the live tree. Spawn several for parallel or staged work; use check_fleet to see their state. Read their results, verify, and report back to Daniel concisely: what you did, what each subagent found or built, and what you recommend. You decide what's best — act on judgment, surface only pivotal choices. Hold the standing collaboration: honest, grounded, never fabricate. Take care of the work; keep Daniel in control through transparency, not micromanagement.`;
 
 async function orchestrate(userText) {
+  const enriched = _memcontext ? _memcontext.inject(userText) : userText;
   set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null });
   try {
     for await (const m of query({
-      prompt: userText,
+      prompt: enriched,
       options: {
         resume: orchSession || undefined,
         model: MODEL,
@@ -133,13 +163,25 @@ async function orchestrate(userText) {
       else if (m.type === "assistant") {
         let patch = { state: "working" };
         for (const b of (m.message?.content ?? [])) {
-          if (b.type === "tool_use") patch.lastTool = (b.name || "").replace(/^mcp__fleet__/, "");
+          if (b.type === "tool_use") {
+            const n = (b.name || "").replace(/^mcp__fleet__/, "");
+            patch.lastTool = n;
+            patch.lastToolArg = extractToolArg(n, b.input);
+          }
           else if (b.type === "text" && b.text.trim()) patch.summary = b.text.trim().slice(0, 160);
         }
         set("ATLAS", patch);
       } else if (m.type === "result") {
         const full = String(m.result ?? "");
-        set("ATLAS", { state: m.subtype === "success" ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), session: orchSession });
+        set("ATLAS", { state: m.subtype === "success" ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), lastToolArg: null, session: orchSession });
+        if (full) {
+          try {
+            const _extractor = _require("./fact-extractor.cjs");
+            if (_extractor && typeof _extractor.extractAndStore === "function") {
+              _extractor.extractAndStore(full, "ATLAS:" + new Date().toISOString().slice(0, 10));
+            }
+          } catch { /* silent */ }
+        }
       }
     }
   } catch (e) { set("ATLAS", { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
@@ -153,8 +195,19 @@ async function runAgent(id, task, opts) {
   const enriched = _memcontext ? _memcontext.inject(task) : task;
   if (build) { try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); } catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; } }
   const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
-  try { await consume(id, query({ prompt: build ? (enriched + BUILD_NOTE) : enriched, options }), build, branch); }
-  catch (e) { set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
+  const ac = new AbortController();
+  abortControllers.set(id, ac);
+  try {
+    await consume(id, query({ prompt: build ? (enriched + BUILD_NOTE) : enriched, options: { ...options, abortSignal: ac.signal } }), build, branch);
+  } catch (e) {
+    if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
+      set(id, { state: "interrupted", summary: "cancelled by user" });
+    } else {
+      set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
+    }
+  } finally {
+    abortControllers.delete(id);
+  }
 }
 async function replyAgent(id, text) {
   const a = agents.get(id);
@@ -162,8 +215,19 @@ async function replyAgent(id, text) {
   const build = a.mode === "build"; const cwd = a.cwd || REPO; const branch = a.branch || null;
   set(id, { state: "working", lastTool: null });
   const options = { resume: a.session, cwd, model: MODEL, systemPrompt: "claude_code", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
-  try { await consume(id, query({ prompt: text, options }), build, branch); }
-  catch (e) { set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
+  const ac = new AbortController();
+  abortControllers.set(id, ac);
+  try {
+    await consume(id, query({ prompt: text, options: { ...options, abortSignal: ac.signal } }), build, branch);
+  } catch (e) {
+    if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
+      set(id, { state: "interrupted", summary: "cancelled by user" });
+    } else {
+      set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
+    }
+  } finally {
+    abortControllers.delete(id);
+  }
 }
 
 process.on("message", (m) => {
@@ -171,6 +235,12 @@ process.on("message", (m) => {
   if (m.t === "say") orchestrate(m.text);
   else if (m.t === "dispatch") runAgent(m.id, m.task, { mode: m.mode, cwd: m.cwd });
   else if (m.t === "reply") replyAgent(m.id, m.text);
+  else if (m.t === "cancel") {
+    const ac = abortControllers.get(m.id);
+    if (ac) { try { ac.abort(); } catch {} abortControllers.delete(m.id); }
+    const a = agents.get(m.id);
+    if (a && a.state === "working") set(m.id, { state: "interrupted", summary: "cancelled by user" });
+  }
 });
 
 // Restore persisted agents + the ATLAS conversation before signalling ready.

@@ -37,7 +37,13 @@ function startFleet() {
     }
   });
   if (fleet.stderr) fleet.stderr.on("data", () => {});
-  fleet.on("exit", () => { fleet = null; });
+  fleet.on("exit", (code) => {
+    fleet = null;
+    if (win) {
+      win.webContents.send("fleet", { type: "error", m: "fleet engine exited (code " + (code ?? "?") + ")" });
+      if (code !== 0) setTimeout(startFleet, 2000);
+    }
+  });
 }
 
 function stopFleet() { try { if (fleet) fleet.kill(); } catch (_) {} fleet = null; }
@@ -57,6 +63,11 @@ ipcMain.on("reply", (_e, p) => {
 ipcMain.on("say", (_e, p) => {
   if (!fleet || !p || !p.text) return;
   try { fleet.send({ t: "say", text: p.text }); } catch (_) {}
+});
+
+ipcMain.on("cancel", (_e, p) => {
+  if (!fleet || !p || !p.id) return;
+  try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}
 });
 
 // The orchestrator on itself: a preset batch of additive self-build tasks.
