@@ -309,6 +309,20 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #coldivider{width:5px;background:transparent;cursor:col-resize;flex-shrink:0;position:relative;transition:background .15s}
 #coldivider:hover,#coldivider.dragging{background:rgba(157,107,255,.3)}
 #coldivider::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:1px;height:40px;background:var(--border);border-radius:1px}
+#timelinelab{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;user-select:none;border-top:1px solid rgba(255,255,255,.04)}
+#timeline{max-height:120px;overflow-y:auto;padding:2px 0 6px}
+#timeline::-webkit-scrollbar{width:2px}
+#timeline::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08)}
+.tevt{display:flex;align-items:baseline;gap:6px;padding:2px 8px;font-size:10px;line-height:1.4}
+.tevt:hover{background:rgba(255,255,255,.02)}
+.tevt-ts{font-size:9px;color:rgba(150,145,160,.4);flex-shrink:0;font-variant-numeric:tabular-nums;min-width:40px}
+.tevt-icon{font-size:9px;flex-shrink:0;width:12px;text-align:center}
+.tevt-txt{color:rgba(190,185,200,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tevt.evdone .tevt-txt{color:rgba(100,255,140,.6)}
+.tevt.evfailed .tevt-txt{color:rgba(255,100,100,.5)}
+.tevt.evpulse .tevt-txt{color:rgba(157,107,255,.6)}
+.tevt.evfact .tevt-txt{color:rgba(100,200,255,.5)}
+.tevt.evgoal .tevt-txt{color:rgba(255,200,80,.5)}
 </style>
 </head>
 <body>
@@ -405,6 +419,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       </div>
       <div class="lab" style="border-top:1px solid var(--line)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
+      <div id="timelinelab">⬡ activity</div>
+      <div id="timeline"></div>
     </div>
   </div>
 
@@ -512,6 +528,34 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     },dur);
   }
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+  // ── activity timeline ───────────────────────────────
+  var timelineEvents = [];
+  var MAX_TIMELINE = 50;
+
+  function addTimelineEvent(icon, text, cls) {
+    var now = new Date();
+    var ts = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    timelineEvents.unshift({ ts: ts, icon: icon, text: text, cls: cls || '' });
+    if (timelineEvents.length > MAX_TIMELINE) timelineEvents.length = MAX_TIMELINE;
+    renderTimeline();
+  }
+
+  function renderTimeline() {
+    var el = document.getElementById('timeline');
+    if (!el) return;
+    if (!timelineEvents.length) {
+      el.innerHTML = '<div class="tevt"><span class="tevt-txt" style="font-style:italic">waiting for events…</span></div>';
+      return;
+    }
+    el.innerHTML = timelineEvents.map(function(e) {
+      return '<div class="tevt ' + e.cls + '">'
+        + '<span class="tevt-ts">' + e.ts + '</span>'
+        + '<span class="tevt-icon">' + e.icon + '</span>'
+        + '<span class="tevt-txt">' + esc(e.text) + '</span>'
+        + '</div>';
+    }).join('');
+  }
 
   function elapsed(ts) {
     if (!ts) return '';
@@ -702,6 +746,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         if(m.state==='done'&&_prevSt!=='done')showToast((m.id||'agent')+' done'+(m.cost?' $'+Number(m.cost).toFixed(3):''),'done',2500);
         if(m.state==='failed'&&_prevSt!=='failed')showToast((m.id||'agent')+' failed','failed',3500);
         prevAgentStates.set(m.id,m.state);
+        // Timeline
+        if(m.state==='working'&&_prevSt!=='working'&&m.id!=='ATLAS')addTimelineEvent('◌',m.id+' started'+(m.mode==='build'?' [build]':' [read]'),'');
+        if(m.state==='done'&&_prevSt!=='done'&&m.id!=='ATLAS')addTimelineEvent('✓',m.id+' done'+(m.cost?' $'+Number(m.cost).toFixed(3):''),'evdone');
+        if(m.state==='failed'&&_prevSt!=='failed'&&m.id!=='ATLAS')addTimelineEvent('✗',m.id+' failed','evfailed');
         // In-place update: if this card is currently expanded, refresh its detail panel now
         if(m.reply||m.summary){
           var replyCard=document.querySelector('.arow[data-id="'+m.id+'"]');
@@ -794,6 +842,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         + '</div>';
       if (ps) { ps.appendChild(prow); updateProposalCount(); }
     } else if(m.type==="goal"){
+      addTimelineEvent('◎','goal: '+(m.title||m.text||'?').slice(0,40),'evgoal');
       var gl = document.getElementById('goallab');
       var gs = document.getElementById('goals');
       if (gl) gl.style.display = '';
@@ -833,6 +882,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       tray.insertBefore(row, tray.firstChild);
     } else if(m.type==="pulse"){
       showToast('♡ pulse','pulse',2000);
+      addTimelineEvent('♡','pulse — '+(m.ts?new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'heartbeat'),'evpulse');
       // Show last pulse time in vitals strip
       var vpulse=document.getElementById('vpulse');
       if(!vpulse){
@@ -898,6 +948,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       renderMemFacts(window._memFacts);
     } else if(m.type==="fact_written"){
       showToast('fact: '+esc((m.key||'').slice(0,30)),'info',2000);
+      addTimelineEvent('◈','fact: '+(m.key||'?'),'evfact');
       if (document.getElementById('memfacts') && document.getElementById('memfacts').style.display !== 'none') {
         window.atlas.readMemory();
       }
@@ -1612,6 +1663,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   });
 
   renderThread();renderBrood();renderLedger();
+  renderTimeline();
   renderDocsList();
   window.atlas.listDocs();
   window.atlas.readRuns();
