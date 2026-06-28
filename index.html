@@ -208,6 +208,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .mfmeta{font-size:8.5px;color:var(--dim);display:flex;gap:8px}
 .mftopic{color:var(--violet);opacity:.8}
 .mfconf{opacity:.6}
+#docslab{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;padding:6px 8px 2px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+#docs{display:none;border-top:1px solid var(--line);padding:0 0 4px}
+#docslist{max-height:120px;overflow-y:auto;padding:4px 8px}
+.docfile{font-size:11px;padding:2px 4px;cursor:pointer;color:var(--dim);border-radius:2px}
+.docfile:hover,.docfile.sel{color:var(--ink);background:rgba(255,255,255,.04)}
+#docscontent{padding:6px 10px;font-size:11px;line-height:1.5;max-height:240px;overflow-y:auto;color:var(--ink);border-top:1px solid var(--line);display:none;white-space:pre-wrap}
 #srchbar{position:absolute;top:8px;right:14px;z-index:20;display:flex;gap:6px;align-items:center;background:#0e0c1a;border:1px solid var(--violet);padding:4px 10px;border-radius:3px}
 #srchbar:not(.open){display:none}
 #srchinput{background:transparent;border:none;color:var(--ink);font-family:inherit;font-size:12px;width:180px;outline:none}
@@ -296,6 +302,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="goals" style="display:none"></div>
       <div id="memfactslab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ memory — what ATLAS knows ⟧</div>
       <div id="memfacts" style="display:none;flex-direction:column"></div>
+      <div id="docslab">📄 docs <span style="margin-left:auto;font-size:9px;color:var(--dim)" id="docsbadge"></span></div>
+      <div id="docs">
+        <div id="docslist"></div>
+        <div id="docscontent"></div>
+      </div>
       <div class="lab" style="border-top:1px solid var(--line)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
     </div>
@@ -448,6 +459,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var prevWorkCount=-1;
   var displayedCost=0;
   var ledgerCommitCount=0;
+  var docsList=[];
+  var docsContent={};
+  var docsSelectedFile=null;
 
   var COL={"needs-you":"#ff2d95","working":"#22e1ff","done":"#49ff9e","failed":"#ff4d4d","interrupted":"#ffc24b"};
   var SIG={"needs-you":"◉","working":"⟁","done":"◇","failed":"⊗","interrupted":"⏸"};
@@ -764,6 +778,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     } else if(m.type==="conv_exported"){
       thread.push({ role: 'system', text: 'conversation exported: ' + esc(m.filename), error: false });
       renderThread();
+    } else if(m.type==="docs_list"){
+      docsList = m.files || [];
+      renderDocsList();
+    } else if(m.type==="doc_content"){
+      docsContent[m.filename] = m.content || '';
+      if (docsSelectedFile === m.filename) {
+        var dc2 = document.getElementById('docscontent');
+        if (dc2) { dc2.textContent = m.content || ''; dc2.style.display = 'block'; }
+      }
+    } else if(m.type==="doc_written"){
+      window.atlas.listDocs();
     }
   });
 
@@ -1190,6 +1215,40 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     }) : window._memFacts);
   }
 
+  function renderDocsList() {
+    var dl = document.getElementById('docslist');
+    if (!dl) return;
+    if (!docsList.length) { dl.innerHTML = '<div style="font-size:10px;color:var(--dim);padding:4px 4px">no docs yet — ATLAS will write them</div>'; return; }
+    dl.innerHTML = docsList.map(function(f) {
+      return '<div class="docfile' + (docsSelectedFile === f ? ' sel' : '') + '" onclick="selectDoc(' + JSON.stringify(f) + ')">' + esc(f) + '</div>';
+    }).join('');
+    var badge = document.getElementById('docsbadge');
+    if (badge) badge.textContent = docsList.length + ' file' + (docsList.length !== 1 ? 's' : '');
+  }
+
+  function selectDoc(filename) {
+    docsSelectedFile = filename;
+    renderDocsList();
+    var dc = document.getElementById('docscontent');
+    if (!dc) return;
+    if (docsContent[filename]) {
+      dc.textContent = docsContent[filename];
+      dc.style.display = 'block';
+    } else {
+      dc.textContent = 'loading...';
+      dc.style.display = 'block';
+      window.atlas.readDoc(filename);
+    }
+  }
+
+  var docslab = document.getElementById('docslab');
+  if (docslab) {
+    docslab.addEventListener('click', function() {
+      var panel = document.getElementById('docs');
+      if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+
   var memtoggle = document.getElementById('memtoggle');
   if (memtoggle) memtoggle.addEventListener('click', function() {
     var lab = document.getElementById('memfactslab');
@@ -1306,6 +1365,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   });
 
   renderThread();renderBrood();renderLedger();
+  renderDocsList();
+  window.atlas.listDocs();
 
   // ── search events ───────────────────────────────────
   var srchinput = document.getElementById('srchinput');

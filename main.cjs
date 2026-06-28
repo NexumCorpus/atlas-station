@@ -126,6 +126,26 @@ ipcMain.on("export-conversation", (_e, p) => {
   }
 });
 
+ipcMain.on("list-docs", (_e) => {
+  try {
+    const docsDir = path.join(__dirname, "docs");
+    if (!fs.existsSync(docsDir)) { if (win) win.webContents.send("fleet", { type: "docs_list", files: [] }); return; }
+    const files = fs.readdirSync(docsDir).filter(f => !f.startsWith('.'));
+    if (win) win.webContents.send("fleet", { type: "docs_list", files });
+  } catch (e) { if (win) win.webContents.send("fleet", { type: "docs_list", files: [] }); }
+});
+
+ipcMain.on("read-doc", (_e, filename) => {
+  try {
+    const cleaned = (filename || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const docsDir = path.join(__dirname, "docs");
+    const filepath = path.join(docsDir, cleaned);
+    if (!fs.existsSync(filepath)) { if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content: '(not found)' }); return; }
+    const content = fs.readFileSync(filepath, 'utf8').slice(0, 8000);
+    if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content });
+  } catch (e) { if (win) win.webContents.send("fleet", { type: "doc_content", filename: filename || '', content: `Error: ${e.message}` }); }
+});
+
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
   "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
