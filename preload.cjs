@@ -9,5 +9,7 @@ contextBridge.exposeInMainWorld("atlas", {
   cancel: (id) => ipcRenderer.send("cancel", { id }),
   readMemory: () => ipcRenderer.send("read-memory"),
   exportConversation: (p) => ipcRenderer.send("export-conversation", p),
+  readDoc: (filename) => ipcRenderer.send("read-doc", filename),
+  listDocs: () => ipcRenderer.send("list-docs"),
   onFleet: (cb) => ipcRenderer.on("fleet", (_e, m) => cb(m)),
 });
