@@ -2,7 +2,7 @@
 // (fleethost.mjs, plain Node + Agent SDK), relays live per-agent state to the
 // harness renderer, and dispatches new agents on request. The window is the
 // oversight surface for many agents — the station, not a single cell.
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -12,8 +12,11 @@ let win = null, fleet = null, counter = 0;
 let lastHistory = null; const lastAgents = new Map(); let reloadTimer = null;
 
 function createWindow() {
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
-    width: 1120, height: 860, backgroundColor: "#0a0908", title: "ATLAS // station",
+    width: Math.round(sw * 0.85), height: Math.round(sh * 0.88),
+    minWidth: 960, minHeight: 620,
+    backgroundColor: "#0a0908", title: "ATLAS // station",
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false },
   });
   try { win.removeMenu(); } catch (_) {}
@@ -35,7 +38,7 @@ function createWindow() {
 function watchIndexForReload() {
   try {
     fs.watch(__dirname, (_evt, filename) => {
-      if (filename !== "index.html") return;
+      if (!filename || filename !== "index.html") return;
       clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => {
         if (win && !win.isDestroyed()) { try { win.webContents.reloadIgnoringCache(); } catch (_) {} }
