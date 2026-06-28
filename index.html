@@ -657,6 +657,22 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         }
       }
       if (vfacts) vfacts.textContent = (m.total || 0) + ' facts';
+    } else if(m.type==="git_event"){
+      if(m.type2==="new_commits"||m.commits!=null){
+        var gitmsg = '⟦ git: ' + (m.commits ? m.commits.split('\n')[0] : m.to) + ' ⟧';
+        var bub = document.createElement('div');
+        bub.className = 'bub info';
+        bub.style.cssText = 'font-size:10px;opacity:.7;align-self:center;max-width:none;text-align:center;border-color:rgba(73,255,158,.2);color:var(--acid)';
+        bub.textContent = gitmsg;
+        var th = document.getElementById('thread');
+        if(th){ th.appendChild(bub); th.scrollTop = th.scrollHeight; }
+        var vs2 = document.getElementById('vitals');
+        if(vs2){
+          vs2.style.transition='background .15s';
+          vs2.style.background='rgba(73,255,158,.06)';
+          setTimeout(function(){vs2.style.background='';},600);
+        }
+      }
     }
   });
 
