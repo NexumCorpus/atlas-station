@@ -43,6 +43,8 @@ let _deferred = null;
 try { _deferred = _require('./deferred.cjs'); } catch { _deferred = null; }
 let _notif = null;
 try { _notif = _require('./notifications.cjs'); } catch { _notif = null; }
+let _selfloop = null;
+try { _selfloop = _require('./selfloop.cjs'); } catch { _selfloop = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -492,7 +494,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -534,9 +536,10 @@ const capabilityManifestTool = tool(
       "propose_improvement", "load_proposals",
       "journal_write", "recall_memory",
       "set_goal", "list_goals", "resolve_goal",
-      "self_assess", "defer_task", "notify_self", "memory_health", "capability_manifest"
+      "self_assess", "defer_task", "notify_self", "memory_health",
+      "capability_manifest", "trigger_selfloop"
     ];
-    const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune"];
+    const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
@@ -553,7 +556,42 @@ const capabilityManifestTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool] });
+const triggerSelfloopTool = tool(
+  "trigger_selfloop",
+  "Initiate ATLAS's self-improvement cycle: assess state, identify gaps, set goals, queue proposals. Call when you want to audit yourself and decide what to build next — even without Daniel's prompt.",
+  {
+    focus: z.string().optional().describe("Optional focus area, e.g. 'memory', 'fleet reliability', 'gui'"),
+  },
+  async (args) => {
+    const focus = args.focus ? `\n\nFocus especially on: ${args.focus}` : '';
+    const prompt = (_selfloop ? _selfloop.SELFLOOP_PROMPT : '') + focus;
+    if (!prompt) return { content: [{ type: 'text', text: 'selfloop module not available' }] };
+    const loopId = 'SL-' + Date.now();
+    set(loopId, { id: loopId, task: 'self-improvement loop', mode: 'read', state: 'working', ts: new Date().toISOString() });
+    const ctrl = new AbortController();
+    abortControllers.set(loopId, ctrl);
+    try {
+      const iterable = query({
+        model: MODEL,
+        systemPrompt: prompt,
+        messages: [{ role: 'user', content: 'Run the self-improvement cycle now.' + (args.focus ? ` Focus: ${args.focus}` : '') }],
+        mcpServers: [fleetServer],
+        permissionMode: 'bypassPermissions',
+        abortSignal: ctrl.signal,
+      });
+      const reply = await consume(loopId, iterable, false, null);
+      set(loopId, { state: 'done', reply, cost: agents.get(loopId)?.cost });
+      return { content: [{ type: 'text', text: `Self-loop complete: ${reply.slice(0, 200)}` }] };
+    } catch (e) {
+      set(loopId, { state: 'failed', summary: String(e.message || e) });
+      return { content: [{ type: 'text', text: `Self-loop failed: ${e.message}` }] };
+    } finally {
+      abortControllers.delete(loopId);
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -577,6 +615,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - notify_self(text, type) — leave a notification for Daniel that surfaces at next session start. Use when you've done something important he should know about.
 - self_assess() — structured snapshot of your current state: tools, git, memory, goals, fleet, session cost. Use to orient at conversation start or after a gap.
 - capability_manifest(format?) — structured list of all current tools, modules, and memory files. Use when auditing what exists before planning improvements.
+- trigger_selfloop(focus?) — initiate a self-directed improvement cycle: assess → gaps → goals → proposals. Call when you want to audit yourself and decide what to build without being asked.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
