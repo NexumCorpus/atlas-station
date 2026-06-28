@@ -102,7 +102,12 @@ async function consume(id, iterable, build, branch) {
           patch.lastTool = n;
           patch.lastToolArg = extractToolArg(n, b.input);
         }
-        else if (b.type === "text" && b.text.trim()) patch.summary = b.text.trim().slice(0, 160);
+        else if (b.type === "text" && b.text.trim()) {
+          patch.summary = b.text.trim().slice(0, 160);
+          // Stream partial text to GUI in real-time (no persist, no agents Map mutation)
+          const cur = agents.get(id) || { id };
+          send("agent", { ...cur, ...patch, partial: true, ts: new Date().toISOString() });
+        }
       }
       set(id, patch);
     } else if (m.type === "result") {
@@ -227,7 +232,12 @@ async function orchestrate(userText) {
             patch.lastTool = n;
             patch.lastToolArg = extractToolArg(n, b.input);
           }
-          else if (b.type === "text" && b.text.trim()) patch.summary = b.text.trim().slice(0, 160);
+          else if (b.type === "text" && b.text.trim()) {
+            patch.summary = b.text.trim().slice(0, 160);
+            // Stream partial text to GUI in real-time (no persist, no agents Map mutation)
+            const cur = agents.get("ATLAS") || { id: "ATLAS" };
+            send("agent", { ...cur, ...patch, partial: true, ts: new Date().toISOString() });
+          }
         }
         set("ATLAS", patch);
       } else if (m.type === "result") {
