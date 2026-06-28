@@ -22,7 +22,7 @@ const path = require('path');
 // ':' and '\' with '-', so E:\ becomes E-- in the project path component.
 const DEFAULT_JOURNAL = path.join(
   process.env.USERPROFILE || process.env.HOME || '',
-  '.claude', 'projects', 'E--', 'memory', 'atlas-station.md'
+  '.claude', 'projects', 'E--atlas-station', 'memory', 'MEMORY.md'
 );
 
 // ---------------------------------------------------------------------------
