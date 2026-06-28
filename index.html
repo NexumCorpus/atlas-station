@@ -280,6 +280,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     } else if(m.type==="history"){
       HIST={commits:(m.commits||[]),runs:(m.runs||[])};
       renderLedger();
+    } else if(m.type==="startup"){
+      var health=[];
+      if(m.wtCount>0)health.push(m.wtCount+' live worktree'+(m.wtCount>1?'s':''));
+      if(m.branchCount>0)health.push(m.branchCount+' fleet branch'+(m.branchCount>1?'es':''));
+      if(health.length===0)health.push('fleet clean');
+      thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false});
+      renderThread();
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
