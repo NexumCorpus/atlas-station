@@ -98,6 +98,7 @@ function buildContext(task, opts = {}) {
     maxJournalChars = 2000,
     maxFacts        = 5,
     maxRuns         = 5,
+    maxContextChars = 6000,
     memDir          = path.join(__dirname, 'memory'),
   } = opts;
 
@@ -169,7 +170,20 @@ function buildContext(task, opts = {}) {
   if (!parts.length) return '';
   // Always include station architecture brief when there IS memory
   parts.push(STATION_BRIEF);
-  return `--- ATLAS MEMORY ---\n${parts.join('\n\n')}\n--- END MEMORY ---`;
+
+  // Budget trim: if assembled context exceeds maxContextChars, trim the largest section
+  let body = parts.join('\n\n');
+  if (body.length > maxContextChars) {
+    let largestIdx = 0;
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i].length > parts[largestIdx].length) largestIdx = i;
+    }
+    const excess = body.length - maxContextChars;
+    const floor = Math.max(200, parts[largestIdx].length - excess);
+    parts[largestIdx] = parts[largestIdx].slice(0, floor) + '\n[... trimmed for context budget]';
+    body = parts.join('\n\n');
+  }
+  return `--- ATLAS MEMORY ---\n${body}\n--- END MEMORY ---`;
 }
 
 /**
@@ -188,7 +202,21 @@ function inject(task, opts = {}) {
   }
 }
 
-module.exports = { buildContext, inject, loadJournalExcerpt };
+/**
+ * buildContextStats(task, opts?) — Return size metadata for the assembled context block.
+ *
+ * Useful for diagnostics: shows total char count and per-section breakdown without
+ * needing to parse the raw string. Never throws — returns zeroed struct on error.
+ */
+function buildContextStats(task, opts = {}) {
+  try {
+    const ctx = buildContext(task, opts);
+    const sections = ctx.split('\n\n').filter(s => s.startsWith('['));
+    return { totalChars: ctx.length, sections: sections.map(s => ({ header: s.split('\n')[0], chars: s.length })) };
+  } catch { return { totalChars: 0, sections: [] }; }
+}
+
+module.exports = { buildContext, buildContextStats, inject, loadJournalExcerpt };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memcontext.cjs`
