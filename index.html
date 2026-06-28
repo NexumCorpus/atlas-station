@@ -23,6 +23,13 @@
 @keyframes needspulse{0%,100%{border-left-color:var(--mag)}50%{border-left-color:transparent}}
 @keyframes ledin{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:none}}
 @keyframes cpulse{0%,100%{color:var(--cyan)}50%{color:var(--amber)}}
+@keyframes bootin{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:none}}
+@keyframes bootfade{0%{opacity:0}100%{opacity:1}}
+@keyframes eyeopen{0%{transform:scaleY(0.05)}30%{transform:scaleY(1.08)}100%{transform:scaleY(1)}}
+.boot-seq{opacity:0}
+.boot-done .boot-seq{animation:none}
+body.booting::before{opacity:0;transition:opacity 0.8s ease 0.2s}
+body.booted::before{opacity:.5;transition:opacity 0.6s ease}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:#9aa0b8;font-family:'Berkeley Mono',ui-monospace,Consolas,monospace;font-size:13px;overflow:hidden}
 body{display:flex;flex-direction:column;position:relative}
@@ -85,7 +92,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .crow{display:flex;gap:9px;padding:6px 12px;border-bottom:1px solid #110f1f;font-size:11px}
 .crow.new{animation:ledin .3s ease-out}
 .csha{color:var(--acid);flex:none;width:52px;opacity:.8}.csub{flex:1;color:#a6abc6}.cwhen{color:#56546e;flex:none;font-size:9px}
-.empty{padding:18px 14px;color:#56546e;line-height:1.5}
+.empty{padding:28px 14px;color:#56546e;line-height:1.7;text-align:center}
 #reply{flex:none;overflow:hidden;border-top:1px solid transparent;background:var(--panel);opacity:0;max-height:0;pointer-events:none;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .25s ease}
 #reply.open{opacity:1;max-height:40vh;pointer-events:auto;border-top:1px solid var(--cyan);box-shadow:0 -10px 30px -18px var(--cyan)}
 .rhd{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
@@ -152,7 +159,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     <filter id="ng" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs></svg>
 
-  <div class="mem">
+  <div class="mem boot-seq">
     <span class="haz"></span>
     <span class="nm">ATLAS // station</span>
     <span class="dim">// orchestrator</span>
@@ -160,7 +167,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     <span id="lifetime" style="display:none; color:var(--dim); font-size:9px; margin-left:12px; padding-left:12px; border-left:1px solid var(--line);"></span>
   </div>
 
-  <div id="vitals">
+  <div id="vitals" class="boot-seq">
     <span class="vdot" id="vd-work" title="working"></span>
     <span class="vdot" id="vd-need" title="needs-you"></span>
     <span class="vdot" id="vd-done" title="done"></span>
@@ -173,7 +180,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   </div>
 
   <div id="main">
-    <div id="convcol">
+    <div id="convcol" class="boot-seq">
       <div class="convhd">
         <svg id="eye" viewBox="0 0 120 132" width="44" height="48" style="flex:none;transform-origin:60px 70px;animation:hd 7s ease-in-out infinite">
           <!-- Outer aura ring -->
@@ -206,7 +213,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       </div>
       <div id="thread"></div>
     </div>
-    <div id="fleetcol">
+    <div id="fleetcol" class="boot-seq">
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
       <div class="lab">⟦ the fleet — what ATLAS is running ⟧</div>
       <div id="brood"></div>
@@ -217,7 +224,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   <div id="reply"></div>
 
-  <div class="bar">
+  <div class="bar boot-seq">
     <button id="modetoggle" class="modetoggle" title="Toggle: ATLAS / dispatch agent">ATLAS</button>
     <span class="to" id="barprefix">↳ to ATLAS</span>
     <textarea id="say" rows="1" placeholder="tell ATLAS what you want — it runs the fleet…" autofocus style="resize:none;overflow:hidden;line-height:1.4;padding:0;"></textarea>
@@ -247,6 +254,44 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
 <script>
 (function(){
+  // Boot sequence
+  (function bootSeq() {
+    var delays = [
+      ['.mem', 0],
+      ['#vitals', 180],
+      ['#convcol', 320],
+      ['#fleetcol', 420],
+      ['.bar', 560],
+    ];
+    delays.forEach(function(d) {
+      var el = document.querySelector(d[0]);
+      if (!el) return;
+      el.style.opacity = '0';
+      setTimeout(function() {
+        el.style.transition = 'opacity 0.35s ease, transform 0.3s ease';
+        el.style.opacity = '1';
+        el.style.transform = 'none';
+      }, d[1] + 50);
+    });
+    // Eye slit: start collapsed, expand after 400ms
+    setTimeout(function() {
+      var slit = document.getElementById('slit');
+      if (slit) {
+        slit.style.transition = 'ry 0.5s cubic-bezier(.2,.8,.4,1)';
+        // slit starts at ry=0.5 (near-closed), expands to normal
+        slit.setAttribute('ry', '0.5');
+        setTimeout(function() {
+          slit.style.transition = '';
+        }, 250);
+      }
+    }, 200);
+  })();
+  document.body.classList.add('booting');
+  setTimeout(function() {
+    document.body.classList.remove('booting');
+    document.body.classList.add('booted');
+  }, 50);
+
   var $=function(i){return document.getElementById(i);};
   var slit=$('slit'),glow=$('glow'),core=$('core');
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
@@ -492,7 +537,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       }
       if(t.needsTypewrite){twEntry=t;t.needsTypewrite=false;}
       return '<div class="bub '+t.role+(t.pending?' pending':'')+'"'+(t.role==="atlas"&&t.pending?' data-streaming="1"':'')+'><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
-    }).join(''):'<div class="empty">Tell ATLAS what you want. It decides what to do, spawns and manages subagents to do it, and reports back. You watch the fleet work on the right — you never have to command them yourself.</div>';
+    }).join(''):'<div class="empty"><span style="color:var(--violet);font-size:11px;letter-spacing:.08em">ATLAS online</span><br><span style="color:var(--dim);font-size:10.5px;line-height:1.7">direct the fleet · watch agents work<br>↓ type below to begin</span></div>';
     th.innerHTML=html;
     if(twEntry){
       var bubbles=th.querySelectorAll('.bub.atlas:not(.pending)');
