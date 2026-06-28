@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose.
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory.
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar. Uses window.atlas.* bridge.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
 - memcontext.cjs: Memory injection — prepends journal + runs + facts to every agent task.
