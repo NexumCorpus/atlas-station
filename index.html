@@ -67,6 +67,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .toolchip{display:inline-block;font-size:9px;padding:1px 6px;border:1px solid rgba(34,225,255,.3);border-radius:2px;color:rgba(34,225,255,.65);letter-spacing:.06em}
 #fleetstats{font-size:9px;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--line);flex:none;letter-spacing:.08em}
 .lab{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#6c6a86;padding:7px 14px 6px;border-bottom:1px solid var(--line);flex:none}
+/* Unified panel section headers */
+.panel-hd{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.04)}
+.panel-hd:hover{color:rgba(200,200,200,.6)}
+.panel-hd .ph-title{flex:1}
+.panel-hd .ph-count{font-size:8px;background:rgba(255,255,255,.07);padding:1px 5px;border-radius:8px;color:var(--dim)}
+.panel-hd .ph-chevron{font-size:8px;color:var(--dim);transition:transform .2s;display:inline-block}
+.panel-hd.open .ph-chevron{transform:rotate(90deg)}
 #brood{flex:none;max-height:46%;overflow-y:auto;position:relative}
 #ledger{flex:1;min-height:0;overflow-y:auto}
 /* Agent cards */
@@ -183,20 +190,21 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #thread::-webkit-scrollbar-track,#brood::-webkit-scrollbar-track,#ledger::-webkit-scrollbar-track{background:transparent}
 #thread::-webkit-scrollbar-thumb,#brood::-webkit-scrollbar-thumb,#ledger::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
 #thread::-webkit-scrollbar-thumb:hover,#brood::-webkit-scrollbar-thumb:hover,#ledger::-webkit-scrollbar-thumb:hover{background:var(--dim)}
-.prow{display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid #110f1f;cursor:pointer;flex-direction:column;background:rgba(157,107,255,.04)}
-.prow:hover{background:rgba(157,107,255,.09)}
-.prowhead{display:flex;align-items:center;gap:8px}
-.ppri{font-size:8px;padding:1px 5px;border-radius:2px;font-weight:700;flex:none}
-.ppri.high{background:rgba(255,45,149,.15);color:var(--mag);border:1px solid rgba(255,45,149,.3)}
-.ppri.medium{background:rgba(255,194,75,.1);color:var(--amber);border:1px solid rgba(255,194,75,.25)}
-.ppri.low{background:rgba(157,107,255,.1);color:var(--violet);border:1px solid rgba(157,107,255,.25)}
-.parea{font-size:8.5px;color:var(--dim);letter-spacing:.08em}
-.pdesc{font-size:11.5px;color:#cdd3e3;line-height:1.5}
-.pactions{display:flex;gap:6px;margin-top:4px}
-.pauth{font-size:9px;padding:2px 8px;border:1px solid rgba(73,255,158,.3);color:var(--acid);background:transparent;cursor:pointer;font-family:inherit}
-.pauth:hover{background:rgba(73,255,158,.1)}
-.pdism{font-size:9px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);background:transparent;cursor:pointer;font-family:inherit}
-.pdism:hover{color:var(--mag);border-color:var(--mag)}
+.prow{padding:6px 8px;border-radius:4px;margin:2px 4px;display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);transition:background .15s}
+.prow:hover{background:rgba(255,255,255,.04)}
+.ppri{font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 5px;border-radius:3px}
+.ppri.high{background:rgba(255,120,60,.15);color:#ff784e;border:1px solid rgba(255,120,60,.25)}
+.ppri.medium{background:rgba(255,180,60,.1);color:#f0b840;border:1px solid rgba(255,180,60,.2)}
+.ppri.low{background:rgba(100,180,255,.08);color:#7ab8e8;border:1px solid rgba(100,180,255,.15)}
+.ptitle{font-size:11px;color:rgba(210,205,220,.8);line-height:1.4}
+.pdesc{font-size:10px;color:var(--dim);line-height:1.4;margin-top:1px}
+.pbtns{display:flex;gap:5px;margin-top:4px}
+.pbtn{font-size:9px;padding:2px 7px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;transition:all .12s;font-family:inherit}
+.pbtn:hover{color:var(--fg);border-color:rgba(255,255,255,.2)}
+.pbtn.auth{border-color:rgba(100,255,140,.3);color:rgba(140,255,170,.8)}
+.pbtn.auth:hover{background:rgba(100,255,140,.1)}
+.pbtn.dis{border-color:rgba(255,100,100,.2);color:rgba(255,130,130,.6)}
+.pbtn.dis:hover{background:rgba(255,100,100,.08)}
 .notif{display:flex;gap:10px;padding:10px 16px;border-bottom:2px solid var(--violet);background:rgba(157,107,255,.08);animation:bubin .3s ease-out;align-items:flex-start}
 .notif.done{border-bottom-color:var(--acid);background:rgba(73,255,158,.06)}
 .notif.alert{border-bottom-color:var(--amber);background:rgba(255,194,75,.06)}
@@ -205,30 +213,35 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .nts{font-size:8px;color:var(--dim);margin-top:2px}
 .ndism{font-size:9px;border:none;background:none;color:var(--dim);cursor:pointer;padding:0 4px;float:right}
 .ndism:hover{color:var(--mag)}
-.grow{display:flex;align-items:flex-start;gap:8px;padding:7px 14px;border-bottom:1px solid #110f1f;background:rgba(73,255,158,.03)}
-.grow.gdone{opacity:.35}
-.gpri{font-size:7.5px;padding:1px 4px;border-radius:2px;flex:none;font-weight:700}
-.gpri.high{background:rgba(255,45,149,.12);color:var(--mag)}
-.gpri.medium{background:rgba(73,255,158,.1);color:var(--acid)}
-.gpri.low{background:rgba(157,107,255,.1);color:var(--violet)}
-.gtxt{font-size:11px;color:#b8c0d4;flex:1;line-height:1.4}
-.gid{font-size:8px;color:var(--dim);flex:none}
+.grow{padding:5px 8px;margin:2px 4px;border-radius:4px;display:flex;align-items:flex-start;gap:6px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);transition:all .2s}
+.grow.gdone{opacity:.35;filter:grayscale(.5)}
+.gcheck{font-size:11px;color:var(--dim);cursor:pointer;flex-shrink:0;margin-top:1px;transition:color .15s}
+.gcheck:hover{color:var(--acid)}
+.grow.gdone .gcheck{color:var(--acid)}
+.gtitle{font-size:11px;color:rgba(205,200,215,.8);line-height:1.4;flex:1}
+.grow.gdone .gtitle{text-decoration:line-through;color:var(--dim)}
+.gpri{font-size:8px;font-weight:700;letter-spacing:.07em;padding:1px 4px;border-radius:3px}
+.gpri.high{color:#ff784e}
+.gpri.medium{color:#f0b840}
+.gpri.low{color:#7ab8e8}
 #memfacts{max-height:280px;overflow-y:auto;flex:none}
-#memfsearch{width:100%;background:#080610;border:none;border-bottom:1px solid var(--line);padding:6px 14px;font-family:inherit;font-size:11px;color:var(--ink);outline:none}
+#memfsearch{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--fg);font-size:10px;padding:3px 7px;border-radius:3px;width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;margin:3px 0 4px}
+#memfsearch:focus{border-color:rgba(157,107,255,.4);background:rgba(157,107,255,.04)}
 #memfsearch::placeholder{color:var(--dim)}
+.panel-empty{font-size:10px;color:var(--dim);padding:8px 10px;font-style:italic;opacity:.6}
 .mfrow{padding:5px 14px;border-bottom:1px solid #0f0d1c;display:flex;flex-direction:column;gap:2px}
 .mfrow:hover{background:rgba(157,107,255,.04)}
 .mftxt{font-size:11px;color:#c0c8de;line-height:1.45}
 .mfmeta{font-size:8.5px;color:var(--dim);display:flex;gap:8px}
 .mftopic{color:var(--violet);opacity:.8}
 .mfconf{opacity:.6}
-#docslab{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;padding:6px 8px 2px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+/* #docslab styling now handled by .panel-hd */
 #docs{display:none;border-top:1px solid var(--line);padding:0 0 4px}
 #docslist{max-height:120px;overflow-y:auto;padding:4px 8px}
 .docfile{font-size:11px;padding:2px 4px;cursor:pointer;color:var(--dim);border-radius:2px}
 .docfile:hover,.docfile.sel{color:var(--ink);background:rgba(255,255,255,.04)}
 #docscontent{padding:6px 10px;font-size:11px;line-height:1.5;max-height:240px;overflow-y:auto;color:var(--ink);border-top:1px solid var(--line);display:none;white-space:pre-wrap}
-#metricslab{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;padding:6px 8px 2px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+/* #metricslab styling now handled by .panel-hd */
 #metrics{display:none;border-top:1px solid var(--line);padding:6px 10px}
 .mstat{font-size:11px;color:var(--dim);margin-bottom:3px}
 .mstat span{color:var(--ink)}
@@ -373,18 +386,18 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
       <div class="lab">⟦ the fleet — what ATLAS is running ⟧<span id="broodcount"></span></div>
       <div id="brood"></div>
-      <div id="proposallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ proposals — ATLAS wants to build ⟧</div>
+      <div id="proposallab" class="lab panel-hd" style="display:none"><span class="ph-title">proposals</span><span class="ph-count" id="proposal-count"></span><span class="ph-chevron">›</span></div>
       <div id="proposals" style="display:none"></div>
-      <div id="goallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ goals — ATLAS intentions ⟧</div>
+      <div id="goallab" class="lab panel-hd" style="display:none"><span class="ph-title">goals</span><span class="ph-count" id="goal-count"></span><span class="ph-chevron">›</span></div>
       <div id="goals" style="display:none"></div>
-      <div id="memfactslab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ memory — what ATLAS knows ⟧</div>
+      <div id="memfactslab" class="lab panel-hd" style="display:none"><span class="ph-title">memory</span><span class="ph-count" id="memfacts-count"></span><span class="ph-chevron">›</span></div>
       <div id="memfacts" style="display:none;flex-direction:column"></div>
-      <div id="docslab">📄 docs <span style="margin-left:auto;font-size:9px;color:var(--dim)" id="docsbadge"></span></div>
+      <div id="docslab" class="panel-hd"><span class="ph-title">docs</span><span class="ph-count" id="docsbadge"></span><span class="ph-chevron">›</span></div>
       <div id="docs">
         <div id="docslist"></div>
         <div id="docscontent"></div>
       </div>
-      <div id="metricslab">📊 metrics</div>
+      <div id="metricslab" class="panel-hd"><span class="ph-title">metrics</span><span class="ph-chevron">›</span></div>
       <div id="metrics">
         <div id="metricsinner"></div>
       </div>
@@ -757,17 +770,16 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       var prow = document.createElement('div');
       prow.className = 'prow';
       prow.dataset.pid = m.id;
-      prow.innerHTML = '<div class="prowhead">'
+      prow.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
         + '<span class="ppri ' + esc(m.priority || 'medium') + '">' + esc((m.priority || 'medium').toUpperCase()) + '</span>'
-        + '<span class="parea">' + esc(m.area || 'other') + '</span>'
-        + '<span class="parea" style="margin-left:auto;font-size:8px;color:var(--dim)">' + esc((m.ts||'').slice(0,10)) + '</span>'
+        + '<span class="ptitle">' + esc(m.description || m.area || '') + '</span>'
         + '</div>'
-        + '<div class="pdesc">' + esc(m.description || '') + '</div>'
-        + '<div class="pactions">'
-        + '<button class="pauth" data-pid="' + esc(m.id) + '">authorize → build it</button>'
-        + '<button class="pdism" data-pid="' + esc(m.id) + '">dismiss</button>'
+        + (m.area ? '<div class="pdesc">' + esc(m.area) + '</div>' : '')
+        + '<div class="pbtns">'
+        + '<button class="pbtn auth" data-pid="' + esc(m.id) + '">authorize</button>'
+        + '<button class="pbtn dis" data-pid="' + esc(m.id) + '">dismiss</button>'
         + '</div>';
-      if (ps) ps.appendChild(prow);
+      if (ps) { ps.appendChild(prow); updateProposalCount(); }
     } else if(m.type==="goal"){
       var gl = document.getElementById('goallab');
       var gs = document.getElementById('goals');
@@ -778,13 +790,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       var grow = document.createElement('div');
       grow.className = 'grow' + (m.state !== 'active' ? ' gdone' : '');
       grow.dataset.gid = m.id;
-      grow.innerHTML = '<span class="gpri ' + esc(m.priority||'medium') + '">' + esc((m.priority||'M')[0].toUpperCase()) + '</span>'
-        + '<span class="gtxt">' + esc(m.text||'') + '</span>'
-        + '<span class="gid">' + esc(m.id||'') + '</span>';
-      if (gs) gs.appendChild(grow);
+      grow.innerHTML = '<span class="gcheck">○</span>'
+        + '<span class="gpri ' + esc(m.priority||'medium') + '">' + esc((m.priority||'M')[0].toUpperCase()) + '</span>'
+        + '<span class="gtitle">' + esc(m.text||'') + '</span>';
+      if (gs) { gs.appendChild(grow); updateGoalCount(); }
     } else if(m.type==="goal_resolved"){
       var el = document.querySelector('[data-gid="' + m.id + '"]');
-      if (el) el.classList.add('gdone');
+      if (el) { el.classList.add('gdone'); updateGoalCount(); }
     } else if(m.type==="startup_tasks"&&m.count){
       thread.push({role:'system',text:'⟳ running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session',error:false,ts:Date.now()});
       renderThread();
@@ -1317,22 +1329,24 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   function renderMemFacts(facts) {
     var panel = document.getElementById('memfacts');
     if (!panel) return;
-    Array.from(panel.querySelectorAll('.mfrow')).forEach(function(r){ r.remove(); });
-    facts.forEach(function(f) {
-      var row = document.createElement('div');
-      row.className = 'mfrow';
-      row.innerHTML = '<div class="mftxt">' + esc(f.fact || '') + '</div>'
-        + '<div class="mfmeta"><span class="mftopic">' + esc(f.topic || '') + '</span>'
-        + '<span class="mfconf">' + esc(f.confidence || '') + '</span>'
-        + '<span>' + esc((f.ts || f.source || '').slice(0, 10)) + '</span></div>';
-      panel.appendChild(row);
-    });
+    Array.from(panel.querySelectorAll('.mfrow,.panel-empty')).forEach(function(r){ r.remove(); });
     if (!facts.length) {
       var empty = document.createElement('div');
-      empty.style.cssText = 'padding:12px 14px;font-size:11px;color:var(--dim)';
-      empty.textContent = 'no facts yet';
+      empty.className = 'panel-empty';
+      empty.textContent = 'none yet';
       panel.appendChild(empty);
+    } else {
+      facts.forEach(function(f) {
+        var row = document.createElement('div');
+        row.className = 'mfrow';
+        row.innerHTML = '<div class="mftxt">' + esc(f.fact || '') + '</div>'
+          + '<div class="mfmeta"><span class="mftopic">' + esc(f.topic || '') + '</span>'
+          + '<span class="mfconf">' + esc(f.confidence || '') + '</span>'
+          + '<span>' + esc((f.ts || f.source || '').slice(0, 10)) + '</span></div>';
+        panel.appendChild(row);
+      });
     }
+    updateMemfactsCount();
   }
 
   function filterFacts(q) {
@@ -1346,18 +1360,21 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   function renderDocsList() {
     var dl = document.getElementById('docslist');
     if (!dl) return;
-    if (!docsList.length) { dl.innerHTML = '<div style="font-size:10px;color:var(--dim);padding:4px 4px">no docs yet — ATLAS will write them</div>'; return; }
-    dl.innerHTML = docsList.map(function(f) {
-      return '<div class="docfile' + (docsSelectedFile === f ? ' sel' : '') + '" onclick="selectDoc(' + JSON.stringify(f) + ')">' + esc(f) + '</div>';
-    }).join('');
+    if (!docsList.length) {
+      dl.innerHTML = '<div class="panel-empty">none yet — ATLAS will write them</div>';
+    } else {
+      dl.innerHTML = docsList.map(function(f) {
+        return '<div class="docfile' + (docsSelectedFile === f ? ' sel' : '') + '" onclick="selectDoc(' + JSON.stringify(f) + ')">' + esc(f) + '</div>';
+      }).join('');
+    }
     var badge = document.getElementById('docsbadge');
-    if (badge) badge.textContent = docsList.length + ' file' + (docsList.length !== 1 ? 's' : '');
+    if (badge) badge.textContent = docsList.length ? docsList.length + (docsList.length !== 1 ? ' files' : ' file') : '';
   }
 
   function renderMetrics() {
     var el = document.getElementById('metricsinner');
     if (!el) return;
-    if (!runsData.length) { el.innerHTML = '<div class="mstat">no run history yet</div>'; return; }
+    if (!runsData.length) { el.innerHTML = '<div class="panel-empty">none yet</div>'; return; }
     var total = runsData.length;
     var done = runsData.filter(function(r){ return r.state === 'done'; }).length;
     var failed = runsData.filter(function(r){ return r.state === 'failed'; }).length;
@@ -1400,7 +1417,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   if (docslab) {
     docslab.addEventListener('click', function() {
       var panel = document.getElementById('docs');
-      if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel) {
+        var opening = panel.style.display === 'none';
+        panel.style.display = opening ? 'block' : 'none';
+        docslab.classList.toggle('open', opening);
+      }
     });
   }
 
@@ -1409,8 +1430,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     metricslab.addEventListener('click', function() {
       var panel = document.getElementById('metrics');
       if (!panel) return;
-      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-      if (panel.style.display === 'block') window.atlas.readRuns();
+      var opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      metricslab.classList.toggle('open', opening);
+      if (opening) window.atlas.readRuns();
     });
   }
 
@@ -1489,6 +1512,22 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if (!bc) return;
     var working = document.querySelectorAll('#brood .arow.st-working').length;
     bc.textContent = rows.length + ' agents' + (working ? ' · ' + working + ' active' : '');
+  }
+  function updateProposalCount() {
+    var count = document.querySelectorAll('#proposals .prow').length;
+    var badge = document.getElementById('proposal-count');
+    if (badge) badge.textContent = count > 0 ? count : '';
+  }
+  function updateGoalCount() {
+    var total = document.querySelectorAll('#goals .grow').length;
+    var done = document.querySelectorAll('#goals .grow.gdone').length;
+    var badge = document.getElementById('goal-count');
+    if (badge) badge.textContent = total ? done + '/' + total : '';
+  }
+  function updateMemfactsCount() {
+    var count = (window._memFacts || []).length;
+    var badge = document.getElementById('memfacts-count');
+    if (badge) badge.textContent = count > 0 ? count : '';
   }
 
   window.addEventListener('keydown', function(e) {
@@ -1682,20 +1721,21 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   document.addEventListener('click', function(e) {
-    if (e.target.matches('.pauth')) {
+    if (e.target.matches('.pbtn.auth')) {
       var pid = e.target.dataset.pid;
       var row = document.querySelector('[data-pid="' + pid + '"]');
       if (row) {
-        var desc = row.querySelector('.pdesc');
-        var taskText = desc ? desc.textContent : pid;
+        var titleEl = row.querySelector('.ptitle') || row.querySelector('.pdesc');
+        var taskText = titleEl ? titleEl.textContent : pid;
         window.atlas.say('ATLAS: proposal ' + pid + ' authorized. Build it: ' + taskText);
         row.style.opacity = '0.4';
         e.target.disabled = true;
       }
     }
-    if (e.target.matches('.pdism')) {
+    if (e.target.matches('.pbtn.dis')) {
       var row2 = e.target.closest('[data-pid]');
       if (row2) row2.remove();
+      updateProposalCount();
       var ps2 = document.getElementById('proposals');
       if (ps2 && !ps2.children.length) {
         ps2.style.display = 'none';
