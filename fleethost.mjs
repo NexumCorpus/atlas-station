@@ -283,9 +283,37 @@ if (_persist) {
 send("counter", { value: _maxCounter });
 send("ready", {});
 
+// Auto-prune merged fleet branches and their worktrees on startup
+try {
+  const allBranches = gitC(["branch", "--list", "fleet/*"]).trim().split("\n").filter(Boolean).map(b => b.replace(/^[\s*+]+/, ""));
+  for (const branch of allBranches) {
+    try {
+      gitC(["merge-base", "--is-ancestor", branch, "master"]);
+      // merged — find and remove worktree
+      const wtList = gitC(["worktree", "list", "--porcelain"]).trim();
+      const entries = wtList.split("\n\n");
+      for (const entry of entries) {
+        const lines = entry.trim().split("\n");
+        const wtPath = (lines.find(l => l.startsWith("worktree ")) || "").slice(9);
+        const wtBranch = (lines.find(l => l.startsWith("branch ")) || "").replace("branch refs/heads/", "");
+        if (wtBranch === branch && wtPath && !wtPath.includes("atlas-station")) {
+          try { gitC(["worktree", "remove", "--force", wtPath]); } catch (_) {}
+        }
+      }
+      try { gitC(["branch", "-d", branch]); } catch (_) { try { gitC(["branch", "-D", branch]); } catch (_) {} }
+    } catch (_) { /* not merged — skip */ }
+  }
+} catch (_) {}
+
 // History for the window — real git build log + any recorded runs.
 try {
   const commits = gitC(["log", "--pretty=%h\x1f%s\x1f%cr", "-40"]).trim().split("\n").filter(Boolean).map((l) => { const p = l.split("\x1f"); return { sha: p[0], subject: p[1] || "", when: p[2] || "" }; });
   const runs = (_memstore && _memstore.recentRuns) ? _memstore.recentRuns(50) : [];
   send("history", { commits, runs });
+} catch (_) {}
+
+try {
+  const wtCount = gitC(["worktree", "list"]).trim().split("\n").filter(Boolean).length - 1; // exclude main
+  const branchCount = gitC(["branch", "--list", "fleet/*"]).trim().split("\n").filter(b => b.trim()).length;
+  send("startup", { wtCount, branchCount, orchSession: orchSession || null });
 } catch (_) {}
