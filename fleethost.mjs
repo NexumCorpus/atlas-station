@@ -1140,6 +1140,33 @@ function runPulse() {
     const line = JSON.stringify(snapshot) + '\n';
     const fs = _require('fs');
     fs.appendFileSync(pulsePath, line, 'utf8');
+    // Write a brief pulse entry to docs/SELF_STATE.md (create if absent, overwrite each pulse)
+    try {
+      const docsDir = path.join(REPO, 'docs');
+      if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+      const allA2 = [...agents.values()].filter(a => a.id !== 'ATLAS');
+      const active = allA2.filter(a => a.state === 'working').length;
+      const done2 = allA2.filter(a => a.state === 'done').length;
+      const failed = allA2.filter(a => a.state === 'failed').length;
+      const elapsed = Math.round((Date.now() - new Date(sessionStats.startTs).getTime()) / 60000);
+      const pulseNote = [
+        `# ATLAS Self-State`,
+        `*Last updated: ${new Date().toISOString()}*`,
+        ``,
+        `## Session`,
+        `- Uptime: ${elapsed} min`,
+        `- Agents: ${done2} done, ${failed} failed, ${active} active`,
+        `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
+        `- Agents spawned: ${sessionStats.agentCount}`,
+        ``,
+        `## Tools (25 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate`,
+        ``,
+        `## Status`,
+        `Station is operational. Pulse interval: 25 min.`,
+      ].join('\n');
+      fs.writeFileSync(path.join(docsDir, 'SELF_STATE.md'), pulseNote, 'utf8');
+    } catch (_) {}
     send('pulse', snapshot);
   } catch (_) {}
 }

@@ -15,6 +15,13 @@ Then, based on gaps you notice:
 - For each buildable improvement: propose_improvement(description, priority, area)
 - For key insights: journal_write(observation, topic)
 
+6. Call write_doc with filename="SELF_STATE.md" and write a concise status document:
+   - Current capability summary (bullet list of your major tool groups)
+   - Active goals (from list_goals)
+   - Top 2-3 improvement proposals (from load_proposals)
+   - What the last self-assess found
+   Keep it under 400 words. This is your persistent self-model document.
+
 End with a brief summary of what you found and what you've queued.
 Focus on: tool gaps, memory hygiene, GUI improvements, reliability, new capabilities.
 Be selective — 2-4 high-quality actions, not a flood.`;
