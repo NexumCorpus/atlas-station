@@ -100,6 +100,11 @@ function set(id, patch) {
     }
   }
   send("agent", a);
+  // Emit running session cost update to GUI
+  if (patch.state === 'done' || patch.state === 'failed') {
+    const runningCost = [...agents.values()].reduce((s, ag) => s + (Number(ag.cost) || 0), 0);
+    send('session_cost', { total: runningCost, agentCount: sessionStats.agentCount });
+  }
   if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter, orchSession }); } catch {} }
   if ((patch.state === "done" || patch.state === "failed") && id !== "ATLAS") {
     const cur = agents.get(id);
@@ -598,7 +603,35 @@ const triggerSelfloopTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool] });
+const sessionStatsTool = tool(
+  "session_stats",
+  "Return current session statistics: cost by model, agent counts, build vs read breakdown, session duration.",
+  {},
+  async () => {
+    const allA = [...agents.values()].filter(a => a.id !== 'ATLAS');
+    const builds = allA.filter(a => a.mode === 'build');
+    const reads  = allA.filter(a => a.mode === 'read');
+    const done   = allA.filter(a => a.state === 'done');
+    const failed = allA.filter(a => a.state === 'failed');
+    const elapsed = Math.round((Date.now() - new Date(sessionStats.startTs).getTime()) / 60000);
+    const costByModel = {};
+    allA.forEach(a => {
+      if (a.cost) {
+        const k = (a.model || 'sonnet').includes('haiku') ? 'haiku' : (a.model || '').includes('opus') ? 'opus' : 'sonnet';
+        costByModel[k] = (costByModel[k] || 0) + Number(a.cost);
+      }
+    });
+    const lines = [
+      `Session: ${elapsed}min elapsed, ${sessionStats.agentCount} agents spawned`,
+      `Cost: $${sessionStats.totalCost.toFixed(3)} total` + (Object.keys(costByModel).length ? ` (${Object.entries(costByModel).map(([k,v])=>`${k}:$${v.toFixed(3)}`).join(', ')})` : ''),
+      `Builds: ${builds.length} (${done.filter(a=>a.mode==='build').length} done, ${failed.filter(a=>a.mode==='build').length} failed)`,
+      `Reads: ${reads.length} (${done.filter(a=>a.mode==='read').length} done, ${failed.filter(a=>a.mode==='read').length} failed)`,
+    ];
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 

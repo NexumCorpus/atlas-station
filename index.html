@@ -724,6 +724,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (document.getElementById('memfacts') && document.getElementById('memfacts').style.display !== 'none') {
         window.atlas.readMemory();
       }
+    } else if(m.type==="session_cost"){
+      var tc = document.getElementById('totalcost');
+      if(tc) tc.textContent = '$' + (m.total||0).toFixed(3);
+      var vc = document.getElementById('vcost');
+      if(vc){
+        vc.textContent = '$' + (m.total||0).toFixed(3);
+        vc.style.color = m.total > 1.0 ? 'var(--amber)' : m.total > 0.5 ? 'var(--acid)' : 'var(--dim)';
+      }
     }
   });
 
@@ -881,6 +889,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (a.state === "failed") fail++;
     });
     var total = list.length;
+    var haiku = list.filter(function(a){ return a.model && a.model.includes('haiku'); }).length;
+    var opus  = list.filter(function(a){ return a.model && a.model.includes('opus'); }).length;
+    var totalCost = list.reduce(function(s, a){ return s + (Number(a.cost)||0); }, 0);
     var fs = $('fleetstats');
     if (fs) {
       var parts = [];
@@ -889,6 +900,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (B > 0) parts.push(B + ' building');
       if (done > 0) parts.push(done + ' done');
       if (fail > 0) parts.push('<span style="color:#ff4d4d">' + fail + ' failed</span>');
+      if (haiku > 0) parts.push('<span style="color:var(--acid)">H:' + haiku + '</span>');
+      if (opus > 0) parts.push('<span style="color:var(--mag)">O:' + opus + '</span>');
+      if (totalCost > 0) parts.push('<span style="color:var(--amber)">$' + totalCost.toFixed(3) + '</span>');
       fs.innerHTML = total + ' agent' + (total !== 1 ? 's' : '') + ' · ' + parts.join(' · ');
     }
   }
