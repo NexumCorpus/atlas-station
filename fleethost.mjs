@@ -538,7 +538,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, verify_build`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -584,7 +584,7 @@ const capabilityManifestTool = tool(
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
-      "relate_facts", "fact_graph", "load_dreams", "resonance_stats"
+      "relate_facts", "fact_graph", "load_dreams", "resonance_stats", "verify_build"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -1011,7 +1011,81 @@ const resonanceStatsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool] });
+const verifyBuildTool = tool(
+  "verify_build",
+  "Verify the current working tree after a merge: syntax-check recently modified JS/CJS/MJS files using node --check, report any errors, and store the verdict as a fact. Call this after every merge to close the build loop autonomously.",
+  {
+    files: z.array(z.string()).optional().describe("Specific files to check (relative paths). If omitted, checks files modified in the last commit."),
+    agentId: z.string().optional().describe("The agent ID whose build is being verified (for fact labeling)."),
+  },
+  async (args) => {
+    try {
+      const { spawnSync } = _require('child_process');
+      const fs = _require('fs');
+      const path2 = _require('path');
+
+      // Determine which files to check
+      let filesToCheck = args.files || [];
+      if (!filesToCheck.length) {
+        // Get files modified in last commit
+        const result = spawnSync('git', ['-C', REPO, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
+          encoding: 'utf8', timeout: 5000
+        });
+        if (result.status === 0) {
+          filesToCheck = (result.stdout || '').trim().split('\n').filter(f =>
+            f && /\.(js|cjs|mjs)$/.test(f)
+          );
+        }
+      }
+
+      if (!filesToCheck.length) {
+        return { content: [{ type: 'text', text: 'verify_build: no JS files to check in last commit.' }] };
+      }
+
+      // Syntax-check each file
+      const results = [];
+      let passed = 0, failed = 0;
+      for (const rel of filesToCheck.slice(0, 20)) { // cap at 20 files
+        const absPath = path2.join(REPO, rel);
+        if (!fs.existsSync(absPath)) { results.push(`SKIP ${rel} (not found)`); continue; }
+        const check = spawnSync(process.execPath, ['--check', absPath], {
+          encoding: 'utf8', timeout: 10000
+        });
+        if (check.status === 0) {
+          results.push(`OK   ${rel}`);
+          passed++;
+        } else {
+          const err = (check.stderr || '').split('\n')[0].slice(0, 120);
+          results.push(`FAIL ${rel}: ${err}`);
+          failed++;
+        }
+      }
+
+      const verdict = failed === 0 ? 'PASS' : 'FAIL';
+      const summary = `${verdict} — ${passed} ok, ${failed} failed (${filesToCheck.length} files checked)`;
+
+      // Store verdict as fact
+      if (_memstore) {
+        try {
+          const factKey = args.agentId ? `build:${args.agentId}:verified` : `build:last:verified`;
+          _memstore.appendFact({
+            topic: factKey,
+            fact: `${summary}. Files: ${filesToCheck.join(', ').slice(0, 200)}`,
+            source: 'verify_build',
+            confidence: 'verified',
+          }, path2.join(REPO, 'memory'));
+        } catch {}
+      }
+
+      const text = [summary, '', ...results].join('\n');
+      return { content: [{ type: 'text', text: text }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `verify_build error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, verifyBuildTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1048,10 +1122,12 @@ relate_facts(fromKey,relation,toKey) — typed edge between facts (supports/cont
 fact_graph(key,maxDepth?) — graph neighborhood of a fact
 load_dreams(maxN?) — recent autonomous dream reports
 resonance_stats(task) — preview institutional memory for a task before spawning
+verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
 - Verify subagent claims against actual git state and file reads — never trust a written summary alone.
+- Call verify_build(agentId) after every merge — confirms syntax integrity and stores verdict as fact.
 - Agents auto-cancel after 20 minutes by default.
 
 **Station architecture you should know:**
@@ -1293,8 +1369,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (30 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats`,
+        `## Tools (31 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, verify_build`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
