@@ -108,45 +108,54 @@ function buildContext(task, opts = {}) {
     maxRuns         = 5,
     maxContextChars = 6000,
     memDir          = path.join(__dirname, 'memory'),
+    tier            = 'full',  // 'full' = orchestrator, 'build' = build agent
   } = opts;
 
   const parts = [];
 
-  // 1. Journal excerpt ───────────────────────────────────────────────────────
-  const journal = loadJournalExcerpt(journalPath, maxJournalChars);
-  if (journal) {
-    const label = path.basename(journalPath);
-    const ts    = new Date().toISOString();
-    parts.push(`[Station Journal — ${label} | loaded ${ts}]\n${journal}`);
+  // 1. Journal excerpt — skipped for build agents (inner life, not useful in worktrees)
+  if (tier !== 'build') {
+    const journal = loadJournalExcerpt(journalPath, maxJournalChars);
+    if (journal) {
+      const label = path.basename(journalPath);
+      const ts    = new Date().toISOString();
+      parts.push(`[Station Journal — ${label} | loaded ${ts}]\n${journal}`);
+    }
   }
 
-  // 1.5. Session context (prior session narrative) ──────────────────────────
-  try {
-    const _sn = require('./session-narrative.cjs');
-    const sessionCtx = _sn.buildSessionContext(path.join(__dirname, 'memory'));
-    if (sessionCtx) parts.push(sessionCtx);
-  } catch (_) {}
+  // 1.5. Session context — skipped for build agents (cross-session narrative, not actionable)
+  if (tier !== 'build') {
+    try {
+      const _sn = require('./session-narrative.cjs');
+      const sessionCtx = _sn.buildSessionContext(path.join(__dirname, 'memory'));
+      if (sessionCtx) parts.push(sessionCtx);
+    } catch (_) {}
+  }
 
   // 2. Recent run records ───────────────────────────────────────────────────
   const ms = _getMemstore();
   if (ms) {
     try {
-      const runs = ms.recentRuns(maxRuns, memDir);
+      const runLimit = tier === 'build' ? 3 : maxRuns;
+      const runs = ms.recentRuns(runLimit, memDir);
       if (runs.length > 0) {
-        const lines = runs.map(r => {
-          const date   = String(r.ts || '').slice(0, 10);
-          const cost   = typeof r.cost === 'number' ? ` ($${r.cost.toFixed(2)})` : '';
-          const branch = r.branch ? ` [${r.branch}]` : '';
-          const task60 = String(r.task || '').slice(0, 60);
-          return `- ${r.agentId} (${date}): ${r.mode} "${task60}" → ${r.state}${cost}${branch}`;
-        });
+        const lines = tier === 'build'
+          ? runs.map(r => `${r.agentId}: ${r.state}${typeof r.cost === 'number' ? ' $' + r.cost.toFixed(2) : ''}`)
+          : runs.map(r => {
+              const date   = String(r.ts || '').slice(0, 10);
+              const cost   = typeof r.cost === 'number' ? ` ($${r.cost.toFixed(2)})` : '';
+              const branch = r.branch ? ` [${r.branch}]` : '';
+              const task60 = String(r.task || '').slice(0, 60);
+              return `- ${r.agentId} (${date}): ${r.mode} "${task60}" → ${r.state}${cost}${branch}`;
+            });
         parts.push(`[Recent Fleet Runs]\n${lines.join('\n')}`);
       }
     } catch { /* skip */ }
 
     // 3. Relevant facts ───────────────────────────────────────────────────────
     try {
-      const facts = ms.recallFacts(task, { dir: memDir, maxResults: maxFacts });
+      const factLimit = tier === 'build' ? 2 : maxFacts;
+      const facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
       if (facts.length > 0) {
         const snippet = String(task).slice(0, 80);
         const lines   = facts.map(f => `- [${f.confidence}] ${f.fact} (source: ${f.source})`);
@@ -155,38 +164,45 @@ function buildContext(task, opts = {}) {
     } catch { /* skip */ }
   }
 
-  // 4. Temporal awareness ──────────────────────────────────────────────────
-  try {
-    const { spawnSync } = require('child_process');
-    const now = new Date();
-    const lines = [`Now: ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`];
-    // Last 3 git commits — spawnSync avoids shell interpolation
-    const logResult = spawnSync('git', ['log', '--oneline', '-3'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
-    if (logResult.status === 0) {
-      const gitLog = (logResult.stdout || '').trim();
-      if (gitLog) lines.push(`Recent commits:\n${gitLog}`);
-    }
-    // Git status summary
-    const statusResult = spawnSync('git', ['status', '--short'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
-    if (statusResult.status === 0) {
-      const gitStatus = (statusResult.stdout || '').trim();
-      lines.push(`Working tree: ${gitStatus ? 'dirty\n' + gitStatus : 'clean'}`);
-    }
-    if (lines.length > 1) parts.push(`[Now]\n${lines.join('\n')}`);
-  } catch {}
+  // 4. Temporal awareness — skipped for build agents (they work in their own worktree)
+  if (tier !== 'build') {
+    try {
+      const { spawnSync } = require('child_process');
+      const now = new Date();
+      const lines = [`Now: ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`];
+      // Last 3 git commits — spawnSync avoids shell interpolation
+      const logResult = spawnSync('git', ['log', '--oneline', '-3'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+      if (logResult.status === 0) {
+        const gitLog = (logResult.stdout || '').trim();
+        if (gitLog) lines.push(`Recent commits:\n${gitLog}`);
+      }
+      // Git status summary
+      const statusResult = spawnSync('git', ['status', '--short'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+      if (statusResult.status === 0) {
+        const gitStatus = (statusResult.stdout || '').trim();
+        lines.push(`Working tree: ${gitStatus ? 'dirty\n' + gitStatus : 'clean'}`);
+      }
+      if (lines.length > 1) parts.push(`[Now]\n${lines.join('\n')}`);
+    } catch {}
+  }
 
   if (!parts.length) return '';
-  // Always include station architecture brief when there IS memory
-  parts.push(STATION_BRIEF);
+  // Include station architecture brief (compact for build agents)
+  if (tier === 'build') {
+    parts.push('[Working in: E:\\atlas-station isolated worktree. Do not orchestrate or call fleet tools — implement only.]');
+  } else {
+    parts.push(STATION_BRIEF);
+  }
 
-  // Budget trim: if assembled context exceeds maxContextChars, trim the largest section
+  const effectiveMaxChars = tier === 'build' ? Math.min(maxContextChars, 2500) : maxContextChars;
+  // Budget trim: if assembled context exceeds effectiveMaxChars, trim the largest section
   let body = parts.join('\n\n');
-  if (body.length > maxContextChars) {
+  if (body.length > effectiveMaxChars) {
     let largestIdx = 0;
     for (let i = 1; i < parts.length; i++) {
       if (parts[i].length > parts[largestIdx].length) largestIdx = i;
     }
-    const excess = body.length - maxContextChars;
+    const excess = body.length - effectiveMaxChars;
     const floor = Math.max(200, parts[largestIdx].length - excess);
     parts[largestIdx] = parts[largestIdx].slice(0, floor) + '\n[... trimmed for context budget]';
     body = parts.join('\n\n');
