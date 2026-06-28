@@ -87,6 +87,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .arow-detail pre code{background:none;padding:0;color:#b8c4d8}
 .arow.sel .arow-detail{display:block}
 .det-hint{font-size:8.5px;color:var(--dim);letter-spacing:.06em;margin-top:6px;opacity:.6}
+.arow.kbd-focus{outline:1px solid rgba(157,107,255,.4);outline-offset:-1px}
+#broodcount{font-size:9px;color:var(--dim);margin-left:auto;padding-right:2px}
 .mbadge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:8px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
 .mbuild{background:rgba(255,194,75,.15);color:var(--amber);border:1px solid rgba(255,194,75,.3)}
 .mread{background:rgba(34,225,255,.1);color:var(--cyan);border:1px solid rgba(34,225,255,.25)}
@@ -286,7 +288,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     <div id="fleetcol" class="boot-seq">
       <div id="notiftray" style="display:none"></div>
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
-      <div class="lab">⟦ the fleet — what ATLAS is running ⟧</div>
+      <div class="lab">⟦ the fleet — what ATLAS is running ⟧<span id="broodcount"></span></div>
       <div id="brood"></div>
       <div id="proposallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ proposals — ATLAS wants to build ⟧</div>
       <div id="proposals" style="display:none"></div>
@@ -335,6 +337,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <span class="kbkey">click agent</span><span class="kbdesc">open detail panel</span>
       <span class="kbkey">✕ button</span><span class="kbdesc">cancel agent</span>
       <span class="kbkey">Ctrl+F</span><span class="kbdesc">search thread</span>
+      <span class="kbkey">j / k</span><span class="kbdesc">navigate brood</span>
+      <span class="kbkey">Enter</span><span class="kbdesc">expand agent reply</span>
     </div>
     <div class="kbfooter">press Esc or ? to close</div>
   </div>
@@ -432,6 +436,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   var srchMatches = [], srchIdx = 0;
+  var kbBroodIdx = -1;
 
   var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t:[];}catch(e){return[];}})();
   var agents=new Map();
@@ -955,6 +960,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     updateVitals();
     var workCount=list.filter(function(a){return a.state==="working";}).length;
     document.title=workCount>0?'ATLAS ['+workCount+' working] // station':'ATLAS // station';
+    updateBroodCount();
   }
 
   function updateFleetStats(list) {
@@ -1236,6 +1242,31 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     }
   });
 
+  // ── brood keyboard navigation ────────────────────────
+  function getBroodRows() {
+    return Array.from(document.querySelectorAll('#brood .arow'));
+  }
+  function kbBroodFocus(idx) {
+    var rows = getBroodRows();
+    rows.forEach(function(r){ r.classList.remove('kbd-focus'); });
+    if (idx < 0 || idx >= rows.length) { kbBroodIdx = -1; return; }
+    kbBroodIdx = idx;
+    rows[idx].classList.add('kbd-focus');
+    rows[idx].scrollIntoView({ block: 'nearest' });
+  }
+  function kbBroodEnter() {
+    var rows = getBroodRows();
+    if (kbBroodIdx < 0 || kbBroodIdx >= rows.length) return;
+    rows[kbBroodIdx].click();
+  }
+  function updateBroodCount() {
+    var rows = document.querySelectorAll('#brood .arow');
+    var bc = document.getElementById('broodcount');
+    if (!bc) return;
+    var working = document.querySelectorAll('#brood .arow.st-working').length;
+    bc.textContent = rows.length + ' agents' + (working ? ' · ' + working + ' active' : '');
+  }
+
   window.addEventListener('keydown', function(e) {
     if (e.target.id === 'agentreply' || e.target.id === 'say') {
       // In inputs: only handle Ctrl+K and Escape
@@ -1264,6 +1295,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (ov) {
         ov.style.display = ov.style.display === 'none' ? 'flex' : 'none';
       }
+    }
+    // Brood navigation (j/k/Enter/Escape) — only when not in an input
+    if (!e.target.matches('input,textarea')) {
+      if (e.key === 'j') { e.preventDefault(); kbBroodFocus(kbBroodIdx + 1 < getBroodRows().length ? kbBroodIdx + 1 : kbBroodIdx); }
+      if (e.key === 'k') { e.preventDefault(); kbBroodFocus(kbBroodIdx - 1 >= 0 ? kbBroodIdx - 1 : 0); }
+      if (e.key === 'Enter' && kbBroodIdx >= 0) { e.preventDefault(); kbBroodEnter(); }
+      if (e.key === 'Escape' && kbBroodIdx >= 0) { kbBroodFocus(-1); document.querySelectorAll('.arow.sel').forEach(function(r){ r.classList.remove('sel'); }); }
     }
   });
 
