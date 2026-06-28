@@ -52,6 +52,8 @@ let _memgraph = null;
 try { _memgraph = _require('./memgraph.cjs'); } catch { _memgraph = null; }
 let _dream = null;
 try { _dream = _require('./dream.cjs'); } catch { _dream = null; }
+let _resonance = null;
+try { _resonance = _require('./resonance.cjs'); } catch { _resonance = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -184,7 +186,23 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model)
   const ac = new AbortController();
   abortControllers.set(id, ac);
   try {
-    final = await consume(id, query({ prompt: mode === "build" ? (enriched + BUILD_NOTE) : enriched, options: { ...options, abortSignal: ac.signal } }), mode === "build", branch);
+    const build = mode === "build";
+    const fullTask = build ? (enriched + BUILD_NOTE) : enriched;
+    // Experience resonance: inject similar past outcomes for build agents
+    let resonantTask = fullTask;
+    if (build && _resonance) {
+      try {
+        const runsFile = path.join(REPO, 'memory', 'runs.jsonl');
+        const matches = _resonance.findSimilarRuns(task, runsFile, { maxResults: 2, minScore: 0.15 });
+        const expBlock = _resonance.formatExperience(matches);
+        if (expBlock) {
+          resonantTask = fullTask + expBlock;
+          // Tag the agent so the GUI can show it had experience injected
+          set(id, { resonanceMatches: matches.map(m => m.run.agentId).filter(Boolean) });
+        }
+      } catch {}
+    }
+    final = await consume(id, query({ prompt: resonantTask, options: { ...options, abortSignal: ac.signal } }), build, branch);
   } catch (e) {
     if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
       set(id, { state: "interrupted", summary: "cancelled by user" });
@@ -520,7 +538,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -566,9 +584,9 @@ const capabilityManifestTool = tool(
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
-      "relate_facts", "fact_graph", "load_dreams"
+      "relate_facts", "fact_graph", "load_dreams", "resonance_stats"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
@@ -971,7 +989,29 @@ const factGraphTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool] });
+const resonanceStatsTool = tool(
+  "resonance_stats",
+  "Check how well the experience resonance system would match a given task against past runs. Shows the top matching past agents and their similarity scores. Use before spawning a task to see what institutional memory will be available to it.",
+  {
+    task: z.string().describe("Task text to check resonance for"),
+  },
+  async (args) => {
+    if (!_resonance) return { content: [{ type: 'text', text: 'resonance module not available' }] };
+    try {
+      const runsFile = path.join(REPO, 'memory', 'runs.jsonl');
+      const matches = _resonance.findSimilarRuns(args.task, runsFile, { maxResults: 5, minScore: 0.08 });
+      if (!matches.length) return { content: [{ type: 'text', text: 'No resonant past runs found for this task (all similarity scores below threshold).' }] };
+      const lines = matches.map((m, i) =>
+        `${i+1}. [${m.run.agentId}] ${(m.score*100).toFixed(0)}% match — "${(m.run.task||'').slice(0,60)}..." → ${m.run.state} $${Number(m.run.cost||0).toFixed(3)}\n   Memory: ${(m.run.summary||'').slice(0,120)}`
+      );
+      return { content: [{ type: 'text', text: `Resonance check for: "${args.task.slice(0,60)}"\n\n${lines.join('\n\n')}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `resonance_stats error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1005,6 +1045,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - relate_facts(fromKey, relation, toKey) — declare a typed edge between facts (supports/contradicts/elaborates/supersedes/related_to). 'supersedes' marks the old fact stale, filtering it from future recalls.
 - fact_graph(key, maxDepth?) — explore the graph neighborhood of a fact: edges, reachable nodes, stale status.
 - load_dreams(maxN?) — read recent dream reports (autonomous reflections from idle pulse cycles). Contains patterns, insights, proposals, mood.
+- resonance_stats(task) — preview how much institutional memory a task would receive before spawning. Shows past matching agents and similarity scores.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1250,8 +1291,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (29 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams`,
+        `## Tools (30 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
