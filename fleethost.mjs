@@ -506,7 +506,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -551,7 +551,7 @@ const capabilityManifestTool = tool(
       "self_assess", "defer_task", "notify_self", "memory_health",
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
-      "run_script", "memory_consolidate"
+      "run_script", "memory_consolidate", "web_research"
     ];
     const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -829,7 +829,62 @@ Write the synthesis note now:`;
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool] });
+const webResearchTool = tool(
+  "web_research",
+  "Research a topic on the web using a Haiku agent with WebSearch/WebFetch access. Results are summarized and stored as a fact in memory. Use for looking up documentation, checking current information, or verifying facts. The agent runs with read-only web tools.",
+  {
+    query: z.string().describe("Research question or topic to look up"),
+    url: z.string().optional().describe("Specific URL to fetch and summarize (skips search if provided)"),
+    saveAs: z.string().optional().describe("Key name for the fact (default: derived from query)"),
+  },
+  async (args) => {
+    try {
+      const researchId = 'WR-' + Date.now();
+      const prompt = args.url
+        ? `You have WebFetch available. Fetch ${args.url} and summarize the key information relevant to: "${args.query || 'the page content'}". Write 2-4 sentences.`
+        : `You have WebSearch and WebFetch available. Research the following question:\n\n"${args.query}"\n\nSearch for current information, read the most relevant results, then write a factual summary of 2-5 sentences. Be concise and accurate.`;
+
+      set(researchId, { id: researchId, state: 'working', mode: 'read', task: 'web research: ' + (args.query || '').slice(0, 40), model: MODEL_HAIKU });
+      let summary = '';
+      const ctrl = new AbortController();
+      abortControllers.set(researchId, ctrl);
+      try {
+        const iter = query({
+          model: MODEL_HAIKU,
+          messages: [{ role: 'user', content: prompt }],
+          permissionMode: 'bypassPermissions',
+          abortSignal: ctrl.signal,
+        });
+        summary = await consume(researchId, iter, false, null);
+      } catch (e) {
+        set(researchId, { state: 'failed', summary: e.message });
+        return { content: [{ type: 'text', text: `Web research failed: ${e.message}` }] };
+      } finally {
+        abortControllers.delete(researchId);
+      }
+
+      // Store in memory
+      if (_memstore && summary) {
+        try {
+          const memDir = path.join(REPO, 'memory');
+          const key = args.saveAs || ('web:' + (args.query || args.url || 'research').slice(0, 30).replace(/\s+/g, '_'));
+          _memstore.appendFact({
+            topic: key,
+            fact: summary,
+            source: 'web_research',
+            confidence: 'fetched',
+          }, memDir);
+          send('fact_written', { key, value: summary.slice(0, 80) + '...' });
+        } catch (_) {}
+      }
+      return { content: [{ type: 'text', text: summary }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `web_research error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -859,6 +914,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - list_docs() — list all files in docs/.
 - run_script(command, cwd?, timeoutMs?) — execute a shell command or node script in the repo and return output (up to 3000 chars). Use for self-testing, git queries, npm lint checks. Destructive patterns blocked.
 - memory_consolidate(maxFacts?, focus?) — synthesize recent facts + journal into a higher-order insight via a Haiku read agent. Writes the synthesis as a 'consolidation' fact. Good for compressing noise into signal.
+- web_research(query, url?, saveAs?) — spawn a Haiku agent to search/fetch the web and summarize findings. Results stored as facts. Use for documentation lookup, verifying current info, or fetching specific pages.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
