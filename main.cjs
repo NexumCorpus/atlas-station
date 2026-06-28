@@ -101,7 +101,7 @@ ipcMain.on("cancel", (_e, p) => {
 ipcMain.on("read-memory", (_e) => {
   try {
     const memDir = path.join(__dirname, "memory");
-    const file = path.join(memDir, "facts.jsonl");
+    const file = path.join(memDir, "facts.ndjson");
     if (!fs.existsSync(file)) { if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [] }); return; }
     const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
     const facts = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse(); // newest first
