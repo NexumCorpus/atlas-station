@@ -492,7 +492,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -523,7 +523,37 @@ const selfAssessTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool] });
+const capabilityManifestTool = tool(
+  "capability_manifest",
+  "Emit a structured manifest of ATLAS's current capabilities — all available tools, modules, and memory systems. Use to document current state or compare against desired capabilities before planning improvements.",
+  { format: z.enum(["brief", "full"]).optional().describe("Output format (default: brief)") },
+  async (args) => {
+    const full = args.format === "full";
+    const tools = [
+      "spawn_agent", "check_fleet", "chain_agents", "fleet_status", "diagnose",
+      "propose_improvement", "load_proposals",
+      "journal_write", "recall_memory",
+      "set_goal", "list_goals", "resolve_goal",
+      "self_assess", "defer_task", "notify_self", "memory_health", "capability_manifest"
+    ];
+    const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
+    if (!full) {
+      return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
+    }
+    const lines = [
+      `[Fleet Tools — ${tools.length} total]`,
+      ...tools.map(t => `  • ${t}`),
+      `\n[Modules]`,
+      ...modules.map(m => `  • ${m}.cjs`),
+      `\n[Persistent Memory]`,
+      ...memory.map(f => `  • memory/${f}`),
+    ];
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -546,6 +576,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - memory_health() — report fact count, goal count, proposal count, last pulse. Use periodically to stay aware of memory state.
 - notify_self(text, type) — leave a notification for Daniel that surfaces at next session start. Use when you've done something important he should know about.
 - self_assess() — structured snapshot of your current state: tools, git, memory, goals, fleet, session cost. Use to orient at conversation start or after a gap.
+- capability_manifest(format?) — structured list of all current tools, modules, and memory files. Use when auditing what exists before planning improvements.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
