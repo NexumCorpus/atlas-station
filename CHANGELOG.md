@@ -98,3 +98,26 @@ The `fleet/B-5` and `fleet/B-6` branches folded in the work cleanly, and a targe
 - `c4ed7ac` merge fleet/B-5: cancellation, tool-arg extraction, memory injection for ATLAS, crash recovery
 - `cd14690` merge fleet/B-6: cancel agents, reply-to-agent, keyboard shortcuts, richer tool display
 - `239ee0f` fix(main): guard fleet restart against null exit code (signal-kills)
+
+---
+
+## Chapter 7 — Self-Upgrading Organism (2026-06-28)
+
+ATLAS gained standing authorization to upgrade itself iteratively. Ten build loops across three waves:
+
+**Wave A — Interface & Tools**
+- Fleet vitals strip: status dots, live waveform, cost ticker between header and brood
+- Startup auto-prune: merged branches/worktrees removed before first user message; health broadcast
+- New ATLAS tools: `chain_agents` (sequential read→build→verify pipelines), `fleet_status` (cost/timing detail)
+
+**Wave B — Runtime Safety**
+- Progressive text streaming: partial events broadcast on every text block, GUI updates without full re-render
+- Agent timeout: 20-minute default auto-cancel via AbortController; configurable per spawn; `timeoutMinutes: 0` disables
+- Lifetime stats: `memstore.lifetimeStats()` persists total runs and cost across sessions; displayed in header
+
+**Wave C — Intelligence**
+- STATION_BRIEF: compact source-file inventory appended to every ATLAS memory context block
+- In-place DOM rendering: partial text events update `.atask`/`.bubtxt` without full `renderBrood()`/`renderThread()` re-renders
+- `diagnose` tool: ATLAS self-check — source files, memory, git state; chain context widened to 4k chars
+
+**Sprawl management**: auto-prune on agent completion, `node prune.mjs` runs at startup, worktree Permission Denied on Windows handles gracefully (branch deleted, directory orphaned, git tracking clean).
