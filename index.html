@@ -124,6 +124,15 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .bub.atlas .atlastext p:last-child{margin-bottom:0}
 .bub.atlas .atlastext strong{color:#d4c8ff;font-weight:600}
 .bub.atlas .atlastext em{color:#a8b4d8;font-style:italic}
+.aelapsed{font-size:8.5px;color:var(--dim);flex:none;letter-spacing:.06em;min-width:24px;text-align:right}
+.arow.st-working .aelapsed{color:var(--cyan);opacity:.7}
+.lrow{display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid #0e0c1a;cursor:pointer;opacity:.7;transition:opacity .15s}
+.lrow:hover{opacity:1;background:#0c0a17}
+.lmode{font-size:9px;font-weight:700;flex:none;width:12px;text-align:center}
+.lid{font-size:9px;color:#5a5870;flex:none;width:36px}
+.ltask{flex:1;font-size:11px;color:#8b90ab}
+.lstate{font-size:9px;flex:none;letter-spacing:.06em;text-transform:uppercase}
+.lcost{font-size:9px;color:var(--acid);flex:none;width:52px;text-align:right;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -209,6 +218,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var $=function(i){return document.getElementById(i);};
   var slit=$('slit'),glow=$('glow'),core=$('core');
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+  function elapsed(ts) {
+    if (!ts) return '';
+    var ms = Date.now() - new Date(ts).getTime();
+    var s = Math.floor(ms / 1000);
+    if (s < 5) return 'now';
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm';
+    return Math.floor(m / 60) + 'h';
+  }
 
   function renderMd(s) {
     // Minimal markdown → safe HTML. Only handles common patterns from ATLAS replies.
@@ -485,6 +505,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       ? '<span class="acost2">$' + Number(a.cost).toFixed(3) + '</span>'
       : '';
 
+    var timeHtml = a.ts
+      ? '<span class="aelapsed">' + elapsed(a.ts) + '</span>'
+      : '';
+
     // Branch badge (build agents only)
     var branchHtml = a.branch
       ? '<span class="bbadge2">⬡ ' + esc(a.branch) + '</span>'
@@ -514,6 +538,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       + (branchHtml || toolHtml)
       + statLabel
       + costHtml
+      + timeHtml
       + cancelBtn
       + '</div>'
       + badgesHtml
@@ -552,17 +577,21 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     var runs=HIST.runs.slice().reverse();
     var html="";
     if(runs.length){
-      html+=runs.map(function(r,i){
-        var col=COL[r.state]||"#6c6a86";
-        return '<div class="arow st-'+r.state+'" data-k="run" data-id="'+i+'">'
-          +'<div class="arowmain">'
-          +'<span class="sig" style="color:'+col+';text-shadow:0 0 8px '+col+'">'+(SIG[r.state]||"·")+'</span>'
-          +'<span class="aid">'+esc(r.agentId||"")+'</span>'
-          +'<span class="atask ell">'+esc(r.task||"")+'</span>'
-          +'<span class="atool ell" style="color:#9d6bff">'+esc(r.mode||"")+'</span>'
-          +'<span class="acost">'+(r.cost!=null?"$"+Number(r.cost).toFixed(2):"")+'</span>'
-          +'</div></div>';
-      }).join("");
+      html += runs.map(function(r, i) {
+        var col = COL[r.state] || "#6c6a86";
+        var costStr = r.cost != null ? '$' + Number(r.cost).toFixed(3) : '';
+        var modeCol = r.mode === 'build' ? 'var(--amber)' : 'var(--cyan)';
+        var modeLabel = r.mode === 'build' ? 'B' : 'R';
+        var taskPreview = (r.task || '').split('\n').find(function(l) { return l.trim(); }) || '';
+        taskPreview = taskPreview.trim().slice(0, 70);
+        return '<div class="lrow" data-k="run" data-id="' + i + '">'
+          + '<span class="lmode" style="color:' + modeCol + '">' + modeLabel + '</span>'
+          + '<span class="lid">' + esc(r.agentId || '') + '</span>'
+          + '<span class="ltask ell">' + esc(taskPreview) + '</span>'
+          + '<span class="lstate" style="color:' + col + '">' + esc(r.state || '') + '</span>'
+          + '<span class="lcost">' + esc(costStr) + '</span>'
+          + '</div>';
+      }).join('');
     }
     if(HIST.commits.length){
       var newCount=HIST.commits.length;
@@ -733,6 +762,17 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     tickWave(ACT*3);
     requestAnimationFrame(loop);
   })();
+
+  setInterval(function() {
+    // Update elapsed time for working agents in-place
+    document.querySelectorAll('.arow.st-working .aelapsed').forEach(function(el) {
+      var row = el.closest('[data-id]');
+      if (row) {
+        var a = agents.get(row.dataset.id);
+        if (a && a.ts) el.textContent = elapsed(a.ts);
+      }
+    });
+  }, 5000);
 
   $('say').focus();
 })();
