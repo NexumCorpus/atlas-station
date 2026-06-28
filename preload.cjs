@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("atlas", {
   selfBuild: () => ipcRenderer.send("self-build"),
   cancel: (id) => ipcRenderer.send("cancel", { id }),
   readMemory: () => ipcRenderer.send("read-memory"),
+  readRuns: () => ipcRenderer.send("read-runs"),
   exportConversation: (p) => ipcRenderer.send("export-conversation", p),
   readDoc: (filename) => ipcRenderer.send("read-doc", filename),
   listDocs: () => ipcRenderer.send("list-docs"),

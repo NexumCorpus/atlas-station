@@ -126,6 +126,18 @@ ipcMain.on("export-conversation", (_e, p) => {
   }
 });
 
+ipcMain.on("read-runs", (_e) => {
+  try {
+    const file = path.join(__dirname, "memory", "runs.jsonl");
+    if (!fs.existsSync(file)) { if (win) win.webContents.send("fleet", { type: "runs_data", runs: [] }); return; }
+    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    const runs = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    if (win) win.webContents.send("fleet", { type: "runs_data", runs: runs.slice(-200) }); // last 200 runs
+  } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "runs_data", runs: [] });
+  }
+});
+
 ipcMain.on("list-docs", (_e) => {
   try {
     const docsDir = path.join(__dirname, "docs");

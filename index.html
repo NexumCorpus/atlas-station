@@ -214,6 +214,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .docfile{font-size:11px;padding:2px 4px;cursor:pointer;color:var(--dim);border-radius:2px}
 .docfile:hover,.docfile.sel{color:var(--ink);background:rgba(255,255,255,.04)}
 #docscontent{padding:6px 10px;font-size:11px;line-height:1.5;max-height:240px;overflow-y:auto;color:var(--ink);border-top:1px solid var(--line);display:none;white-space:pre-wrap}
+#metricslab{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;padding:6px 8px 2px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+#metrics{display:none;border-top:1px solid var(--line);padding:6px 10px}
+.mstat{font-size:11px;color:var(--dim);margin-bottom:3px}
+.mstat span{color:var(--ink)}
+.mbar{font-family:monospace;font-size:10px;letter-spacing:0;color:var(--acid)}
 #srchbar{position:absolute;top:8px;right:14px;z-index:20;display:flex;gap:6px;align-items:center;background:#0e0c1a;border:1px solid var(--violet);padding:4px 10px;border-radius:3px}
 #srchbar:not(.open){display:none}
 #srchinput{background:transparent;border:none;color:var(--ink);font-family:inherit;font-size:12px;width:180px;outline:none}
@@ -306,6 +311,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="docs">
         <div id="docslist"></div>
         <div id="docscontent"></div>
+      </div>
+      <div id="metricslab">📊 metrics</div>
+      <div id="metrics">
+        <div id="metricsinner"></div>
       </div>
       <div class="lab" style="border-top:1px solid var(--line)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
@@ -462,6 +471,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var docsList=[];
   var docsContent={};
   var docsSelectedFile=null;
+  var runsData=[];
 
   var COL={"needs-you":"#ff2d95","working":"#22e1ff","done":"#49ff9e","failed":"#ff4d4d","interrupted":"#ffc24b"};
   var SIG={"needs-you":"◉","working":"⟁","done":"◇","failed":"⊗","interrupted":"⏸"};
@@ -595,6 +605,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
               if(el)spawnParticles(el,st==="done");
             },60);
           }
+        }
+        // Auto-refresh metrics panel if open when an agent completes
+        if((m.state==='done'||m.state==='failed')&&document.getElementById('metrics')&&document.getElementById('metrics').style.display!=='none'){
+          window.atlas.readRuns();
         }
         renderBrood();
       }
@@ -789,6 +803,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       }
     } else if(m.type==="doc_written"){
       window.atlas.listDocs();
+    } else if(m.type==="runs_data"){
+      runsData = m.runs || [];
+      renderMetrics();
     }
   });
 
@@ -1226,6 +1243,33 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if (badge) badge.textContent = docsList.length + ' file' + (docsList.length !== 1 ? 's' : '');
   }
 
+  function renderMetrics() {
+    var el = document.getElementById('metricsinner');
+    if (!el) return;
+    if (!runsData.length) { el.innerHTML = '<div class="mstat">no run history yet</div>'; return; }
+    var total = runsData.length;
+    var done = runsData.filter(function(r){ return r.state === 'done'; }).length;
+    var failed = runsData.filter(function(r){ return r.state === 'failed'; }).length;
+    var builds = runsData.filter(function(r){ return r.mode === 'build'; }).length;
+    var reads = runsData.filter(function(r){ return r.mode === 'read'; }).length;
+    var costs = runsData.map(function(r){ return Number(r.cost)||0; }).filter(function(c){ return c>0; });
+    var avgCost = costs.length ? costs.reduce(function(a,b){return a+b;},0)/costs.length : 0;
+    var totalCostAll = costs.reduce(function(a,b){return a+b;},0);
+    var rate = total ? Math.round(done/total*100) : 0;
+    // Sparkline: last 20 runs as blocks — green=done, dim=failed, mid=other
+    var last20 = runsData.slice(-20);
+    var spark = last20.map(function(r){
+      if(r.state==='done') return '█';
+      if(r.state==='failed') return '░';
+      return '▒';
+    }).join('');
+    el.innerHTML =
+      '<div class="mstat">runs: <span>' + total + '</span>  success: <span>' + rate + '%</span></div>' +
+      '<div class="mstat">builds: <span>' + builds + '</span>  reads: <span>' + reads + '</span></div>' +
+      '<div class="mstat">avg cost: <span>$' + avgCost.toFixed(4) + '</span>  total: <span>$' + totalCostAll.toFixed(3) + '</span></div>' +
+      '<div class="mbar" title="last 20 runs: █=done ░=failed">' + esc(spark) + '</div>';
+  }
+
   function selectDoc(filename) {
     docsSelectedFile = filename;
     renderDocsList();
@@ -1246,6 +1290,16 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     docslab.addEventListener('click', function() {
       var panel = document.getElementById('docs');
       if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+
+  var metricslab = document.getElementById('metricslab');
+  if (metricslab) {
+    metricslab.addEventListener('click', function() {
+      var panel = document.getElementById('metrics');
+      if (!panel) return;
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel.style.display === 'block') window.atlas.readRuns();
     });
   }
 
@@ -1367,6 +1421,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   renderThread();renderBrood();renderLedger();
   renderDocsList();
   window.atlas.listDocs();
+  window.atlas.readRuns();
 
   // ── search events ───────────────────────────────────
   var srchinput = document.getElementById('srchinput');
