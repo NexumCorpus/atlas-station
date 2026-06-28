@@ -502,6 +502,24 @@ input:focus-visible{outline:none}
 
 <script>
 (function(){
+  // ── localStorage preferences ────────────────────────
+  var PREFS_KEY = 'atlas-prefs-v1';
+  function loadPrefs() {
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch(e) { return {}; }
+  }
+  function savePrefs(patch) {
+    try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
+  }
+  function getPanelStates() {
+    var ids = ['proposals','goals','memfacts','docs','metrics'];
+    var s = {};
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      s[id] = el ? el.style.display !== 'none' : false;
+    });
+    return s;
+  }
+
   // Boot sequence
   (function bootSeq() {
     var delays = [
@@ -541,6 +559,33 @@ input:focus-visible{outline:none}
   }, 50);
 
   var $=function(i){return document.getElementById(i);};
+  var scrollRestored = false;
+
+  // ── restore column width ─────────────────────────────
+  (function() {
+    var p = loadPrefs();
+    if (p.convWidth) {
+      var cc = document.getElementById('convcol');
+      var fc = document.getElementById('fleetcol');
+      if (cc && fc) { cc.style.flex = 'none'; cc.style.width = p.convWidth + '%'; fc.style.flex = '1'; }
+    }
+  })();
+
+  // ── restore panel states ─────────────────────────────
+  (function() {
+    var p = loadPrefs();
+    if (p.panels) {
+      Object.keys(p.panels).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = p.panels[id] ? (id === 'memfacts' ? 'flex' : 'block') : 'none';
+      });
+      var docsLab = document.getElementById('docslab');
+      if (docsLab) docsLab.classList.toggle('open', !!p.panels.docs);
+      var metricsLab = document.getElementById('metricslab');
+      if (metricsLab) metricsLab.classList.toggle('open', !!p.panels.metrics);
+    }
+  })();
+
   var slit=$('slit'),glow=$('glow'),core=$('core');
 
   // ── toast notifications ─────────────────────────────
@@ -1160,6 +1205,13 @@ input:focus-visible{outline:none}
     if (!wasAtBottom && visible.length > 0 && visible[visible.length - 1].role === 'atlas') {
       alertJumpBtn();
     }
+    // Restore saved scroll position (first render only)
+    if (!scrollRestored && loadPrefs().threadScroll != null) {
+      scrollRestored = true;
+      var _savedScroll = loadPrefs().threadScroll;
+      var _restoreEl = document.getElementById('thread');
+      if (_restoreEl) _restoreEl.scrollTop = _savedScroll;
+    }
     // Re-apply search highlights after re-render
     var si = document.getElementById('srchinput');
     if (si && si.value) runSearch(si.value);
@@ -1585,6 +1637,7 @@ input:focus-visible{outline:none}
         var opening = panel.style.display === 'none';
         panel.style.display = opening ? 'block' : 'none';
         docslab.classList.toggle('open', opening);
+        savePrefs({ panels: getPanelStates() });
       }
     });
   }
@@ -1598,6 +1651,7 @@ input:focus-visible{outline:none}
       panel.style.display = opening ? 'block' : 'none';
       metricslab.classList.toggle('open', opening);
       if (opening) window.atlas.readRuns();
+      savePrefs({ panels: getPanelStates() });
     });
   }
 
@@ -1614,6 +1668,7 @@ input:focus-visible{outline:none}
       if (panel) { panel.style.display = 'flex'; }
       window.atlas.readMemory();
     }
+    savePrefs({ panels: getPanelStates() });
   });
 
   var exportbtn = document.getElementById('exportbtn');
@@ -1635,6 +1690,14 @@ input:focus-visible{outline:none}
       sayEl.style.height = 'auto';
       sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
     });
+    // Draft persistence
+    var _draftTimer = null;
+    sayEl.addEventListener('input', function() {
+      clearTimeout(_draftTimer);
+      _draftTimer = setTimeout(function() { savePrefs({ draft: sayEl.value }); }, 500);
+    });
+    var _savedDraft = loadPrefs().draft;
+    if (_savedDraft) { sayEl.value = _savedDraft; sayEl.dispatchEvent(new Event('input')); }
   }
 
   $('say').addEventListener('keydown', function(e) {
@@ -1651,6 +1714,7 @@ input:focus-visible{outline:none}
       }
       $('say').value = '';
       $('say').style.height = 'auto';
+      savePrefs({ draft: '' });
     }
   });
 
@@ -1738,7 +1802,16 @@ input:focus-visible{outline:none}
   window.atlas.readRuns();
   // Scroll listener for jump-to-bottom button
   var _threadEl = document.getElementById('thread');
-  if (_threadEl) _threadEl.addEventListener('scroll', updateJumpBtn);
+  if (_threadEl) {
+    _threadEl.addEventListener('scroll', updateJumpBtn);
+    var _scrollSaveTimer = null;
+    _threadEl.addEventListener('scroll', function() {
+      clearTimeout(_scrollSaveTimer);
+      _scrollSaveTimer = setTimeout(function() {
+        savePrefs({ threadScroll: _threadEl.scrollTop });
+      }, 300);
+    });
+  }
   // Expose inline-onclick helpers to global scope
   window.scrollThread = scrollThread;
   window.copyMsg = copyMsg;
@@ -1866,6 +1939,7 @@ input:focus-visible{outline:none}
       convcol.style.flex='none';
       convcol.style.width=newConvPct+'%';
       fleetcol.style.flex='1';
+      savePrefs({ convWidth: newConvPct });
     });
     document.addEventListener('mouseup',function(){
       if(!dragging)return;
