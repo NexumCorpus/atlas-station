@@ -33,16 +33,18 @@ function extractToolArg(name, input) {
   return null;
 }
 
-let _memcontext = null, _memstore = null, _persist = null;
+let _memcontext = null, _memstore = null, _persist = null, _session = null;
 try { _memcontext = _require("./memcontext.cjs"); } catch { _memcontext = null; }
 try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
 try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
+try { _session = _require("./session-narrative.cjs"); } catch { _session = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
 const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
+const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function pruneAgent(id) {
@@ -65,6 +67,10 @@ function set(id, patch) {
   if ((patch.state === "done" || patch.state === "failed") && timeoutHandles.has(id)) {
     clearTimeout(timeoutHandles.get(id));
     timeoutHandles.delete(id);
+  }
+  // Accumulate subagent costs for session narrative
+  if ((patch.state === "done" || patch.state === "failed") && patch.cost != null && id !== "ATLAS") {
+    sessionStats.totalCost += Number(patch.cost) || 0;
   }
   Object.assign(a, patch);
   if (a.timeoutHandle) delete a.timeoutHandle; // strip any legacy/persisted handle field
@@ -144,6 +150,7 @@ async function consume(id, iterable, build, branch) {
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
 async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
+  sessionStats.agentCount++;
   let cwd = REPO, branch = null;
   set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null });
   const enriched = _memcontext ? _memcontext.inject(task) : task;
@@ -336,6 +343,20 @@ async function orchestrate(userText) {
             }
           } catch { /* silent */ }
         }
+        // Write session narrative so ATLAS can read it next session
+        if (_session) {
+          try {
+            const atlasA = agents.get("ATLAS");
+            if (atlasA) sessionStats.totalCost += Number(atlasA.cost) || 0;
+            _session.writeSession({
+              ts: new Date().toISOString(),
+              agentCount: sessionStats.agentCount,
+              totalCost: sessionStats.totalCost,
+              topics: sessionStats.topics,
+              note: null,
+            }, path.join(REPO, "memory"));
+          } catch (_) {}
+        }
       }
     }
   } catch (e) { set("ATLAS", { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
@@ -449,6 +470,14 @@ try {
   const wtCount = gitC(["worktree", "list"]).trim().split("\n").filter(Boolean).length - 1; // exclude main
   const branchCount = gitC(["branch", "--list", "fleet/*"]).trim().split("\n").filter(b => b.trim()).length;
   send("startup", { wtCount, branchCount, orchSession: orchSession || null });
+} catch (_) {}
+
+// Inject prior session narrative into the GUI on startup
+try {
+  if (_session) {
+    const sessionCtx = _session.buildSessionContext(path.join(REPO, "memory"));
+    if (sessionCtx) send("sessionctx", { text: sessionCtx });
+  }
 } catch (_) {}
 
 try {
