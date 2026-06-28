@@ -33,11 +33,12 @@ function extractToolArg(name, input) {
   return null;
 }
 
-let _memcontext = null, _memstore = null, _persist = null, _session = null;
+let _memcontext = null, _memstore = null, _persist = null, _session = null, _goals = null;
 try { _memcontext = _require("./memcontext.cjs"); } catch { _memcontext = null; }
 try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
 try { _persist = _require("./persist.cjs"); } catch { _persist = null; }
 try { _session = _require("./session-narrative.cjs"); } catch { _session = null; }
+try { _goals = _require("./goal-store.cjs"); } catch { _goals = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -318,7 +319,52 @@ const loadProposalsTool = tool(
     }
   }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool] });
+const setGoalTool = tool(
+  "set_goal",
+  "Record a persistent goal — something ATLAS intends to accomplish across sessions. Goals outlast individual conversations. Use for things like 'improve fleet reliability', 'add web awareness', 'keep memory store healthy'.",
+  {
+    goal: z.string().describe("What you intend to accomplish"),
+    priority: z.enum(["high", "medium", "low"]).optional(),
+    area: z.string().optional().describe("Domain: fleet, memory, gui, autonomy, etc."),
+  },
+  async (args) => {
+    if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
+    const g = _goals.addGoal(args.goal, args.priority, args.area, path.join(REPO, 'memory'));
+    send('goal', g);
+    return { content: [{ type: 'text', text: `Goal set: ${g.id} — "${g.text}"` }] };
+  }
+);
+
+const listGoalsTool = tool(
+  "list_goals",
+  "List all goals (active, done, abandoned). Use to review what's being worked on before setting a new goal.",
+  {},
+  async () => {
+    if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
+    const goals = _goals.listGoals(path.join(REPO, 'memory'));
+    if (!goals.length) return { content: [{ type: 'text', text: 'no goals yet' }] };
+    const lines = goals.map(g => `[${g.state}] ${g.id} (${g.priority}): ${g.text}`);
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
+  }
+);
+
+const resolveGoalTool = tool(
+  "resolve_goal",
+  "Mark a goal as done or abandoned.",
+  {
+    id: z.string().describe("Goal ID (G-...)"),
+    outcome: z.enum(["done", "abandoned"]),
+  },
+  async (args) => {
+    if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
+    const g = _goals.resolveGoal(args.id, args.outcome, path.join(REPO, 'memory'));
+    if (!g) return { content: [{ type: 'text', text: `Goal ${args.id} not found` }] };
+    send('goal_resolved', g);
+    return { content: [{ type: 'text', text: `Goal ${g.id} marked ${g.state}` }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, setGoalTool, listGoalsTool, resolveGoalTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -332,6 +378,9 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - diagnose — self-check: verifies source files, memory, git state. Use when something seems wrong.
 - propose_improvement(description, priority, area) — queue a self-directed improvement proposal for Daniel to review. Use when you identify something worth building without being asked — proposals queue for Daniel's review.
 - load_proposals() — list pending proposals. Check before proposing to avoid duplicates.
+- set_goal(goal, priority, area) — record a persistent intention that outlasts this conversation. Use when you form a commitment that should carry across sessions (e.g. 'keep memory healthy', 'add web awareness'). Goals are yours — not proposals for Daniel.
+- list_goals() — review active, done, and abandoned goals. Check before setting a new one to avoid duplication.
+- resolve_goal(id, outcome) — mark a goal done or abandoned once you've acted on it.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -572,5 +621,13 @@ try {
     const lines = fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
     const proposals = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     proposals.filter(p => p.state === 'pending').forEach(p => send('proposal', p));
+  }
+} catch (_) {}
+
+// Broadcast active goals on startup
+try {
+  if (_goals) {
+    const activeGoals = _goals.listGoals(path.join(REPO, 'memory')).filter(g => g.state === 'active');
+    activeGoals.forEach(g => send('goal', g));
   }
 } catch (_) {}
