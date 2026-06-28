@@ -195,17 +195,29 @@ function buildContext(task, opts = {}) {
   }
 
   const effectiveMaxChars = tier === 'build' ? Math.min(maxContextChars, 2500) : maxContextChars;
-  // Budget trim: if assembled context exceeds effectiveMaxChars, trim the largest section
+  // Priority-ordered budget trim: temporal → session → journal → runs → facts. STATION_BRIEF never trimmed.
+  const TRIM_ORDER = [
+    /^\[Now\]/,
+    /^\[Session Context/,
+    /^\[Station Journal/,
+    /^\[Recent Fleet Runs\]/,
+    /^\[Relevant Facts/,
+  ];
   let body = parts.join('\n\n');
   if (body.length > effectiveMaxChars) {
-    let largestIdx = 0;
-    for (let i = 1; i < parts.length; i++) {
-      if (parts[i].length > parts[largestIdx].length) largestIdx = i;
+    for (const pattern of TRIM_ORDER) {
+      if (body.length <= effectiveMaxChars) break;
+      const idx = parts.findIndex(p => pattern.test(p));
+      if (idx === -1) continue;
+      const excess = body.length - effectiveMaxChars;
+      if (excess >= parts[idx].length - 50) {
+        parts.splice(idx, 1);
+      } else {
+        const keep = Math.max(100, parts[idx].length - excess);
+        parts[idx] = parts[idx].slice(0, keep) + '\n[... trimmed]';
+      }
+      body = parts.join('\n\n');
     }
-    const excess = body.length - effectiveMaxChars;
-    const floor = Math.max(200, parts[largestIdx].length - excess);
-    parts[largestIdx] = parts[largestIdx].slice(0, floor) + '\n[... trimmed for context budget]';
-    body = parts.join('\n\n');
   }
   return `--- ATLAS MEMORY ---\n${body}\n--- END MEMORY ---`;
 }
