@@ -54,6 +54,8 @@ let _dream = null;
 try { _dream = _require('./dream.cjs'); } catch { _dream = null; }
 let _resonance = null;
 try { _resonance = _require('./resonance.cjs'); } catch { _resonance = null; }
+let _mutmap = null;
+try { _mutmap = _require('./mutationmap.cjs'); } catch { _mutmap = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -164,6 +166,19 @@ async function consume(id, iterable, build, branch) {
       final = String(m.result ?? agents.get(id)?.summary ?? "");
       set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...extra });
       if (_memstore) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null }); } catch {}
+      // Record which files this build agent modified — feeds mutation_map churn analysis
+      if (build && _mutmap) {
+        try {
+          const { spawnSync } = _require('child_process');
+          const result = spawnSync('git', ['-C', REPO, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
+            encoding: 'utf8', timeout: 5000
+          });
+          if (result.status === 0) {
+            const files = (result.stdout || '').trim().split('\n').filter(Boolean);
+            if (files.length) _mutmap.recordMutation(id, files, path.join(REPO, 'memory'));
+          }
+        } catch {}
+      }
     }
   }
   return final;
@@ -538,7 +553,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -586,10 +601,10 @@ const capabilityManifestTool = tool(
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
-      "signal_propagate", "generate_tool", "verify_build"
+      "signal_propagate", "generate_tool", "verify_build", "mutation_map"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
     }
@@ -1163,7 +1178,37 @@ const verifyBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool] });
+const mutationMapTool = tool(
+  "mutation_map",
+  "Show ATLAS's codebase churn map — which files have been modified most frequently across build agents, how many agents touched each file, and when. Optionally filter to a specific file to see its full modification history. Use to identify unstable or heavily-evolved parts of the station.",
+  {
+    file: z.string().optional().describe("Specific file to get history for (e.g. 'fleethost.mjs'). If omitted, shows top 10 most-churned files."),
+    topN: z.number().optional().describe("Number of top files to show (default 10, max 20)"),
+  },
+  async (args) => {
+    if (!_mutmap) return { content: [{ type: 'text', text: 'mutationmap module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      if (args.file) {
+        const history = _mutmap.fileHistory(memDir, args.file);
+        if (!history.length) return { content: [{ type: 'text', text: `No mutation records for ${args.file} yet.` }] };
+        const lines = history.map(h => `[${h.ts.slice(0,10)}] ${h.agentId}`);
+        return { content: [{ type: 'text', text: `Mutation history: ${args.file} (${history.length} edits)\n${lines.join('\n')}` }] };
+      }
+      const n = Math.min(args.topN || 10, 20);
+      const top = _mutmap.topChurn(memDir, n);
+      if (!top.length) return { content: [{ type: 'text', text: 'No mutation records yet — records accumulate after build agents complete.' }] };
+      const lines = top.map((f, i) =>
+        `${i+1}. ${f.file} — ${f.count} edit${f.count !== 1 ? 's' : ''} by ${f.agents.length} agent${f.agents.length !== 1 ? 's' : ''} (last: ${(f.lastTs||'').slice(0,10)})`
+      );
+      return { content: [{ type: 'text', text: `Codebase churn map (top ${top.length}):\n${lines.join('\n')}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `mutation_map error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1203,6 +1248,7 @@ resonance_stats(task) — preview institutional memory for a task before spawnin
 signal_propagate(factKey) — propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
+mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1511,8 +1557,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (33 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build`,
+        `## Tools (34 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
