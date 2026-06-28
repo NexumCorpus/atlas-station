@@ -529,6 +529,29 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
+    } else if(m.type==="pulse"){
+      // Show last pulse time in vitals strip
+      var vpulse=document.getElementById('vpulse');
+      if(!vpulse){
+        var vact=document.getElementById('vact');
+        if(vact){
+          vpulse=document.createElement('span');
+          vpulse.id='vpulse';
+          vpulse.style.cssText='font-size:8.5px;color:var(--dim);letter-spacing:.08em;border-left:1px solid var(--line);padding-left:10px;';
+          vact.parentNode.insertBefore(vpulse,vact.nextSibling);
+        }
+      }
+      if(vpulse){
+        var clean=m.git&&m.git.clean;
+        vpulse.textContent='pulse · '+(clean?'clean':'dirty')+' · '+(m.fleet?m.fleet.working+'w':'');
+        // Flash the vitals strip briefly
+        var vs=document.getElementById('vitals');
+        if(vs){
+          vs.style.transition='background 0.2s';
+          vs.style.background='rgba(157,107,255,0.08)';
+          setTimeout(function(){vs.style.background='';},400);
+        }
+      }
     }
   });
 
