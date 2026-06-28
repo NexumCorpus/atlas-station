@@ -41,7 +41,7 @@ function startFleet() {
     fleet = null;
     if (win) {
       win.webContents.send("fleet", { type: "error", m: "fleet engine exited (code " + (code ?? "?") + ")" });
-      if (code !== 0) setTimeout(startFleet, 2000);
+      if (code !== 0 && code !== null) setTimeout(startFleet, 2000);
     }
   });
 }
