@@ -12,7 +12,11 @@
 @keyframes scan{0%{background-position:0 0}100%{background-position:0 -240px}}
 @keyframes drift{0%{transform:translateY(0)}100%{transform:translateY(-12px)}}
 @keyframes wpulse{0%,100%{box-shadow:inset 2px 0 0 var(--cyan),inset 0 0 18px -8px var(--cyan)}50%{box-shadow:inset 2px 0 0 var(--cyan),inset 0 0 30px -6px var(--cyan)}}
-@keyframes shimmer{0%{background-position:-160px 0}100%{background-position:220px 0}}
+@keyframes shimmer{from{left:-60%}to{left:110%}}
+@keyframes card-in{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes work-pulse{0%,100%{box-shadow:0 0 0 0 rgba(100,180,255,.0);border-color:rgba(100,180,255,.35)}50%{box-shadow:0 0 8px 1px rgba(100,180,255,.15);border-color:rgba(100,180,255,.55)}}
+@keyframes done-flash{0%{box-shadow:0 0 16px 3px rgba(100,255,140,.35);border-color:rgba(100,255,140,.6)}100%{box-shadow:none;border-color:rgba(100,255,140,.2)}}
+@keyframes fail-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}40%{transform:translateX(3px)}60%{transform:translateX(-2px)}80%{transform:translateX(1px)}}
 @keyframes sigp{0%,100%{opacity:.55;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
 @keyframes flash{0%{background:rgba(73,255,158,.20)}100%{background:transparent}}
 @keyframes flashf{0%{background:rgba(255,77,77,.20)}100%{background:transparent}}
@@ -64,41 +68,51 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .lab{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#6c6a86;padding:7px 14px 6px;border-bottom:1px solid var(--line);flex:none}
 #brood{flex:none;max-height:46%;overflow-y:auto;position:relative}
 #ledger{flex:1;min-height:0;overflow-y:auto}
-.arow{position:relative;display:flex;flex-direction:column;gap:4px;padding:9px 14px;border-bottom:1px solid #141225;cursor:pointer;overflow:hidden;transition:background .2s}
-.arowmain{display:flex;align-items:center;gap:9px;width:100%}
-.arow:hover{background:#100e1c}
-.arow.sel{background:#150f22}
-.arow.st-working{animation:wpulse 1.6s ease-in-out infinite}
-.arow.st-working::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(34,225,255,.12),transparent);background-size:200px 100%;animation:shimmer 1.5s linear infinite;pointer-events:none}
-.arow.st-done.fresh{animation:flash 1.1s ease-out}
-.arow.st-failed.fresh{animation:flashf 1.1s ease-out}
+/* Agent cards */
+.arow{background:rgba(255,255,255,.028);border:1px solid var(--line);border-radius:6px;margin-bottom:5px;cursor:pointer;transition:border-color .2s,box-shadow .2s,background .15s;position:relative;overflow:hidden}
+.arow:hover{background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.12)}
+.arow.kbd-focus{outline:1px solid rgba(157,107,255,.5);outline-offset:-1px;box-shadow:0 0 0 2px rgba(157,107,255,.1)}
+.arow.sel{border-color:rgba(157,107,255,.4);background:rgba(157,107,255,.06)}
+/* State-based glow borders */
+.arow.st-working{border-color:rgba(100,180,255,.35);animation:work-pulse 2s ease-in-out infinite}
+.arow.st-done{animation:done-flash .5s ease-out forwards}
+.arow.was-done{border-color:rgba(100,255,140,.2)}
+.arow.st-failed{animation:fail-shake .4s ease-out}
+.arow.was-failed{border-color:rgba(255,100,100,.25)}
 .arow.st-needs-you{border-left:4px solid var(--mag);background:rgba(255,45,149,.08);animation:needspulse 1s infinite}
-.sig{font-size:13px;flex:none;width:14px;text-align:center}
-.st-working .sig{animation:sigp 1.1s ease-in-out infinite}
-.aid{font-size:10px;color:#7e7c9a;flex:none;width:34px;letter-spacing:.03em}
-.atask{flex:1;color:#cdd3e3;font-size:11.5px}
-.atool{font-size:9px;width:58px;text-align:right;flex:none;color:var(--cyan);opacity:.85}
-.acost{font-size:9px;width:40px;text-align:right;flex:none;color:#6c6a86}
-.tbadges{display:flex;gap:4px;padding-left:22px}
-.tbadge{font-size:9px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;color:var(--dim);opacity:.8}
-.arow-detail{display:none;padding:10px 14px 12px;border-top:1px solid #1a1630;background:#080610;font-size:11.5px;line-height:1.6;color:#c5cde0;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto}
+/* Spawn animation */
+.arow.spawning{animation:card-in .22s ease-out forwards}
+/* Progress shimmer on working cards */
+.arow.st-working::before{content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;background:linear-gradient(90deg,transparent,rgba(100,180,255,.06),transparent);animation:shimmer 2s linear infinite;pointer-events:none}
+/* Card layout */
+.arowmain{display:flex;align-items:center;gap:6px;padding:7px 9px;min-height:0}
+.card-state-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:background .3s;background:rgba(255,255,255,.15)}
+.arow.st-working .card-state-dot{background:#5ab4f5;box-shadow:0 0 5px #5ab4f580}
+.arow.st-done .card-state-dot,.arow.was-done .card-state-dot{background:#64ff8c;box-shadow:0 0 4px #64ff8c60}
+.arow.st-failed .card-state-dot,.arow.was-failed .card-state-dot{background:#ff6464;box-shadow:0 0 4px #ff646460}
+.arow.st-needs-you .card-state-dot{background:var(--mag);box-shadow:0 0 5px var(--mag)}
+/* Task text */
+.card-task{flex:1;font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4}
+.arow.st-working .card-task{color:rgba(200,225,255,.7)}
+/* Badges row */
+.card-badges{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.mbadge{font-size:8px;padding:1px 4px;border-radius:2px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.mbuild{background:rgba(157,107,255,.18);color:var(--violet);border:1px solid rgba(157,107,255,.25)}
+.mread{background:rgba(100,180,255,.12);color:#7ab8e8;border:1px solid rgba(100,180,255,.2)}
+.mmodel{font-size:8px;padding:1px 4px;border-radius:2px;border:1px solid rgba(255,255,255,.08);color:var(--dim)}
+.mmodel-h{border-color:rgba(180,200,100,.2);color:#b4c864}
+.mmodel-o{border-color:rgba(255,180,60,.2);color:#f0a840}
+/* Cost + timing */
+.card-meta{font-size:9px;color:var(--dim);padding:0 9px 5px;display:flex;gap:8px}
+.card-elapsed{font-variant-numeric:tabular-nums}
+/* Expanded detail */
+.arow-detail{display:none;padding:6px 9px 8px;border-top:1px solid rgba(255,255,255,.05);font-size:11px;line-height:1.5;color:rgba(220,220,220,.7);max-height:200px;overflow-y:auto}
 .arow-detail code{background:#12101e;padding:1px 4px;border-radius:2px;font-size:10.5px;color:var(--cyan)}
 .arow-detail pre{background:#0c0a18;padding:8px 10px;border-radius:3px;overflow-x:auto;border:1px solid var(--line);margin:4px 0}
 .arow-detail pre code{background:none;padding:0;color:#b8c4d8}
 .arow.sel .arow-detail{display:block}
-.det-hint{font-size:8.5px;color:var(--dim);letter-spacing:.06em;margin-top:6px;opacity:.6}
-.arow.kbd-focus{outline:1px solid rgba(157,107,255,.4);outline-offset:-1px}
+.det-hint{font-size:9px;color:var(--dim);font-style:italic;margin-bottom:4px}
 #broodcount{font-size:9px;color:var(--dim);margin-left:auto;padding-right:2px}
-.mbadge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:8px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
-.mbuild{background:rgba(255,194,75,.15);color:var(--amber);border:1px solid rgba(255,194,75,.3)}
-.mread{background:rgba(34,225,255,.1);color:var(--cyan);border:1px solid rgba(34,225,255,.25)}
-.mmodel{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;font-size:7.5px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
-.mmodel-h{background:rgba(73,255,158,.12);color:var(--acid);border:1px solid rgba(73,255,158,.25)}
-.mmodel-o{background:rgba(255,45,149,.12);color:var(--mag);border:1px solid rgba(255,45,149,.25)}
-.statbadge{font-size:8.5px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;letter-spacing:.06em;flex:none;white-space:nowrap}
-.acost2{font-size:9px;color:var(--acid);flex:none;letter-spacing:.03em;font-variant-numeric:tabular-nums}
-.bbadge2{font-size:9px;color:var(--amber);opacity:.8;flex:none;white-space:nowrap;letter-spacing:.04em}
-.atool2{font-size:9px;color:var(--cyan);opacity:.6;flex:none;letter-spacing:.03em;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .particle{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;animation:particle 700ms ease-out forwards;z-index:10}
 .crow{display:flex;gap:9px;padding:6px 12px;border-bottom:1px solid #110f1f;font-size:11px}
 .crow.new{animation:ledin .3s ease-out}
@@ -151,7 +165,6 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .bub.atlas .atlastext strong{color:#d4c8ff;font-weight:600}
 .bub.atlas .atlastext em{color:#a8b4d8;font-style:italic}
 .aelapsed{font-size:8.5px;color:var(--dim);flex:none;letter-spacing:.06em;min-width:24px;text-align:right}
-.arow.st-working .aelapsed{color:var(--cyan);opacity:.7}
 .lrow{display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid #0e0c1a;cursor:pointer;opacity:.7;transition:opacity .15s}
 .lrow:hover{opacity:1;background:#0c0a17}
 .lmode{font-size:9px;font-weight:700;flex:none;width:12px;text-align:center}
@@ -465,6 +478,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   var SEL=null;
   var fresh=new Set();
   var particled=new Set();
+  var seenAgentIds=new Set();
+  var doneAgentIds=new Set();
+  var failedAgentIds=new Set();
   var prevWorkCount=-1;
   var displayedCost=0;
   var ledgerCommitCount=0;
@@ -590,7 +606,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
             replyCard.dataset.reply=m.reply||m.summary||'';
             if(replyCard.classList.contains('sel')){
               var replyDet=replyCard.querySelector('.arow-detail');
-              if(replyDet)replyDet.innerHTML=renderMd(replyCard.dataset.reply)+'<div class="det-hint">click card to collapse</div>';
+              if(replyDet)replyDet.innerHTML='<div class="det-hint">reply from agent</div>'+renderMd(replyCard.dataset.reply);
             }
           }
         }
@@ -598,6 +614,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           fresh.add(m.id);
           var aid=m.id,st=m.state;
           setTimeout(function(){fresh.delete(aid);renderBrood();},1200);
+          // Transition from st-done/st-failed (flash/shake) to was-done/was-failed (persistent border)
+          if(st==="done"&&!doneAgentIds.has(aid)){
+            var _daid=aid;
+            setTimeout(function(){doneAgentIds.add(_daid);renderBrood();},600);
+          } else if(st==="failed"&&!failedAgentIds.has(aid)){
+            var _faid=aid;
+            setTimeout(function(){failedAgentIds.add(_faid);renderBrood();},500);
+          }
           if(!particled.has(aid)){
             particled.add(aid);
             setTimeout(function(){
@@ -895,112 +919,73 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     if (si && si.value) runSearch(si.value);
   }
 
-  // ── agent row builder ───────────────────────────────
-  function rowOf(a) {
-    var col = COL[a.state] || "#6c6a86";
-    var sel = (SEL && SEL.kind === "agent" && SEL.id === a.id) ? " sel" : "";
-    var fr = fresh.has(a.id) ? " fresh" : "";
-    var needsyou = a.state === "needs-you";
-
-    // Mode badge: R (read) or B (build), color-coded
-    var modeBadge = a.mode === "build"
-      ? '<span class="mbadge mbuild">B</span>'
-      : '<span class="mbadge mread">R</span>';
-
-    // Model tier badge: H (haiku) or O (opus); sonnet is default — no badge
-    var modelShort = '', modelTier = '';
-    if (a.model && a.model.includes('haiku')) { modelShort = 'H'; modelTier = 'h'; }
-    else if (a.model && a.model.includes('opus')) { modelShort = 'O'; modelTier = 'o'; }
-    var modelBadge = modelShort ? '<span class="mmodel mmodel-' + modelTier + '">' + modelShort + '</span>' : '';
-
-    // State sigil + label
-    var statLabel = needsyou
-      ? '<span class="statbadge" style="color:var(--mag);border-color:rgba(255,45,149,.35)">⚡ reply</span>'
-      : a.state === "working"
-      ? '<span class="statbadge" style="color:var(--cyan);border-color:rgba(34,225,255,.3)">◌ active</span>'
-      : a.state === "done"
-      ? '<span class="statbadge" style="color:var(--acid);border-color:rgba(73,255,158,.25)">✓ done</span>'
-      : a.state === "failed"
-      ? '<span class="statbadge" style="color:#ff4d4d;border-color:rgba(255,77,77,.3)">✗ fail</span>'
-      : '<span class="statbadge">' + esc(a.state) + '</span>';
-
-    // Task: show first meaningful line, up to 80 chars
-    var taskRaw = a.task || a.summary || "";
-    var taskFirst = taskRaw.split('\n').find(function(l) { return l.trim(); }) || taskRaw;
-    taskFirst = taskFirst.trim().slice(0, 80);
-
-    // Cost: show only if non-zero
-    var costHtml = (a.cost != null && a.cost > 0)
-      ? '<span class="acost2">$' + Number(a.cost).toFixed(3) + '</span>'
-      : '';
-
-    var timeHtml = a.ts
-      ? '<span class="aelapsed">' + elapsed(a.ts) + '</span>'
-      : '';
-
-    // Branch badge (build agents only)
-    var branchHtml = a.branch
-      ? '<span class="bbadge2">⬡ ' + esc(a.branch) + '</span>'
-      : '';
-
-    // Last tool (compact)
-    var toolHtml = (!a.branch && a.lastTool)
-      ? '<span class="atool2">' + esc(a.lastTool) + '</span>'
-      : '';
-
-    // Cancel button (working or needs-you)
-    var cancelBtn = (a.state === "working" || a.state === "needs-you")
-      ? '<button class="xcbtn" data-id="' + esc(a.id) + '" title="cancel">✕</button>'
-      : '';
-
-    // Tool badges strip (last 3 tools used)
-    var tools = (agentTools.get(a.id) || []).slice(0, 3);
-    var badgesHtml = tools.length
-      ? '<div class="tbadges">' + tools.map(function(t) { return '<span class="tbadge">' + esc(t) + '</span>'; }).join('') + '</div>'
-      : '';
-
-    return '<div class="arow st-' + a.state + sel + fr + '" data-k="agent" data-id="' + esc(a.id) + '">'
-      + '<div class="arowmain">'
-      + modeBadge
-      + modelBadge
-      + '<span class="aid">' + esc(a.id) + '</span>'
-      + '<span class="atask ell">' + esc(taskFirst) + '</span>'
-      + (branchHtml || toolHtml)
-      + statLabel
-      + costHtml
-      + timeHtml
-      + cancelBtn
-      + '</div>'
-      + badgesHtml
-      + '<div class="arow-detail"></div>'
-      + '</div>';
-  }
-
   // ── render brood ────────────────────────────────────
   function renderBrood(){
+    var el=$('brood');
+    if(!el)return;
     var list=Array.from(agents.values()).filter(function(a){return a.id!=="ATLAS";});
-    var ord={"working":0,"needs-you":1,"interrupted":2,"done":3,"failed":4};
-    list.sort(function(a,b){
-      return(ord[a.state]==null?9:ord[a.state])-(ord[b.state]==null?9:ord[b.state]);
-    });
-    $('brood').innerHTML=list.length
-      ?list.map(rowOf).join("")
-      :'<div class="broodempty">no agents deployed</div>';
-    // Stamp data-reply on every card; populate detail panel for selected card
+    if(!list.length){
+      el.innerHTML='<div style="color:var(--dim);font-size:11px;padding:12px 8px;text-align:center">no subagents yet</div>';
+      updateBroodCount();
+      return;
+    }
+    // Newest first
+    list.sort(function(a,b){ return (b.ts||'')>(a.ts||'')?1:-1; });
+    var selId=SEL&&SEL.kind==='agent'?SEL.id:null;
+    el.innerHTML=list.map(function(a){
+      var isNew=!seenAgentIds.has(a.id);
+      var stateCls=a.state==='working'?'st-working'
+        :a.state==='done'?(doneAgentIds.has(a.id)?'was-done':'st-done')
+        :a.state==='failed'?(failedAgentIds.has(a.id)?'was-failed':'st-failed')
+        :a.state==='needs-you'?'st-needs-you':'';
+      var modebadge=a.mode==='build'
+        ?'<span class="mbadge mbuild">build</span>'
+        :'<span class="mbadge mread">read</span>';
+      var modelbadge='';
+      if((a.model||'').includes('haiku'))modelbadge='<span class="mmodel mmodel-h">H</span>';
+      else if((a.model||'').includes('opus'))modelbadge='<span class="mmodel mmodel-o">O</span>';
+      var cancelBtn=(a.state==='working'||a.state==='needs-you')
+        ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel">✕</button>'
+        :'';
+      var costStr=a.cost&&a.cost>0?'<span>$'+Number(a.cost).toFixed(3)+'</span>':'';
+      var turnsStr=a.turns?'<span>'+a.turns+'t</span>':'';
+      var elapsedStr='';
+      if(a.state==='working'&&(a.startTs||a.ts)){
+        elapsedStr='<span class="card-elapsed">'+elapsed(a.startTs||a.ts)+'</span>';
+      }
+      var meta=(costStr||turnsStr||elapsedStr)
+        ?'<div class="card-meta">'+[costStr,turnsStr,elapsedStr].filter(Boolean).join('')+'</div>'
+        :'';
+      var replyBody=a.reply||a.summary||'';
+      var detContent=replyBody?renderMd(replyBody)
+        :(a.state==='working'?'<span style="color:var(--dim)">running…</span>':'');
+      var taskFirst=(a.task||a.id||'').split('\n').find(function(l){return l.trim();})||(a.task||a.id||'');
+      taskFirst=taskFirst.trim().slice(0,80);
+      return '<div class="arow '+stateCls+(isNew?' spawning':'')+(selId===a.id?' sel':'')+'" data-k="agent" data-id="'+esc(a.id)+'">'
+        +'<div class="arowmain">'
+          +'<div class="card-state-dot"></div>'
+          +'<div class="card-task">'+esc(taskFirst)+'</div>'
+          +'<div class="card-badges">'+modebadge+modelbadge+cancelBtn+'</div>'
+        +'</div>'
+        +meta
+        +'<div class="arow-detail"><div class="det-hint">reply from agent</div>'+detContent+'</div>'
+        +'</div>';
+    }).join('');
+    // Mark all rendered agents as seen (new ones got 'spawning'; won't get it again)
+    list.forEach(function(a){seenAgentIds.add(a.id);});
+    // Stamp data-reply for in-place updates
     list.forEach(function(a){
       var card=document.querySelector('#brood [data-id="'+a.id+'"]');
       if(card)card.dataset.reply=a.reply||a.summary||'';
     });
-    if(SEL&&SEL.kind==='agent'){
-      var selCard=document.querySelector('#brood [data-id="'+SEL.id+'"]');
-      if(selCard&&selCard.dataset.reply){
-        var det=selCard.querySelector('.arow-detail');
-        if(det)det.innerHTML=renderMd(selCard.dataset.reply)+'<div class="det-hint">click card to collapse</div>';
-      }
+    // Restore kbd-focus indicator
+    if(kbBroodIdx>=0){
+      var rows=el.querySelectorAll('.arow');
+      if(rows[kbBroodIdx])rows[kbBroodIdx].classList.add('kbd-focus');
     }
     updateFleetStats(list);
     updateVitals();
-    var workCount=list.filter(function(a){return a.state==="working";}).length;
+    var workCount=list.filter(function(a){return a.state==='working';}).length;
     document.title=workCount>0?'ATLAS ['+workCount+' working] // station':'ATLAS // station';
     updateBroodCount();
   }
@@ -1505,11 +1490,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 
   setInterval(function() {
     // Update elapsed time for working agents in-place
-    document.querySelectorAll('.arow.st-working .aelapsed').forEach(function(el) {
+    document.querySelectorAll('.arow.st-working .card-elapsed').forEach(function(el) {
       var row = el.closest('[data-id]');
       if (row) {
         var a = agents.get(row.dataset.id);
-        if (a && a.ts) el.textContent = elapsed(a.ts);
+        if (a && (a.startTs||a.ts)) el.textContent = elapsed(a.startTs||a.ts);
       }
     });
   }, 5000);
