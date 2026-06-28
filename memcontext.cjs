@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, self_assess, defer_task, notify_self, memory_health, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research.
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, self_assess, defer_task, notify_self, memory_health, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, load_dreams.
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
@@ -40,6 +40,7 @@ E:\\atlas-station source files:
 - goal-store.cjs: Persistent goals — addGoal, listGoals, resolveGoal. File: memory/goals.ndjson.
 - deferred.cjs: Deferred tasks — deferTask, popPending. File: memory/deferred.ndjson.
 - notifications.cjs: Cross-session notifications — notify, getUnread, markRead. File: memory/notifications.ndjson.
+- dream.cjs: Dream protocol — writeDream, loadDreams. Writes to memory/dreams.ndjson. Invoked automatically every 4th pulse (~100 min) to produce autonomous pattern/insight/proposal reflections.
 - fact-extractor.cjs: Extracts inferred facts from ATLAS replies for persistent memory.
 - prune.mjs: Sprawl cleanup — removes merged fleet/* branches and their worktrees. Run: node prune.mjs.
 Fleet pattern: build agents use isolated git worktrees at E:\\atlas-wt\\<id> on branch fleet/<id>.`;
