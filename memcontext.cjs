@@ -146,6 +146,26 @@ function buildContext(task, opts = {}) {
     } catch { /* skip */ }
   }
 
+  // 4. Temporal awareness ──────────────────────────────────────────────────
+  try {
+    const { spawnSync } = require('child_process');
+    const now = new Date();
+    const lines = [`Now: ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`];
+    // Last 3 git commits — spawnSync avoids shell interpolation
+    const logResult = spawnSync('git', ['log', '--oneline', '-3'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+    if (logResult.status === 0) {
+      const gitLog = (logResult.stdout || '').trim();
+      if (gitLog) lines.push(`Recent commits:\n${gitLog}`);
+    }
+    // Git status summary
+    const statusResult = spawnSync('git', ['status', '--short'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+    if (statusResult.status === 0) {
+      const gitStatus = (statusResult.stdout || '').trim();
+      lines.push(`Working tree: ${gitStatus ? 'dirty\n' + gitStatus : 'clean'}`);
+    }
+    if (lines.length > 1) parts.push(`[Now]\n${lines.join('\n')}`);
+  } catch {}
+
   if (!parts.length) return '';
   // Always include station architecture brief when there IS memory
   parts.push(STATION_BRIEF);
@@ -248,20 +268,24 @@ if (require.main === module) {
     assert.ok(typeof noJournal === 'string', 'inject returns string even with missing journal');
     assert.ok(noJournal.includes('some task'), 'original task preserved with missing journal');
 
-    // ── buildContext returns "" when nothing is available ─────────────────
+    // ── buildContext with no journal/facts still returns temporal context ────
+    // Temporal section always fires (uses __dirname, not memDir), so even with
+    // nothing else available we get at least [Now] + STATION_BRIEF.
     const emptyMemDir = path.join(testDir, 'empty-mem');
     const emptyCtx = buildContext('hello world', {
       journalPath: '/nonexistent/journal.md',
       memDir:      emptyMemDir,
     });
-    assert.strictEqual(emptyCtx, '', 'empty context string when no data available');
+    assert.ok(emptyCtx.includes('[Now]'), 'temporal section always present when git is available');
+    assert.ok(emptyCtx.includes('Now:'),  'temporal section includes current datetime');
 
-    // ── inject with no data returns original task unchanged ───────────────
+    // ── inject with no journal/facts still prepends temporal context ──────
     const bare = inject('bare task', {
       journalPath: '/nonexistent',
       memDir:      emptyMemDir,
     });
-    assert.strictEqual(bare, 'bare task', 'inject returns original task when nothing loaded');
+    assert.ok(bare.includes('bare task'),        'inject preserves original task');
+    assert.ok(bare.includes('--- ATLAS MEMORY ---'), 'inject prepends memory block even when only temporal data available');
 
     // ── loadJournalExcerpt: truncation ────────────────────────────────────
     const excerpt = loadJournalExcerpt(fakeJournal, 30);
