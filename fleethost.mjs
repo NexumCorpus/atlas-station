@@ -158,11 +158,49 @@ const checkTool = tool(
   {},
   async () => { const rows = [...agents.values()].filter((a) => a.id !== "ATLAS").map((a) => `${a.id} [${a.state}] ${(a.task || "").slice(0, 60)}${a.branch ? " " + a.branch : ""}`); return { content: [{ type: "text", text: rows.length ? rows.join("\n") : "no subagents yet" }] }; }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool] });
+const chainTool = tool(
+  "chain_agents",
+  "Run a sequence of agents in order, each receiving the prior agent's result as context. Use for read→build→verify pipelines. Returns the final agent's result.",
+  {
+    steps: z.array(z.object({
+      task: z.string().describe("task for this step"),
+      mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
+    })).describe("ordered list of agent steps"),
+  },
+  async (args) => {
+    let context = "";
+    const results = [];
+    for (const step of (args.steps || [])) {
+      const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 2000) : step.task;
+      const result = await runSubagent(taskWithCtx, step.mode || "read");
+      context = result;
+      results.push(result);
+    }
+    return { content: [{ type: "text", text: results.join("\n\n---\n\n") }] };
+  }
+);
+const statusTool = tool(
+  "fleet_status",
+  "Get detailed status of all agents including cost, turn count, branch, and elapsed time.",
+  {},
+  async () => {
+    const now = Date.now();
+    const rows = [...agents.values()].filter(a => a.id !== "ATLAS").map(a => {
+      const elapsed = a.ts ? Math.round((now - new Date(a.ts).getTime()) / 1000) : null;
+      const cost = a.cost != null ? ` $${a.cost.toFixed(3)}` : "";
+      const branch = a.branch ? ` [${a.branch}]` : "";
+      const turns = a.turns ? ` ${a.turns}t` : "";
+      const time = elapsed != null ? ` ${elapsed}s ago` : "";
+      return `${a.id} [${a.state}]${cost}${turns}${branch}${time} — ${(a.task || "").slice(0, 60)}`;
+    });
+    return { content: [{ type: "text", text: rows.length ? rows.join("\n") : "no subagents" }] };
+  }
+);
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
-You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state.
+You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself. Use check_fleet to see state. Use chain_agents to run sequential read→build→verify pipelines automatically. Use fleet_status for richer cost/timing detail than check_fleet.
 
 You are responsible for the HEALTH of the fleet: keep the branch/worktree sprawl under control — prune merged and dead branches and their worktrees, don't let detritus accumulate. Verify your subagents' claims against the ACTUAL code and git state — never trust a written summary alone (agents have claimed changes they did not fully make). Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices. Take care of the work; keep Daniel in control through transparency.`;
 
