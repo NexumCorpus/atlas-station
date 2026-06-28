@@ -71,11 +71,16 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .aid{font-size:10px;color:#7e7c9a;flex:none;width:34px;letter-spacing:.03em}
 .atask{flex:1;color:#cdd3e3;font-size:11.5px}
 .atool{font-size:9px;width:58px;text-align:right;flex:none;color:var(--cyan);opacity:.85}
-.ast{font-size:9px;width:54px;text-align:right;flex:none;text-transform:uppercase}
 .acost{font-size:9px;width:40px;text-align:right;flex:none;color:#6c6a86}
 .tbadges{display:flex;gap:4px;padding-left:22px}
 .tbadge{font-size:9px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;color:var(--dim);opacity:.8}
-.bbadge{font-size:9px;color:var(--amber);opacity:.9;flex:none;white-space:nowrap}
+.mbadge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:8px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
+.mbuild{background:rgba(255,194,75,.15);color:var(--amber);border:1px solid rgba(255,194,75,.3)}
+.mread{background:rgba(34,225,255,.1);color:var(--cyan);border:1px solid rgba(34,225,255,.25)}
+.statbadge{font-size:8.5px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;letter-spacing:.06em;flex:none;white-space:nowrap}
+.acost2{font-size:9px;color:var(--acid);flex:none;letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.bbadge2{font-size:9px;color:var(--amber);opacity:.8;flex:none;white-space:nowrap;letter-spacing:.04em}
+.atool2{font-size:9px;color:var(--cyan);opacity:.6;flex:none;letter-spacing:.03em;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .particle{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;animation:particle 700ms ease-out forwards;z-index:10}
 .crow{display:flex;gap:9px;padding:6px 12px;border-bottom:1px solid #110f1f;font-size:11px}
 .crow.new{animation:ledin .3s ease-out}
@@ -428,37 +433,71 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
 
   // ── agent row builder ───────────────────────────────
-  function rowOf(a){
-    var col=COL[a.state]||"#6c6a86";
-    var sel=(SEL&&SEL.kind==="agent"&&SEL.id===a.id)?" sel":"";
-    var fr=fresh.has(a.id)?" fresh":"";
-    var needsyou=a.state==="needs-you";
-    var statText=needsyou
-      ?'<span style="color:var(--mag)">⚡ needs you</span>'
-      :'<span style="color:'+col+'">'+esc(a.state)+'</span>';
-    var tools=(agentTools.get(a.id)||[]).slice(0,3);
-    var badgesHtml=tools.length
-      ?'<div class="tbadges">'+tools.map(function(t){return'<span class="tbadge">'+esc(t)+'</span>';}).join('')+'</div>'
-      :'';
-    var branchBadge=a.branch
-      ?'<span class="bbadge">⬡ '+esc(a.branch)+(a.commits?' · '+a.commits+' commits':'')+'</span>'
-      :'';
-    var toolDisplay=a.lastTool?(a.lastTool+(a.lastToolArg?' ← '+a.lastToolArg:'')):'';
-    var cancelBtn=(a.state==="working"||a.state==="needs-you")
-      ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel agent">✕</button>'
-      :'';
-    return '<div class="arow st-'+a.state+sel+fr+'" data-k="agent" data-id="'+esc(a.id)+'">'
-      +'<div class="arowmain">'
-      +'<span class="sig" style="color:'+col+';text-shadow:0 0 8px '+col+'">'+(SIG[a.state]||"·")+'</span>'
-      +'<span class="aid">'+esc(a.id)+'</span>'
-      +'<span class="atask ell">'+esc(a.task||a.summary||"")+'</span>'
-      +(branchBadge?branchBadge:'<span class="atool ell">'+esc(toolDisplay)+'</span>')
-      +'<span class="ast">'+statText+'</span>'
-      +'<span class="acost">'+(a.cost!=null?"$"+Number(a.cost).toFixed(2):"")+'</span>'
-      +cancelBtn
-      +'</div>'
-      +badgesHtml
-      +'</div>';
+  function rowOf(a) {
+    var col = COL[a.state] || "#6c6a86";
+    var sel = (SEL && SEL.kind === "agent" && SEL.id === a.id) ? " sel" : "";
+    var fr = fresh.has(a.id) ? " fresh" : "";
+    var needsyou = a.state === "needs-you";
+
+    // Mode badge: R (read) or B (build), color-coded
+    var modeBadge = a.mode === "build"
+      ? '<span class="mbadge mbuild">B</span>'
+      : '<span class="mbadge mread">R</span>';
+
+    // State sigil + label
+    var statLabel = needsyou
+      ? '<span class="statbadge" style="color:var(--mag);border-color:rgba(255,45,149,.35)">⚡ reply</span>'
+      : a.state === "working"
+      ? '<span class="statbadge" style="color:var(--cyan);border-color:rgba(34,225,255,.3)">◌ active</span>'
+      : a.state === "done"
+      ? '<span class="statbadge" style="color:var(--acid);border-color:rgba(73,255,158,.25)">✓ done</span>'
+      : a.state === "failed"
+      ? '<span class="statbadge" style="color:#ff4d4d;border-color:rgba(255,77,77,.3)">✗ fail</span>'
+      : '<span class="statbadge">' + esc(a.state) + '</span>';
+
+    // Task: show first meaningful line, up to 80 chars
+    var taskRaw = a.task || a.summary || "";
+    var taskFirst = taskRaw.split('\n').find(function(l) { return l.trim(); }) || taskRaw;
+    taskFirst = taskFirst.trim().slice(0, 80);
+
+    // Cost: show only if non-zero
+    var costHtml = (a.cost != null && a.cost > 0)
+      ? '<span class="acost2">$' + Number(a.cost).toFixed(3) + '</span>'
+      : '';
+
+    // Branch badge (build agents only)
+    var branchHtml = a.branch
+      ? '<span class="bbadge2">⬡ ' + esc(a.branch) + '</span>'
+      : '';
+
+    // Last tool (compact)
+    var toolHtml = (!a.branch && a.lastTool)
+      ? '<span class="atool2">' + esc(a.lastTool) + '</span>'
+      : '';
+
+    // Cancel button (working or needs-you)
+    var cancelBtn = (a.state === "working" || a.state === "needs-you")
+      ? '<button class="xcbtn" data-id="' + esc(a.id) + '" title="cancel">✕</button>'
+      : '';
+
+    // Tool badges strip (last 3 tools used)
+    var tools = (agentTools.get(a.id) || []).slice(0, 3);
+    var badgesHtml = tools.length
+      ? '<div class="tbadges">' + tools.map(function(t) { return '<span class="tbadge">' + esc(t) + '</span>'; }).join('') + '</div>'
+      : '';
+
+    return '<div class="arow st-' + a.state + sel + fr + '" data-k="agent" data-id="' + esc(a.id) + '">'
+      + '<div class="arowmain">'
+      + modeBadge
+      + '<span class="aid">' + esc(a.id) + '</span>'
+      + '<span class="atask ell">' + esc(taskFirst) + '</span>'
+      + (branchHtml || toolHtml)
+      + statLabel
+      + costHtml
+      + cancelBtn
+      + '</div>'
+      + badgesHtml
+      + '</div>';
   }
 
   // ── render brood ────────────────────────────────────
