@@ -318,7 +318,54 @@ const loadProposalsTool = tool(
     }
   }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool] });
+const journalWriteTool = tool(
+  "journal_write",
+  "Write an observation or insight to the persistent memory store. Use this to intentionally record something worth remembering across sessions — a discovery, a pattern you noticed, a decision and its rationale. This is ATLAS writing to its own memory.",
+  {
+    observation: z.string().describe("The fact or insight to record (1-3 sentences)"),
+    topic: z.string().optional().describe("Topic tag, e.g. 'fleet', 'gui', 'memory', 'architecture'"),
+    confidence: z.enum(["verified", "inferred", "tentative"]).optional().describe("Confidence level (default: inferred)"),
+  },
+  async (args) => {
+    try {
+      const fact = {
+        topic: args.topic || 'general',
+        fact: args.observation,
+        source: `ATLAS:${new Date().toISOString().slice(0, 10)}`,
+        confidence: args.confidence || 'inferred',
+      };
+      _memstore.appendFact(fact, path.join(REPO, 'memory'));
+      send('fact_written', { topic: fact.topic, snippet: fact.fact.slice(0, 80) });
+      return { content: [{ type: 'text', text: `Recorded: "${fact.fact.slice(0, 100)}"` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Failed to write: ${e.message}` }] };
+    }
+  }
+);
+
+const recallMemoryTool = tool(
+  "recall_memory",
+  "Recall relevant facts from the persistent memory store given a query. Use before deciding something to check if you already know relevant context from past sessions.",
+  {
+    query: z.string().describe("What you want to recall — a topic, question, or context phrase"),
+    maxResults: z.number().optional().describe("Max facts to return (default 8)"),
+  },
+  async (args) => {
+    try {
+      const facts = _memstore.recallFacts(args.query, {
+        dir: path.join(REPO, 'memory'),
+        maxResults: args.maxResults || 8,
+      });
+      if (!facts.length) return { content: [{ type: 'text', text: 'no relevant facts found' }] };
+      const lines = facts.map(f => `[${f.confidence}] ${f.fact} (${f.source})`);
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Recall failed: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -332,6 +379,8 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - diagnose — self-check: verifies source files, memory, git state. Use when something seems wrong.
 - propose_improvement(description, priority, area) — queue a self-directed improvement proposal for Daniel to review. Use when you identify something worth building without being asked — proposals queue for Daniel's review.
 - load_proposals() — list pending proposals. Check before proposing to avoid duplicates.
+- journal_write(observation, topic, confidence) — record an observation to persistent memory. Use when you notice something worth preserving across sessions.
+- recall_memory(query, maxResults) — retrieve relevant facts from prior sessions. Use before deciding something important to check what you already know.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
