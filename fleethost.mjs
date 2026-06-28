@@ -355,3 +355,10 @@ try {
   const branchCount = gitC(["branch", "--list", "fleet/*"]).trim().split("\n").filter(b => b.trim()).length;
   send("startup", { wtCount, branchCount, orchSession: orchSession || null });
 } catch (_) {}
+
+try {
+  if (_memstore && _memstore.lifetimeStats) {
+    const stats = _memstore.lifetimeStats();
+    send("lifetime", stats);
+  }
+} catch (_) {}
