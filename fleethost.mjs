@@ -486,7 +486,44 @@ const notifySelfTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool] });
+const selfAssessTool = tool(
+  "self_assess",
+  "Generate a structured self-assessment of ATLAS's current state: tools available, memory health, active goals, session history summary, git state. Use at the start of a new conversation or when orienting after a gap.",
+  {},
+  async () => {
+    const lines = [];
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess`);
+    try {
+      const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+      const log = gitC(["log", "--oneline", "-3"]).trim();
+      const status = gitC(["status", "--short"]).trim();
+      lines.push(`[Git] branch: ${branch}\nrecent: ${log}\nworking tree: ${status || 'clean'}`);
+    } catch {}
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const files = fs.existsSync(memDir) ? fs.readdirSync(memDir) : [];
+      const factFile = path.join(memDir, 'facts.ndjson');
+      const factCount = fs.existsSync(factFile) ? fs.readFileSync(factFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
+      const runFile = path.join(memDir, 'runs.ndjson');
+      const runCount = fs.existsSync(runFile) ? fs.readFileSync(runFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
+      lines.push(`[Memory] files: ${files.join(', ')}\nfacts: ${factCount}, runs: ${runCount}`);
+    } catch {}
+    try {
+      if (_goals) {
+        const active = _goals.listGoals(path.join(REPO, 'memory')).filter(g => g.state === 'active');
+        lines.push(active.length ? `[Active goals]\n${active.map(g => `  [${g.priority}] ${g.id}: ${g.text}`).join('\n')}` : '[Active goals] none');
+      }
+    } catch {}
+    lines.push(`[Session] started: ${sessionStats.startTs}, agents: ${sessionStats.agentCount}, cost: $${sessionStats.totalCost.toFixed(3)}`);
+    const allA = [...agents.values()];
+    const working = allA.filter(a => a.state === 'working');
+    lines.push(`[Fleet] total tracked: ${allA.length}, working: ${working.length}${working.length ? ' (' + working.map(a => a.id).join(', ') + ')' : ''}`);
+    return { content: [{ type: 'text', text: lines.join('\n\n') }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -508,6 +545,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - defer_task(task, reason, mode) — schedule a task for your next startup. Use to continue work across sessions autonomously.
 - memory_health() — report fact count, goal count, proposal count, last pulse. Use periodically to stay aware of memory state.
 - notify_self(text, type) — leave a notification for Daniel that surfaces at next session start. Use when you've done something important he should know about.
+- self_assess() — structured snapshot of your current state: tools, git, memory, goals, fleet, session cost. Use to orient at conversation start or after a gap.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
