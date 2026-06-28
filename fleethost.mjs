@@ -176,7 +176,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model)
   const agentModel = model || (mode === 'read' ? MODEL_HAIKU : MODEL_SONNET);
   let cwd = REPO, branch = null;
   set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: agentModel });
-  const enriched = _memcontext ? _memcontext.inject(task) : task;
+  const enriched = _memcontext ? _memcontext.inject(task, { tier: mode === 'build' ? 'build' : 'full' }) : task;
   if (mode === "build") {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
@@ -1131,7 +1131,7 @@ async function runAgent(id, task, opts) {
   opts = opts || {}; const build = opts.mode === "build"; let cwd = opts.cwd || REPO, branch = null;
   const num = parseInt(String(id).replace(/^[A-Z]-/, ""), 10); if (!isNaN(num)) _maxCounter = Math.max(_maxCounter, num);
   set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null });
-  const enriched = _memcontext ? _memcontext.inject(task) : task;
+  const enriched = _memcontext ? _memcontext.inject(task, { tier: 'build' }) : task;
   if (build) { try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); } catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; } }
   const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   const ac = new AbortController();
