@@ -134,6 +134,15 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       var prev=agents.get(m.id); agents.set(m.id, m);
       if((m.state==="done"||m.state==="failed") && (!prev||prev.state!==m.state)){ fresh.add(m.id); setTimeout(function(){ fresh.delete(m.id); render(); },1200); select("agent", m.id); }
       render();
+    } else if(m.type==="restored"){
+      // Repopulate the brood with agents persisted from a prior session.
+      // They stay reply-able: replyAgent(id) will resume via their stored session.
+      if(Array.isArray(m.agents)){
+        for(var _i=0;_i<m.agents.length;_i++){
+          var _a=m.agents[_i]; if(_a && _a.id) agents.set(_a.id, _a);
+        }
+      }
+      render();
     } else if(m.type==="history"){ HIST={ commits:(m.commits||[]), runs:(m.runs||[]) }; renderLedger(); }
   });
 

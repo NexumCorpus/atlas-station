@@ -30,7 +30,17 @@ function startFleet() {
     if (win) win.webContents.send("fleet", { type: "error", m: String((e && e.message) || e) });
     return;
   }
-  fleet.on("message", (m) => { if (win && m) win.webContents.send("fleet", m); });
+  fleet.on("message", (m) => {
+    if (win && m) win.webContents.send("fleet", m);
+    // On restore, advance counter past all persisted IDs so new dispatches
+    // never collide with agents the renderer just re-painted.
+    if (m && m.type === "restored" && Array.isArray(m.agents)) {
+      for (const a of m.agents) {
+        const n = parseInt((a.id || "").replace(/^[A-Z]-/, ""), 10);
+        if (!isNaN(n) && n > counter) counter = n;
+      }
+    }
+  });
   if (fleet.stderr) fleet.stderr.on("data", () => {});
   fleet.on("exit", () => { fleet = null; });
 }

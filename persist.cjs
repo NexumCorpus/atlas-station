@@ -44,16 +44,32 @@ function load(filePath = DEFAULT_PATH) {
   return JSON.parse(raw);
 }
 
-module.exports = { save, load };
+// Fleet-agents store — persists the live brood so a window restart can
+// repopulate it.  Stored as { version:1, agents:[...] } in the same dir.
+const FLEET_AGENTS_PATH = path.join(__dirname, "fleet-agents.json");
+
+// saveAgents(arr, filePath?) — atomically write the agents array to disk.
+function saveAgents(arr, filePath = FLEET_AGENTS_PATH) {
+  save({ version: 1, savedAt: new Date().toISOString(), agents: arr }, filePath);
+}
+
+// loadAgents(filePath?) — return the persisted agents array, or [] on miss.
+function loadAgents(filePath = FLEET_AGENTS_PATH) {
+  const state = load(filePath);
+  if (!state) return [];
+  return Array.isArray(state.agents) ? state.agents : [];
+}
+
+module.exports = { save, load, saveAgents, loadAgents };
 
 // --- self-test: `node persist.cjs` round-trips a sample state and verifies it.
 if (require.main === module) {
   const assert = require("assert");
   const os = require("os");
 
-  // Write to a temp file OUTSIDE the repo so the test never leaves a stray
-  // fleet-state.json in the working tree.
+  // Write to temp files OUTSIDE the repo so the test never leaves stray files.
   const testPath = path.join(os.tmpdir(), `atlas-persist-selftest-${process.pid}.json`);
+  const agentsPath = path.join(os.tmpdir(), `atlas-persist-agents-${process.pid}.json`);
 
   const sample = {
     version: 1,
@@ -66,11 +82,19 @@ if (require.main === module) {
     config: { maxConcurrent: 8, nested: { a: [1, 2, 3], b: null, c: true } },
   };
 
+  // Sample agent records that mirror what fleethost persists.
+  const sampleAgents = [
+    { id: "A-3", task: "summarize repo", mode: "read", cwd: "E:\\atlas-station", state: "done",
+      summary: "done", reply: "looks good", cost: 0.01, branch: null, session: "sess-abc", ts: "2026-01-01T00:00:00.000Z" },
+    { id: "B-2", task: "add tests", mode: "build", cwd: "E:\\atlas-wt\\B-2", state: "working",
+      summary: "running", reply: "", cost: null, branch: "fleet/B-2", session: "sess-xyz", ts: "2026-01-01T00:01:00.000Z" },
+  ];
+
   let ok = false;
   let failure = null;
   try {
+    // --- Test 1: generic save/load round-trip ---
     save(sample, testPath);
-
     const loaded = load(testPath);
     assert.deepStrictEqual(loaded, sample, "round-tripped state should deep-equal the original");
 
@@ -78,11 +102,22 @@ if (require.main === module) {
     fs.rmSync(testPath, { force: true });
     assert.strictEqual(load(testPath), null, "load() of a missing file should return null");
 
+    // --- Test 2: saveAgents/loadAgents round-trip ---
+    saveAgents(sampleAgents, agentsPath);
+    const loadedAgents = loadAgents(agentsPath);
+    assert.deepStrictEqual(loadedAgents, sampleAgents, "agents round-trip should deep-equal original");
+
+    // loadAgents() of a missing file must return [], not throw.
+    fs.rmSync(agentsPath, { force: true });
+    const empty = loadAgents(agentsPath);
+    assert.ok(Array.isArray(empty) && empty.length === 0, "loadAgents() of missing file should return []");
+
     ok = true;
   } catch (err) {
     failure = err;
   } finally {
-    fs.rmSync(testPath, { force: true }); // clean up regardless of outcome
+    fs.rmSync(testPath, { force: true });
+    fs.rmSync(agentsPath, { force: true });
   }
 
   if (ok) {

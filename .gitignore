@@ -8,6 +8,7 @@ verify*.cjs
 _rebuild.log
 _*.log
 fleet-state.json
+fleet-agents.json
 *.jsonl
 logs/
 .agentlog-selftest/

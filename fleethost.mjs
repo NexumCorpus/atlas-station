@@ -10,9 +10,21 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync } from "child_process";
 import { mkdirSync } from "fs";
+import { fileURLToPath } from "url";
 import path from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
+
+// Derive __dirname for this ESM module so we can locate sibling CJS modules.
+const __agentDir = path.dirname(fileURLToPath(import.meta.url));
+const persist = _require("./persist.cjs");
+const AGENTS_FILE = path.join(__agentDir, "fleet-agents.json");
+
+// Persist the full agents map atomically.  Fail-open: a write error must never
+// crash the fleet or block the agent loop.
+function persistAll() {
+  try { persist.saveAgents(Array.from(agents.values()), AGENTS_FILE); } catch (_) {}
+}
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
@@ -26,7 +38,14 @@ try { _memstore = _require("./memstore.cjs"); } catch { _memstore = null; }
 
 const agents = new Map();
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
-function set(id, patch) { const a = agents.get(id) || { id }; Object.assign(a, patch); agents.set(id, a); send("agent", a); }
+function set(id, patch) {
+  const a = agents.get(id) || { id };
+  Object.assign(a, patch);
+  a.ts = new Date().toISOString();
+  agents.set(id, a);
+  send("agent", a);
+  persistAll();
+}
 
 function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
 function makeWorktree(id) {
@@ -97,6 +116,17 @@ process.on("message", (m) => {
 });
 
 send("ready", {});
+
+// Restore persisted agents from a prior session.  Populate the in-memory map
+// FIRST so replyAgent() can resume any of them immediately after this message.
+// Fail-open: a corrupt file must not prevent the fleet from starting.
+try {
+  const saved = persist.loadAgents(AGENTS_FILE);
+  if (saved && saved.length) {
+    for (const a of saved) agents.set(a.id, a);
+    send("restored", { agents: saved });
+  }
+} catch (_) {}
 
 // History for the window — real git build log + any recorded runs.
 try {
