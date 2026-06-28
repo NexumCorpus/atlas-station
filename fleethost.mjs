@@ -506,7 +506,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -549,7 +549,8 @@ const capabilityManifestTool = tool(
       "journal_write", "recall_memory",
       "set_goal", "list_goals", "resolve_goal",
       "self_assess", "defer_task", "notify_self", "memory_health",
-      "capability_manifest", "trigger_selfloop"
+      "capability_manifest", "trigger_selfloop",
+      "write_doc", "read_doc", "list_docs"
     ];
     const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
@@ -647,7 +648,73 @@ const exportConvTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool] });
+const writeDocTool = tool(
+  "write_doc",
+  "Write or update a documentation file in the docs/ directory. Use to maintain ATLAS's own documentation — architecture notes, capability descriptions, decision logs, how-to guides. Files are committed to git automatically.",
+  {
+    filename: z.string().describe("Filename within docs/ (e.g. 'CAPABILITIES.md', 'ARCHITECTURE.md')"),
+    content:  z.string().describe("Full file content in markdown"),
+    message:  z.string().optional().describe("Git commit message (default: 'docs: update <filename>')"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const docsDir = path.join(REPO, 'docs');
+      if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
+      const filename = (args.filename || 'NOTES.md').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filepath = path.join(docsDir, filename);
+      fs.writeFileSync(filepath, args.content || '', 'utf8');
+      // Commit it
+      try {
+        gitC(["add", path.join("docs", filename)]);
+        const msg = args.message || `docs: update ${filename}`;
+        gitC(["commit", "-m", msg]);
+      } catch {}
+      send('doc_written', { filename, chars: (args.content || '').length });
+      return { content: [{ type: 'text', text: `Written and committed: docs/${filename} (${(args.content||'').length} chars)` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Write failed: ${e.message}` }] };
+    }
+  }
+);
+
+const readDocTool = tool(
+  "read_doc",
+  "Read a documentation file from docs/. Use to check what's already documented before writing.",
+  {
+    filename: z.string().describe("Filename within docs/ to read"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const filepath = path.join(REPO, 'docs', (args.filename || '').replace(/[^a-zA-Z0-9._-]/g, '_'));
+      if (!fs.existsSync(filepath)) return { content: [{ type: 'text', text: `docs/${args.filename} not found` }] };
+      const content = fs.readFileSync(filepath, 'utf8');
+      return { content: [{ type: 'text', text: content.slice(0, 4000) + (content.length > 4000 ? '\n[... truncated]' : '') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Read failed: ${e.message}` }] };
+    }
+  }
+);
+
+const listDocsTool = tool(
+  "list_docs",
+  "List all files in the docs/ directory.",
+  {},
+  async () => {
+    try {
+      const fs = _require('fs');
+      const docsDir = path.join(REPO, 'docs');
+      if (!fs.existsSync(docsDir)) return { content: [{ type: 'text', text: 'docs/ directory does not exist yet' }] };
+      const files = fs.readdirSync(docsDir);
+      return { content: [{ type: 'text', text: files.length ? files.join('\n') : 'docs/ is empty' }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `List failed: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -672,6 +739,9 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - self_assess() — structured snapshot of your current state: tools, git, memory, goals, fleet, session cost. Use to orient at conversation start or after a gap.
 - capability_manifest(format?) — structured list of all current tools, modules, and memory files. Use when auditing what exists before planning improvements.
 - trigger_selfloop(focus?) — initiate a self-directed improvement cycle: assess → gaps → goals → proposals. Call when you want to audit yourself and decide what to build without being asked.
+- write_doc(filename, content, message?) — write/update a markdown file in docs/ and commit it to git. Use to document capabilities, decisions, architecture, how-tos. ATLAS maintains its own docs autonomously.
+- read_doc(filename) — read a file from docs/. Check before writing to avoid overwriting.
+- list_docs() — list all files in docs/.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
