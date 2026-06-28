@@ -40,4 +40,10 @@ function listDeferred(dir) {
   return _load(dir);
 }
 
-module.exports = { deferTask, popPending, listDeferred };
+// Non-destructive peek at pending deferred tasks — for startup briefing/status
+function peekPending(dir) {
+  dir = dir || path.join(__dirname, 'memory');
+  return _load(dir).filter(t => t.state === 'pending');
+}
+
+module.exports = { deferTask, popPending, peekPending, listDeferred };

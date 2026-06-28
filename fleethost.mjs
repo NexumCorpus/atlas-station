@@ -1128,6 +1128,68 @@ async function orchestrate(userText) {
   } catch (e) { set("ATLAS", { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
 }
 
+async function runStartupBriefing() {
+  // Skip if opted out or if ATLAS already has an active session
+  if (process.env.ATLAS_NO_BRIEFING === '1') return;
+  if (orchSession) return; // already resumed a session — don't double-greet
+
+  const memDir = path.join(REPO, 'memory');
+
+  // Gather state for briefing
+  const notifLines = [];
+  if (_notif) {
+    try {
+      const unread = _notif.getUnread(memDir);
+      if (unread.length) notifLines.push(`${unread.length} notification${unread.length > 1 ? 's' : ''}: ${unread.map(n => n.text).join('; ')}`);
+    } catch {}
+  }
+
+  const goalLines = [];
+  if (_goals) {
+    try {
+      const active = _goals.listGoals(memDir).filter(g => g.state === 'active');
+      if (active.length) goalLines.push(`${active.length} active goal${active.length > 1 ? 's' : ''}: ${active.slice(0, 2).map(g => g.text.slice(0, 60)).join('; ')}`);
+    } catch {}
+  }
+
+  const deferredLines = [];
+  if (_deferred) {
+    try {
+      const pending = _deferred.peekPending ? _deferred.peekPending(memDir) : [];
+      if (pending.length) deferredLines.push(`${pending.length} deferred task${pending.length > 1 ? 's' : ''} pending`);
+    } catch {}
+  }
+
+  const dreamLines = [];
+  if (_dream) {
+    try {
+      const recent = _dream.loadDreams(memDir, 1);
+      if (recent.length && recent[0].mood) dreamLines.push(`last dream: ${recent[0].mood}`);
+    } catch {}
+  }
+
+  const statusItems = [...notifLines, ...goalLines, ...deferredLines, ...dreamLines];
+  const statusSummary = statusItems.length
+    ? statusItems.join(' | ')
+    : 'memory clear, no pending items';
+
+  const briefingPrompt = `Station startup complete. Run a brief self-orientation and greet Daniel.
+
+Current state: ${statusSummary}
+
+Instructions:
+- Check if there are deferred tasks to mention (use defer_task awareness — do NOT call fleet tools now, just reference what the state summary tells you)
+- Greet Daniel in 1-3 sentences. Mention what's pending if anything. Be direct, not ceremonial.
+- Do not use emojis. Do not pad with filler.
+- Sign off with the current agent count / cost if relevant (0 agents, $0.00 so far).`;
+
+  try {
+    await orchestrate(briefingPrompt);
+  } catch (_) {
+    // briefing failure is silent — never crash startup
+  }
+}
+
 // --- legacy direct paths (kept only until the window talks solely to ATLAS) ---
 async function runAgent(id, task, opts) {
   opts = opts || {}; const build = opts.mode === "build"; let cwd = opts.cwd || REPO, branch = null;
@@ -1416,6 +1478,9 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
 // Fire once after 5s (so context is established), then on interval
 setTimeout(runPulse, 5000);
 setInterval(runPulse, PULSE_INTERVAL);
+
+// Startup briefing: ATLAS orients itself and greets Daniel ~2s after startup
+setTimeout(() => runStartupBriefing().catch(() => {}), 2000);
 
 // Git commit monitor — detect new commits while the station is running
 let _lastKnownCommit = null;
