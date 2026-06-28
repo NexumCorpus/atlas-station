@@ -95,7 +95,7 @@ async function runAgent(id, task, opts) {
       } else if (m.type === "result") {
         const done = m.subtype === "success";
         const extra = (build && branch) ? branchStat(branch) : {};
-        set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 220), ...extra });
+        set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: (m.result ?? agents.get(id)?.summary ?? "").slice(0, 220), reply: String(m.result ?? agents.get(id)?.summary ?? "").slice(0, 8000), ...extra });
         // Record this run in the structured memory store.
         // Uses `task` (original), NOT `enrichedTask` — avoids circular context in the store.
         if (_memstore) try {
@@ -123,3 +123,13 @@ process.on("message", (m) => {
 });
 
 send("ready", {});
+
+// History for the window — the real git build log + any recorded runs — so the
+// station shows what it has built, not a blank brood.
+try {
+  const commits = gitC(["log", "--pretty=%h\x1f%s\x1f%cr", "-40"]).trim().split("\n").filter(Boolean).map((l) => {
+    const p = l.split("\x1f"); return { sha: p[0], subject: p[1] || "", when: p[2] || "" };
+  });
+  const runs = (_memstore && _memstore.recentRuns) ? _memstore.recentRuns(50) : [];
+  send("history", { commits, runs });
+} catch (_) {}

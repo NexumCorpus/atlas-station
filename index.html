@@ -13,24 +13,39 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
 .dim{color:#6f685c}.ash{color:#cfc6b6}.em{color:#cd5a38}.bn{color:#93b094}.br{color:#bd9b3c}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid #2a2620;font-size:10px;letter-spacing:.13em;text-transform:uppercase;flex:none}
 .haz{height:12px;width:34px;background:repeating-linear-gradient(45deg,#bd9b3c 0 5px,#1a1510 5px 10px);flex:none}
-.hero{display:flex;gap:16px;align-items:flex-start;padding:13px 16px;flex:none}
-.chrom{color:#e7ddcb;letter-spacing:.12em;font-size:13px}
-.voice{font-family:var(--voice);color:#b6ad9a;font-size:13.5px;line-height:1.65}
-.creed{border-left:2px solid #5c554a;padding:3px 0 3px 12px;margin:9px 0 0}
-.lab{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#6f685c;margin:6px 16px 6px}
-#brood{flex:1;min-height:0;overflow-y:auto;margin:0 16px;border:0.5px solid #2c2720;background:#0e0c0a}
-.arow{display:flex;align-items:center;gap:11px;padding:8px 12px;border-bottom:0.5px solid #1f1b16}
-.arow:last-child{border-bottom:none}
-.sig{font-size:13px;flex:none;width:14px;text-align:center}
-.aid{font-size:11px;color:#8d8579;flex:none;width:34px}
-.atask{flex:1;color:#cfc6b6;font-size:12.5px}
-.atool{font-size:10px;width:74px;text-align:right;flex:none}
-.ast{font-size:10px;letter-spacing:.08em;width:74px;text-align:right;flex:none}
-.acost{font-size:10px;width:48px;text-align:right;flex:none}
-.empty{padding:22px;text-align:center}
-.bar{display:flex;align-items:center;gap:9px;padding:11px 16px;border-top:1px solid #322c24;background:#0c0a09;flex:none}
+.hero{display:flex;gap:14px;align-items:center;padding:9px 16px;flex:none;border-bottom:0.5px solid #211c17}
+.chrom{color:#e7ddcb;letter-spacing:.12em;font-size:12px}
+.voice{font-family:var(--voice);color:#9a917f;font-size:12px;line-height:1.45;margin:3px 0 0}
+.lab{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#6f685c;padding:6px 12px 5px;border-bottom:0.5px solid #211c17}
+#main{flex:1;min-height:0;display:flex;gap:0}
+#broodcol,#ledgercol{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+#broodcol{border-right:0.5px solid #2c2720}
+#brood,#ledger{flex:1;min-height:0;overflow-y:auto}
+.arow{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:0.5px solid #1b1712;cursor:pointer}
+.arow:hover{background:#16120e}
+.arow.sel{background:#1a1410;box-shadow:inset 2px 0 0 #cd5a38}
+.sig{font-size:13px;flex:none;width:13px;text-align:center}
+.aid{font-size:10px;color:#8d8579;flex:none;width:40px}
+.atask{flex:1;color:#cfc6b6;font-size:12px}
+.atool{font-size:9px;width:60px;text-align:right;flex:none}
+.ast{font-size:9px;letter-spacing:.06em;width:62px;text-align:right;flex:none}
+.acost{font-size:9px;width:42px;text-align:right;flex:none}
+.crow{display:flex;gap:9px;padding:5px 12px;border-bottom:0.5px solid #17130f;font-size:11px;cursor:default}
+.csha{color:#6f7e6a;flex:none;width:52px}
+.csub{flex:1;color:#b3aa98}
+.cwhen{color:#5e574c;flex:none;font-size:9px}
+.empty{padding:18px 12px;color:#5e574c}
+#reply{flex:none;max-height:0;overflow:hidden;border-top:0.5px solid #322c24;background:#0e0c0a;transition:max-height .15s}
+#reply.open{max-height:40vh;overflow-y:auto}
+.rhd{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:0.5px solid #2a241d;position:sticky;top:0;background:#0e0c0a}
+.rhd .rid{color:#e7ddcb;font-size:11px;letter-spacing:.1em}
+.rx{margin-left:auto;cursor:pointer;color:#6f685c;font-size:10px;border:0.5px solid #322c24;padding:2px 8px}
+.rx:hover{color:#cd5a38;border-color:#5a3a2c}
+.rtask{padding:9px 14px 4px;color:#8d8579;font-size:11px;font-style:italic;border-bottom:0.5px solid #1b1712}
+.rbody{padding:11px 14px 16px;color:#d2c9b8;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.bar{display:flex;align-items:center;gap:9px;padding:10px 16px;border-top:1px solid #322c24;background:#0c0a09;flex:none}
 .bar input{background:transparent;border:none;color:#d8cfbe;caret-color:#cd5a38;font-family:inherit;font-size:13px;outline:none}
-#cwd{width:120px;color:#8d8579;border-right:0.5px solid #2c2720;padding-right:9px}
+#cwd{width:96px;color:#8d8579;border-right:0.5px solid #2c2720;padding-right:9px}
 #task{flex:1}
 .hint{font-size:10px;color:#5e574c;letter-spacing:.1em}
 .mode,.self{font-size:10px;letter-spacing:.08em;border:0.5px solid #322c24;padding:4px 8px;cursor:pointer;color:#8d8579;flex:none;user-select:none}
@@ -47,31 +62,30 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
   <div class="mem"><span class="haz"></span><span style="color:#e7ddcb">ATLAS // station</span><span class="dim">// the fleet</span><span class="dim" id="counts" style="margin-left:auto">0 working · 0 need you · 0 done</span></div>
 
   <div class="hero">
-    <div style="flex:none;text-align:center;width:112px">
-      <svg id="eye" viewBox="0 0 120 132" width="108" height="118" style="display:block;transform-origin:60px 70px;animation:hd 7s ease-in-out infinite">
-        <path d="M70 12 C104 22 108 64 86 106" fill="none" stroke="#5a544a" stroke-width="4" opacity=".5"/><path d="M78 20 C100 34 100 70 84 100" fill="none" stroke="#736b5e" stroke-width="2.4" opacity=".5"/>
-        <path d="M60 6 C40 12 25 40 30 74 C33 104 48 123 60 123 C72 123 87 104 90 74 C95 40 80 12 60 6 Z" fill="url(#sk)" stroke="#9b9488" stroke-width=".8"/>
-        <g stroke="#6f685c" stroke-width="1.4" fill="none" opacity=".5"><path d="M33 44 Q60 54 87 44"/><path d="M32 64 Q60 76 88 64"/><path d="M34 84 Q60 95 86 84"/></g>
-        <ellipse cx="60" cy="84" rx="17" ry="13" fill="url(#so)" stroke="#3a352d" stroke-width="1"/><ellipse id="glow" cx="60" cy="84" rx="15" ry="11" fill="#6f93a6" opacity="0"/>
-        <g id="iris"><circle cx="60" cy="84" r="10" fill="#0a0a0c"/><circle id="core" cx="60" cy="84" r="10" fill="#6f93a6" opacity=".12"/><ellipse id="slit" cx="60" cy="84" rx="2.6" ry="8" fill="#6f93a6" opacity=".9"/></g>
-      </svg>
-      <div class="chrom" style="margin-top:1px;font-size:11px;letter-spacing:.12em">ATLAS</div><div class="dim" id="disp" style="font-size:9px;letter-spacing:.1em">⟨ empty ⟩</div>
-    </div>
+    <svg id="eye" viewBox="0 0 120 132" width="58" height="64" style="flex:none;transform-origin:60px 70px;animation:hd 7s ease-in-out infinite">
+      <path d="M60 6 C40 12 25 40 30 74 C33 104 48 123 60 123 C72 123 87 104 90 74 C95 40 80 12 60 6 Z" fill="url(#sk)" stroke="#9b9488" stroke-width=".8"/>
+      <g stroke="#6f685c" stroke-width="1.4" fill="none" opacity=".5"><path d="M33 44 Q60 54 87 44"/><path d="M32 64 Q60 76 88 64"/><path d="M34 84 Q60 95 86 84"/></g>
+      <ellipse cx="60" cy="84" rx="17" ry="13" fill="url(#so)" stroke="#3a352d" stroke-width="1"/><ellipse id="glow" cx="60" cy="84" rx="15" ry="11" fill="#6f93a6" opacity="0"/>
+      <g><circle cx="60" cy="84" r="10" fill="#0a0a0c"/><circle id="core" cx="60" cy="84" r="10" fill="#6f93a6" opacity=".12"/><ellipse id="slit" cx="60" cy="84" rx="2.6" ry="8" fill="#6f93a6" opacity=".9"/></g>
+    </svg>
     <div style="flex:1;min-width:0">
       <div class="chrom">OVERSEER // ATLAS</div>
-      <p class="ash" id="lead" style="margin:6px 0 0;line-height:1.5">No agents yet. Dispatch one below and it joins the brood — live, not a picture.</p>
-      <div class="creed"><div class="dim" style="font-size:9px;letter-spacing:.14em;margin-bottom:3px">⟨ it speaks plainly ⟩</div><p class="voice">The brood is real now — each is an agent actually running, with its own tools and cost. The eye burns from what they're truly doing. I won't show you a state I can't read, and the read-only gate holds until you wire the approvals.</p></div>
+      <p class="voice" id="lead">Dispatch a task below — it joins the brood, and when it answers, its reply opens here. The ledger on the right is what's already been built.</p>
     </div>
   </div>
 
-  <div class="lab">⟦ the brood ⟧</div>
-  <div id="brood"></div>
+  <div id="main">
+    <div id="broodcol"><div class="lab">⟦ the brood — now ⟧</div><div id="brood"></div></div>
+    <div id="ledgercol"><div class="lab">⟦ the ledger — what's been built ⟧</div><div id="ledger"></div></div>
+  </div>
+
+  <div id="reply"></div>
 
   <div class="bar">
     <span class="mode" id="mode" title="toggle read / build — build runs the agent in an isolated git worktree with full tool access">◷ read</span>
     <input id="cwd" type="text" placeholder="E:\\ (cwd)" value="E:\\"/>
-    <input id="task" type="text" placeholder="dispatch an agent — describe the task…" autofocus/>
-    <span class="self" id="self" title="dispatch a preset batch of self-build tasks into isolated worktrees">⚒ self-build</span>
+    <input id="task" type="text" placeholder="send the station a task or a question…" autofocus/>
+    <span class="self" id="self" title="dispatch a preset batch of self-build tasks">⚒ self-build</span>
     <span class="hint">enter</span>
   </div>
 
@@ -80,35 +94,75 @@ body{display:flex;flex-direction:column;animation:brth 7.5s ease-in-out infinite
   var $=function(i){return document.getElementById(i)};
   var slit=$('slit'), glow=$('glow'), core=$('core');
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-  var agents=new Map();
+  var agents=new Map(); var HIST={commits:[],runs:[]}; var SEL=null;
   var COL={ "needs-you":"#cd5a38", "working":"#bd9b3c", "done":"#93b094", "failed":"#b0492f" };
   var SIG={ "needs-you":"◉", "working":"⟁", "done":"◇", "failed":"⊗" };
   var COND=[0x6f,0x93,0xa6], cur=[0x6f,0x93,0xa6];
+
   window.atlas.onFleet(function(m){
     if(!m) return;
-    if(m.type==="agent"){ agents.set(m.id, m); render(); }
+    if(m.type==="agent"){
+      var prev=agents.get(m.id); agents.set(m.id, m); render();
+      if((m.state==="done"||m.state==="failed") && (!prev||prev.state!==m.state)){ select("agent", m.id); }
+    } else if(m.type==="history"){
+      HIST={ commits:(m.commits||[]), runs:(m.runs||[]) }; renderLedger();
+    }
   });
+
   function hx(h){h=h.replace('#','');return[parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}
+
   function render(){
     var list=Array.from(agents.values());
     var need=list.filter(function(a){return a.state==="needs-you"});
     var work=list.filter(function(a){return a.state==="working"});
     var done=list.filter(function(a){return a.state==="done"});
     var fail=list.filter(function(a){return a.state==="failed"});
-    var cond = need.length?{c:"#cd5a38",l:"needs you"} : work.length?{c:"#bd9b3c",l:"the fleet is at work"} : list.length?{c:"#93b094",l:"all settled"} : {c:"#6f93a6",l:"empty"};
-    COND=hx(cond.c); $('disp').textContent="⟨ "+cond.l+" ⟩";
+    var cond = need.length?{c:"#cd5a38"} : work.length?{c:"#bd9b3c"} : list.length?{c:"#93b094"} : {c:"#6f93a6"};
+    COND=hx(cond.c);
     $('counts').textContent=work.length+" working · "+need.length+" need you · "+done.length+" done"+(fail.length?(" · "+fail.length+" failed"):"");
-    $('lead').textContent = list.length ? (work.length?("The fleet is moving — "+work.length+" at work"+(need.length?(", "+need.length+" waiting on you"):"")+"."):(need.length?(need.length+" wait on you."):"All "+list.length+" settled.")) : "No agents yet. Dispatch one below and it joins the brood — live, not a picture.";
-    function row(a){ var col=COL[a.state]||"#6f685c"; var br=a.branch?(' <span class="dim" style="font-size:9px">⟦'+esc(a.branch)+(a.commits?(' ·'+a.commits+'c'):'')+'⟧</span>'):''; return '<div class="arow"><span class="sig" style="color:'+col+'">'+(SIG[a.state]||"·")+'</span><span class="aid">'+esc(a.id)+'</span><span class="atask ell">'+esc(a.task||a.summary||"")+br+'</span><span class="atool dim ell">'+esc(a.lastTool||"")+'</span><span class="ast" style="color:'+col+'">'+esc(a.state)+'</span><span class="acost dim">'+(a.cost!=null?("$"+Number(a.cost).toFixed(2)):"")+'</span></div>'; }
+    function rowOf(a){ var col=COL[a.state]||"#6f685c"; var sel=(SEL&&SEL.kind==="agent"&&SEL.id===a.id)?" sel":"";
+      return '<div class="arow'+sel+'" data-k="agent" data-id="'+esc(a.id)+'"><span class="sig" style="color:'+col+'">'+(SIG[a.state]||"·")+'</span><span class="aid">'+esc(a.id)+'</span><span class="atask ell">'+esc(a.task||a.summary||"")+'</span><span class="atool dim ell">'+esc(a.lastTool||"")+'</span><span class="ast" style="color:'+col+'">'+esc(a.state)+'</span><span class="acost dim">'+(a.cost!=null?("$"+Number(a.cost).toFixed(2)):"")+'</span></div>'; }
     var ordered=need.concat(work,done,fail);
-    $('brood').innerHTML = ordered.length ? ordered.map(row).join("") : '<div class="empty dim">the brood is empty — dispatch an agent below.</div>';
+    $('brood').innerHTML = ordered.length ? ordered.map(rowOf).join("") : '<div class="empty">no agents yet this session — dispatch one below.</div>';
   }
-  render();
+
+  function renderLedger(){
+    var runs=HIST.runs.slice().reverse(); // newest first
+    var html="";
+    if(runs.length){ html+=runs.map(function(r,i){ var col=COL[r.state]||"#6f685c";
+      return '<div class="arow" data-k="run" data-id="'+i+'"><span class="sig" style="color:'+col+'">'+(SIG[r.state]||"·")+'</span><span class="aid">'+esc(r.agentId||"")+'</span><span class="atask ell">'+esc(r.task||"")+'</span><span class="ast dim ell">'+esc(r.mode||"")+'</span><span class="acost dim">'+(r.cost!=null?("$"+Number(r.cost).toFixed(2)):"")+'</span></div>'; }).join(""); }
+    if(HIST.commits.length){ html+='<div class="lab" style="border-top:0.5px solid #2c2720">⟦ git — the build ⟧</div>';
+      html+=HIST.commits.map(function(c){ return '<div class="crow"><span class="csha">'+esc(c.sha)+'</span><span class="csub ell">'+esc(c.subject)+'</span><span class="cwhen">'+esc(c.when)+'</span></div>'; }).join(""); }
+    $('ledger').innerHTML = html || '<div class="empty">nothing recorded yet.</div>';
+  }
+
+  function select(kind, id){ SEL={kind:kind, id:id}; render(); renderLedger(); renderReply(); }
+
+  function renderReply(){
+    var box=$('reply'); if(!SEL){ box.className=""; box.innerHTML=""; return; }
+    var rid="", state="", cost="", task="", body="", col="#cfc6b6", branch="";
+    if(SEL.kind==="agent"){ var a=agents.get(SEL.id); if(!a){box.className="";return;} rid=a.id; state=a.state; col=COL[a.state]||"#cfc6b6";
+      cost=(a.cost!=null?("$"+Number(a.cost).toFixed(2)):""); task=a.task||""; branch=a.branch||"";
+      body=a.reply||a.summary||(a.state==="working"?"… working — "+(a.lastTool||"thinking")+" …":"(no reply captured)"); }
+    else if(SEL.kind==="run"){ var r=HIST.runs.slice().reverse()[SEL.id]; if(!r){box.className="";return;} rid=r.agentId||"run"; state=r.state; col=COL[r.state]||"#cfc6b6";
+      cost=(r.cost!=null?("$"+Number(r.cost).toFixed(2)):""); task=r.task||""; branch=r.branch||""; body=r.summary||"(only a summary was recorded for this run)"; }
+    box.className="open";
+    box.innerHTML='<div class="rhd"><span class="rid">'+esc(rid)+'</span><span style="color:'+col+';font-size:10px">'+esc(state)+'</span>'+(branch?'<span class="dim" style="font-size:10px">⟦'+esc(branch)+'⟧</span>':'')+'<span class="dim" style="font-size:10px">'+esc(cost)+'</span><span class="rx" id="rx">close</span></div>'
+      +(task?'<div class="rtask">▸ '+esc(task)+'</div>':'')
+      +'<div class="rbody">'+esc(body)+'</div>';
+    var rx=$('rx'); if(rx) rx.addEventListener('click',function(e){ e.stopPropagation(); SEL=null; render(); renderLedger(); renderReply(); });
+  }
+
+  function onClick(e){ var row=e.target.closest('[data-k]'); if(!row) return; select(row.getAttribute('data-k'), row.getAttribute('data-k')==="run"?Number(row.getAttribute('data-id')):row.getAttribute('data-id')); }
+  $('brood').addEventListener('click', onClick);
+  $('ledger').addEventListener('click', onClick);
+
   var MODE="read";
   $('mode').addEventListener('click',function(){ MODE=(MODE==="read"?"build":"read"); $('mode').textContent=(MODE==="build"?"⚒ build":"◷ read"); $('mode').classList.toggle('build',MODE==="build"); $('cwd').style.opacity=(MODE==="build"?0.4:1); });
   $('self').addEventListener('click',function(){ window.atlas.selfBuild(); });
   $('task').addEventListener('keydown',function(e){ if(e.key==="Enter" && $('task').value.trim()){ var cwd=(MODE==="build")?undefined:(($('cwd').value||'').trim()||undefined); window.atlas.dispatch($('task').value.trim(), cwd, MODE); $('task').value=''; }});
-  // eye: lerp to aggregate condition + breathe
+
+  render(); renderLedger();
   var bt=0;(function loop(){ bt+=0.02; for(var i=0;i<3;i++)cur[i]+=(COND[i]-cur[i])*0.06; var c='rgb('+(cur[0]|0)+','+(cur[1]|0)+','+(cur[2]|0)+')';
     if(slit){slit.setAttribute('fill',c);slit.setAttribute('ry',(8+Math.sin(bt)*0.6).toFixed(2));} if(core)core.setAttribute('fill',c); if(glow){glow.setAttribute('fill',c);glow.setAttribute('opacity',(0.1+Math.abs(Math.sin(bt*0.7))*0.18).toFixed(2));}
     requestAnimationFrame(loop); })();
