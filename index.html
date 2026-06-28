@@ -96,7 +96,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .rbody{padding:12px 14px 18px;color:#d8deec;font-size:12.5px;line-height:1.58;white-space:pre-wrap;word-break:break-word}
 .bar{display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid var(--line);background:#09080e;flex:none;z-index:2}
 .bar .to{color:var(--violet);font-size:10px;letter-spacing:.12em;text-transform:uppercase;flex:none;text-shadow:0 0 8px rgba(157,107,255,.5)}
-.bar input{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:13.5px;outline:none}
+.bar input,.bar textarea{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:13.5px;outline:none}
+.modetoggle{background:rgba(157,107,255,.12);border:1px solid rgba(157,107,255,.3);color:var(--violet);font-family:inherit;font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:3px 8px;cursor:pointer;border-radius:1px;flex:none;transition:background .2s,color .2s}
+.modetoggle:hover{background:rgba(157,107,255,.22);color:#c8aaff}
+.modetoggle.dispatch{background:rgba(255,194,75,.1);border-color:rgba(255,194,75,.35);color:var(--amber)}
+.agentmode{background:#0d0b18;border:1px solid rgba(255,194,75,.3);color:var(--amber);font-family:inherit;font-size:11px;padding:2px 6px;outline:none;cursor:pointer;flex:none}
 .hint{font-size:10px;color:#56546e;letter-spacing:.1em;flex:none}
 .xcbtn{font-size:10px;padding:1px 5px;border:1px solid var(--dim);background:transparent;color:var(--dim);border-radius:2px;cursor:pointer;margin-left:auto;flex-shrink:0}
 .xcbtn:hover{color:var(--mag);border-color:var(--mag)}
@@ -199,8 +203,13 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   <div id="reply"></div>
 
   <div class="bar">
-    <span class="to">↳ to ATLAS</span>
-    <input id="say" type="text" placeholder="tell ATLAS what you want — it runs the fleet…" autofocus/>
+    <button id="modetoggle" class="modetoggle" title="Toggle: ATLAS / dispatch agent">ATLAS</button>
+    <span class="to" id="barprefix">↳ to ATLAS</span>
+    <textarea id="say" rows="1" placeholder="tell ATLAS what you want — it runs the fleet…" autofocus style="resize:none;overflow:hidden;line-height:1.4;padding:0;"></textarea>
+    <select id="agentmode" class="agentmode" style="display:none">
+      <option value="read">read</option>
+      <option value="build">build</option>
+    </select>
     <span class="hint">enter</span>
   </div>
 
@@ -661,8 +670,49 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     window.atlas.say(text);
     renderThread();
   }
-  $('say').addEventListener('keydown',function(e){
-    if(e.key==="Enter"&&$('say').value.trim()){say($('say').value.trim());$('say').value="";}
+
+  var dispatchMode = false;
+  var modetoggle = document.getElementById('modetoggle');
+  var barprefix = document.getElementById('barprefix');
+  var agentmode = document.getElementById('agentmode');
+  var sayinput = document.getElementById('say');
+
+  if (modetoggle) {
+    modetoggle.addEventListener('click', function() {
+      dispatchMode = !dispatchMode;
+      modetoggle.textContent = dispatchMode ? 'AGENT' : 'ATLAS';
+      modetoggle.className = 'modetoggle' + (dispatchMode ? ' dispatch' : '');
+      if (barprefix) barprefix.textContent = dispatchMode ? '↳ dispatch' : '↳ to ATLAS';
+      if (agentmode) agentmode.style.display = dispatchMode ? 'inline-block' : 'none';
+      if (sayinput) sayinput.placeholder = dispatchMode
+        ? 'task description for the agent…'
+        : 'tell ATLAS what you want — it runs the fleet…';
+      if (sayinput) sayinput.focus();
+    });
+  }
+
+  var sayEl = $('say');
+  if (sayEl) {
+    sayEl.addEventListener('input', function() {
+      sayEl.style.height = 'auto';
+      sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
+    });
+  }
+
+  $('say').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey && $('say').value.trim()) {
+      var text = $('say').value.trim();
+      if (dispatchMode) {
+        var mode = agentmode ? agentmode.value : 'read';
+        window.atlas.dispatch(text, null, mode);
+        thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + text.slice(0, 60), error: false });
+        renderThread();
+      } else {
+        say(text);
+      }
+      $('say').value = '';
+      $('say').style.height = 'auto';
+    }
   });
 
   window.addEventListener('keydown',function(e){
