@@ -54,6 +54,11 @@ ipcMain.on("reply", (_e, p) => {
   try { fleet.send({ t: "reply", id: p.id, text: p.text }); } catch (_) {}
 });
 
+ipcMain.on("say", (_e, p) => {
+  if (!fleet || !p || !p.text) return;
+  try { fleet.send({ t: "say", text: p.text }); } catch (_) {}
+});
+
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
   "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
