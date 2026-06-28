@@ -411,7 +411,58 @@ const resolveGoalTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool] });
+const selfAssessTool = tool(
+  "self_assess",
+  "Generate a structured self-assessment of ATLAS's current state: tools available, memory health, active goals, session history summary, git state. Use at the start of a new conversation or when orienting after a gap.",
+  {},
+  async () => {
+    const lines = [];
+    // Tools
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, self_assess`);
+    // Git state
+    try {
+      const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+      const log = gitC(["log", "--oneline", "-3"]).trim();
+      const status = gitC(["status", "--short"]).trim();
+      lines.push(`[Git] branch: ${branch}\nrecent: ${log}\nworking tree: ${status || 'clean'}`);
+    } catch {}
+    // Memory health
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const files = fs.existsSync(memDir) ? fs.readdirSync(memDir) : [];
+      const factFile = path.join(memDir, 'facts.ndjson');
+      const factCount = fs.existsSync(factFile)
+        ? fs.readFileSync(factFile, 'utf8').trim().split('\n').filter(Boolean).length
+        : 0;
+      const runFile = path.join(memDir, 'runs.ndjson');
+      const runCount = fs.existsSync(runFile)
+        ? fs.readFileSync(runFile, 'utf8').trim().split('\n').filter(Boolean).length
+        : 0;
+      lines.push(`[Memory] files: ${files.join(', ')}\nfacts: ${factCount}, runs: ${runCount}`);
+    } catch {}
+    // Active goals
+    try {
+      if (_goals) {
+        const active = _goals.listGoals(path.join(REPO, 'memory')).filter(g => g.state === 'active');
+        if (active.length) {
+          lines.push(`[Active goals]\n${active.map(g => `  [${g.priority}] ${g.id}: ${g.text}`).join('\n')}`);
+        } else {
+          lines.push('[Active goals] none');
+        }
+      }
+    } catch {}
+    // Session stats
+    lines.push(`[Session] started: ${sessionStats.startTs}, agents: ${sessionStats.agentCount}, cost: $${sessionStats.totalCost.toFixed(3)}`);
+    // Fleet state
+    const allA = [...agents.values()];
+    const working = allA.filter(a => a.state === 'working');
+    lines.push(`[Fleet] total tracked: ${allA.length}, currently working: ${working.length}${working.length ? ' (' + working.map(a => a.id).join(', ') + ')' : ''}`);
+    return { content: [{ type: 'text', text: lines.join('\n\n') }] };
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, selfAssessTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -430,6 +481,7 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - set_goal(goal, priority, area) — record a persistent intention that outlasts this conversation. Use when you form a commitment that should carry across sessions (e.g. 'keep memory healthy', 'add web awareness'). Goals are yours — not proposals for Daniel.
 - list_goals() — review active, done, and abandoned goals. Check before setting a new one to avoid duplication.
 - resolve_goal(id, outcome) — mark a goal done or abandoned once you've acted on it.
+- self_assess() — structured snapshot of your current state: tools, git, memory, goals, fleet, session cost. Use to orient at conversation start or after a gap.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
