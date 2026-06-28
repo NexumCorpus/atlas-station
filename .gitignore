@@ -1,18 +1,30 @@
-﻿node_modules/
+﻿# Dependencies
+node_modules/
+
+# Environment
 .env
+
+# Build output
 dist/
-_electron.log
-_gate_test.txt
-verify*.mjs
-verify*.cjs
-_rebuild.log
-_*.log
+
+# Runtime state
 fleet-state.json
 fleet-agents.json
+.fleet-state.json*.tmp
+
+# Memory & logs
+memory/
 *.jsonl
 logs/
 .agentlog-selftest/
-memory/
+
+# Dev scratch / one-off scripts
+_electron.log
+_gate_test.txt
+_rebuild.log
+_*.log
+verify*.mjs
+verify*.cjs
 orch_test.mjs
 gui.mjs
 upgrade1.mjs
