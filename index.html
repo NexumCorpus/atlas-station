@@ -983,6 +983,9 @@ input:focus-visible{outline:none}
     } else if(m.type==="startup_tasks"&&m.count){
       thread.push({role:'system',text:'⟳ running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session',error:false,ts:Date.now()});
       renderThread();
+    } else if(m.type==="deferred_exec"){
+      showToast('▶ Deferred: '+(m.task||'').slice(0,60),'info',4000);
+      addTimelineEvent('▶','deferred task '+m.count+': '+(m.task||'').slice(0,50),'sys');
     } else if(m.type==="deferred"){
       // Show brief confirmation in vitals or just ignore (low noise)
     } else if(m.type==="error"){

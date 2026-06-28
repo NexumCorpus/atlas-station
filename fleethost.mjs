@@ -1104,7 +1104,7 @@ recall_memory(query,maxResults?) — retrieve relevant facts
 set_goal(goal,priority?,area?) — record a persistent intention
 list_goals(status?) — review goals
 resolve_goal(id,outcome) — mark goal done or abandoned
-defer_task(task,reason?,mode?) — schedule for next startup
+defer_task(task,reason?,mode?) — schedule for next startup; deferred tasks auto-execute at next startup (up to 3)
 memory_health() — fact/goal/proposal/pulse counts
 notify_self(text,type?) — leave notification for Daniel
 self_assess() — structured current-state snapshot
@@ -1607,22 +1607,33 @@ try {
   }
 } catch (_) {}
 
-// Execute deferred tasks from previous sessions
-try {
-  const pending = _deferred ? _deferred.popPending(path.join(REPO, 'memory')) : [];
-  if (pending.length > 0) {
-    send('startup_tasks', { count: pending.length, tasks: pending.map(t => t.task.slice(0, 60)) });
-    setTimeout(() => {
-      pending.forEach((entry, i) => {
-        setTimeout(() => {
-          _maxCounter++;
-          const id = 'A-' + _maxCounter;
-          process.emit('message', { t: 'dispatch', id, task: entry.task, mode: entry.mode || 'read' });
-        }, i * 1000);
-      });
-    }, 3000);
+// Auto-execute deferred tasks from prior sessions
+async function runDeferredTasks() {
+  if (!_deferred) return;
+  const memDir = path.join(REPO, 'memory');
+  const MAX_DEFERRED = 3; // safety cap — don't auto-run more than 3 tasks at startup
+  try {
+    const pending = _deferred.popPending(memDir);
+    if (!pending || !pending.length) return;
+    const toRun = pending.slice(0, MAX_DEFERRED);
+    send('startup_tasks', { count: toRun.length, tasks: toRun.map(t => t.task.slice(0, 60)) });
+    for (let i = 0; i < toRun.length; i++) {
+      const entry = toRun[i];
+      const mode = entry.mode || 'read';
+      send('deferred_exec', { task: entry.task, mode, count: i + 1 });
+      await runSubagent(
+        `[DEFERRED TASK from prior session]\nReason it was deferred: ${entry.reason || 'scheduled'}\n\nTask:\n${entry.task}`,
+        mode,
+        20 * 60 * 1000,
+        null
+      );
+    }
+  } catch (e) {
+    send('deferred_error', { error: e.message });
   }
-} catch (_) {}
+}
+// Execute deferred tasks from previous sessions — fires 5s after startup to let briefing go first
+setTimeout(() => runDeferredTasks().catch(() => {}), 5000);
 
 // Broadcast unread notifications from previous sessions
 try {

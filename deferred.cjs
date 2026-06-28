@@ -46,4 +46,4 @@ function peekPending(dir) {
   return _load(dir).filter(t => t.state === 'pending');
 }
 
-module.exports = { deferTask, popPending, peekPending, listDeferred };
+module.exports = { deferTask, popPending, listDeferred, peekPending };
