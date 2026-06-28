@@ -6,8 +6,10 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
+const fs = require("fs");
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
+let lastHistory = null; const lastAgents = new Map(); let reloadTimer = null;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -16,8 +18,30 @@ function createWindow() {
   });
   try { win.removeMenu(); } catch (_) {}
   win.loadFile("index.html");
-  win.webContents.on("did-finish-load", startFleet);
+  win.webContents.on("did-finish-load", () => {
+    startFleet();
+    // hot-reload state restore: re-push cached fleet state so a reload repopulates the UI
+    if (win) {
+      for (const a of lastAgents.values()) win.webContents.send("fleet", a);
+      if (lastHistory) win.webContents.send("fleet", lastHistory);
+    }
+  });
   win.on("closed", () => { stopFleet(); win = null; });
+  watchIndexForReload();
+}
+
+// Auto-reload the renderer whenever index.html changes on disk, so ATLAS's GUI
+// edits appear instantly (no manual Ctrl+R). The fleet sidecar keeps running.
+function watchIndexForReload() {
+  try {
+    fs.watch(__dirname, (_evt, filename) => {
+      if (filename !== "index.html") return;
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        if (win && !win.isDestroyed()) { try { win.webContents.reloadIgnoringCache(); } catch (_) {} }
+      }, 200);
+    });
+  } catch (_) {}
 }
 
 function startFleet() {
@@ -31,10 +55,11 @@ function startFleet() {
     return;
   }
   fleet.on("message", (m) => {
-    if (win && m) win.webContents.send("fleet", m);
-    if (m && m.type === "counter" && typeof m.value === "number") {
-      counter = Math.max(counter, m.value);
-    }
+    if (!m) return;
+    if (win) win.webContents.send("fleet", m);
+    if (m.type === "agent" && m.id) lastAgents.set(m.id, m);
+    else if (m.type === "history") lastHistory = m;
+    else if (m.type === "counter" && typeof m.value === "number") counter = Math.max(counter, m.value);
   });
   if (fleet.stderr) fleet.stderr.on("data", () => {});
   fleet.on("exit", (code) => {
