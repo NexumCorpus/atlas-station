@@ -396,7 +396,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     return '<p>' + h + '</p>';
   }
 
-  var thread=[];
+  var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t:[];}catch(e){return[];}})();
   var agents=new Map();
   var agentTools=new Map(); // id -> string[] max 5
   var HIST={commits:[],runs:[]};
@@ -490,7 +490,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           if(pend){
             pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;
             pend.needsTypewrite=true;
-          } else {
+          } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
             thread.push({role:"atlas",text:txt,cost:m.cost});
           }
           $('status').textContent="overseer · idle";
@@ -537,8 +537,11 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         m.agents.forEach(function(a){
           if(a&&a.id){
             agents.set(a.id,a);
-            if(a.id==="ATLAS"&&(a.reply||a.summary))
-              thread.push({role:"atlas",text:a.reply||a.summary,cost:a.cost,restored:true});
+            if(a.id==="ATLAS"&&(a.reply||a.summary)){
+              var _rt=a.reply||a.summary;
+              if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===_rt))
+                thread.push({role:"atlas",text:_rt,cost:a.cost,restored:true});
+            }
           }
         });
       }
@@ -702,6 +705,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       return '<div class="bub '+t.role+(t.pending?' pending':'')+'"'+(t.role==="atlas"&&t.pending?' data-streaming="1"':'')+'><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
     }).join(''):'<div class="empty"><span style="color:var(--violet);font-size:11px;letter-spacing:.08em">ATLAS online</span><br><span style="color:var(--dim);font-size:10.5px;line-height:1.7">direct the fleet · watch agents work<br>↓ type below to begin</span></div>';
     th.innerHTML=html;
+    try{localStorage.setItem('atlas_thread',JSON.stringify(thread.filter(function(t){return t.role!=="atlas"||!t.pending;}).slice(-150).map(function(t){return {role:t.role,text:t.text||"",cost:t.cost,error:!!t.error};})));}catch(e){}
     if(twEntry){
       var bubbles=th.querySelectorAll('.bub.atlas:not(.pending)');
       if(bubbles.length){
