@@ -93,6 +93,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .bar .to{color:var(--violet);font-size:10px;letter-spacing:.12em;text-transform:uppercase;flex:none;text-shadow:0 0 8px rgba(157,107,255,.5)}
 .bar input{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:13.5px;outline:none}
 .hint{font-size:10px;color:#56546e;letter-spacing:.1em;flex:none}
+.xcbtn{font-size:10px;padding:1px 5px;border:1px solid var(--dim);background:transparent;color:var(--dim);border-radius:2px;cursor:pointer;margin-left:auto;flex-shrink:0}
+.xcbtn:hover{color:var(--mag);border-color:var(--mag)}
+#replyrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--line);background:var(--panel)}
+.replylabel{font-size:10px;color:var(--dim);flex:none;letter-spacing:.08em}
+#agentreply{flex:1;background:transparent;border:none;color:#e4e9f6;caret-color:var(--cyan);font-family:inherit;font-size:12px;outline:none;padding:2px 0}
+.bubcost{font-size:9px;color:var(--dim);display:block;text-align:right;margin-top:4px}
+.bub.system{border-left:3px solid var(--ember);background:rgba(255,106,61,.06);color:var(--ember);font-size:11px;align-self:flex-start}
+.broodempty{color:var(--dim);font-size:10px;padding:12px 8px;text-align:center;letter-spacing:.1em}
 </style>
 </head>
 <body>
@@ -221,7 +229,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         agents.set("ATLAS",m);
         var pend=lastPendingAtlas();
         if(m.state==="working"){
-          if(pend){pend.lastTool=m.lastTool||null;pend.activity=m.summary||null;}
+          if(pend){pend.lastTool=m.lastTool||null;pend.lastToolArg=m.lastToolArg||null;pend.activity=m.summary||null;}
           $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"){
           var txt=m.reply||m.summary||"(no reply)";
@@ -272,6 +280,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     } else if(m.type==="history"){
       HIST={commits:(m.commits||[]),runs:(m.runs||[])};
       renderLedger();
+    } else if(m.type==="error"){
+      thread.push({role:"system",text:m.m||"fleet error",error:true});
+      renderThread();
     }
   });
 
@@ -282,15 +293,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     var th=$('thread');
     var twEntry=null;
     var html=thread.length?thread.map(function(t){
+      if(t.role==="system"){
+        return '<div class="bub system"><div class="who">system</div>'+esc(t.text||"")+'</div>';
+      }
       var who=t.role==="you"?"you":"ATLAS";
       var inner;
       if(t.role==="atlas"&&t.pending){
-        var chip=t.lastTool?'<span class="toolchip">◈ '+esc(t.lastTool)+'</span>':'';
-        var label=t.lastTool?'':esc(t.activity||"thinking");
+        var toolLabel=t.lastTool?(t.lastTool+(t.lastToolArg?' ← '+t.lastToolArg:'')):null;
+        var chip=toolLabel?'<span class="toolchip">◈ '+esc(toolLabel)+'</span>':'';
+        var label=toolLabel?'':esc(t.activity||"thinking");
         inner='<span class="pend">'+label+chip+'</span>';
       } else {
         inner='<span class="atlastext">'+esc(t.text||"")+'</span>'
-          +(t.cost!=null?'<span class="dim" style="font-size:9px"> · $'+Number(t.cost).toFixed(2)+'</span>':'');
+          +(t.cost!=null&&t.cost>0?'<span class="bubcost">$'+Number(t.cost).toFixed(2)+'</span>':'');
       }
       if(t.needsTypewrite){twEntry=t;t.needsTypewrite=false;}
       return '<div class="bub '+t.role+(t.pending?' pending':'')+'"><div class="who">'+who+(t.restored?' · earlier':'')+'</div>'+inner+'</div>';
@@ -322,14 +337,19 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     var branchBadge=a.branch
       ?'<span class="bbadge">⬡ '+esc(a.branch)+(a.commits?' · '+a.commits+' commits':'')+'</span>'
       :'';
+    var toolDisplay=a.lastTool?(a.lastTool+(a.lastToolArg?' ← '+a.lastToolArg:'')):'';
+    var cancelBtn=(a.state==="working"||a.state==="needs-you")
+      ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel agent">✕</button>'
+      :'';
     return '<div class="arow st-'+a.state+sel+fr+'" data-k="agent" data-id="'+esc(a.id)+'">'
       +'<div class="arowmain">'
       +'<span class="sig" style="color:'+col+';text-shadow:0 0 8px '+col+'">'+(SIG[a.state]||"·")+'</span>'
       +'<span class="aid">'+esc(a.id)+'</span>'
       +'<span class="atask ell">'+esc(a.task||a.summary||"")+'</span>'
-      +(branchBadge?branchBadge:'<span class="atool ell">'+esc(a.lastTool||"")+'</span>')
+      +(branchBadge?branchBadge:'<span class="atool ell">'+esc(toolDisplay)+'</span>')
       +'<span class="ast">'+statText+'</span>'
       +'<span class="acost">'+(a.cost!=null?"$"+Number(a.cost).toFixed(2):"")+'</span>'
+      +cancelBtn
       +'</div>'
       +badgesHtml
       +'</div>';
@@ -344,8 +364,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     });
     $('brood').innerHTML=list.length
       ?list.map(rowOf).join("")
-      :'<div class="empty">ATLAS hasn\'t spawned any subagents yet.</div>';
+      :'<div class="broodempty">no agents deployed</div>';
     updateFleetStats(list);
+    var workCount=list.filter(function(a){return a.state==="working";}).length;
+    document.title=workCount>0?'ATLAS ['+workCount+' working] // station':'ATLAS // station';
   }
 
   function updateFleetStats(list){
@@ -418,12 +440,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     var box=$('reply');
     if(!SEL){box.className="";return;}
     var rid="",state="",cost="",task="",body="",col="#d8deec",branch="";
+    var hasSession=false;
     if(SEL.kind==="agent"){
       var a=agents.get(SEL.id);if(!a){box.className="";return;}
       rid=a.id;state=a.state;col=COL[a.state]||"#d8deec";
       cost=a.cost!=null?"$"+Number(a.cost).toFixed(2):"";
       task=a.task||"";branch=a.branch||"";
       body=a.reply||a.summary||(a.state==="working"?"◌ working — "+(a.lastTool||"thinking")+" …":"(no output)");
+      hasSession=!!a.session;
     } else if(SEL.kind==="run"){
       var r=HIST.runs.slice().reverse()[SEL.id];if(!r){box.className="";return;}
       rid=r.agentId||"run";state=r.state;col=COL[r.state]||"#d8deec";
@@ -437,10 +461,20 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       +'<span class="dim" style="font-size:9px;margin-left:4px">subagent · read-only</span>'
       +'<span class="rx" id="rx">close</span></div>'
       +(task?'<div class="rtask">▸ '+esc(task)+'</div>':'')
-      +'<div class="rbody">'+esc(body)+'</div>';
+      +'<div class="rbody">'+esc(body)+'</div>'
+      +(hasSession
+        ?'<div id="replyrow"><span class="replylabel">↳ reply</span><input id="agentreply" placeholder="continue this conversation…" autocomplete="off"></div>'
+        :'<div id="replyrow" style="display:none"></div>');
     box.className="open";
     var rx=$('rx');
     if(rx)rx.addEventListener('click',function(e){e.stopPropagation();SEL=null;renderBrood();renderReply();});
+    var ar=$('agentreply');
+    if(ar){
+      var sid=SEL.id;
+      ar.addEventListener('keydown',function(e){
+        if(e.key==='Enter'&&ar.value.trim()){window.atlas.replyAgent(sid,ar.value.trim());ar.value='';}
+      });
+    }
   }
 
   function select(kind,id){SEL={kind:kind,id:id};renderBrood();renderReply();}
@@ -449,7 +483,10 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     var k=row.getAttribute('data-k');
     select(k,k==="run"?Number(row.getAttribute('data-id')):row.getAttribute('data-id'));
   }
-  $('brood').addEventListener('click',onClick);
+  $('brood').addEventListener('click',function(e){
+    if(e.target.matches('.xcbtn')){window.atlas.cancel(e.target.dataset.id);e.stopPropagation();return;}
+    onClick(e);
+  });
   $('ledger').addEventListener('click',onClick);
 
   function say(text){
@@ -460,6 +497,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
   }
   $('say').addEventListener('keydown',function(e){
     if(e.key==="Enter"&&$('say').value.trim()){say($('say').value.trim());$('say').value="";}
+  });
+
+  window.addEventListener('keydown',function(e){
+    if(e.target.id==='agentreply')return;
+    if(e.key==='Escape'&&SEL){SEL=null;renderBrood();renderReply();}
+    if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();var s=$('say');if(s){s.focus();s.select();}}
   });
 
   renderThread();renderBrood();renderLedger();
