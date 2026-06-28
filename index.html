@@ -172,6 +172,14 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .pauth:hover{background:rgba(73,255,158,.1)}
 .pdism{font-size:9px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);background:transparent;cursor:pointer;font-family:inherit}
 .pdism:hover{color:var(--mag);border-color:var(--mag)}
+.grow{display:flex;align-items:flex-start;gap:8px;padding:7px 14px;border-bottom:1px solid #110f1f;background:rgba(73,255,158,.03)}
+.grow.gdone{opacity:.35}
+.gpri{font-size:7.5px;padding:1px 4px;border-radius:2px;flex:none;font-weight:700}
+.gpri.high{background:rgba(255,45,149,.12);color:var(--mag)}
+.gpri.medium{background:rgba(73,255,158,.1);color:var(--acid)}
+.gpri.low{background:rgba(157,107,255,.1);color:var(--violet)}
+.gtxt{font-size:11px;color:#b8c0d4;flex:1;line-height:1.4}
+.gid{font-size:8px;color:var(--dim);flex:none}
 </style>
 </head>
 <body>
@@ -241,6 +249,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="brood"></div>
       <div id="proposallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ proposals — ATLAS wants to build ⟧</div>
       <div id="proposals" style="display:none"></div>
+      <div id="goallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ goals — ATLAS intentions ⟧</div>
+      <div id="goals" style="display:none"></div>
       <div class="lab" style="border-top:1px solid var(--line)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
     </div>
@@ -564,6 +574,23 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
         + '<button class="pdism" data-pid="' + esc(m.id) + '">dismiss</button>'
         + '</div>';
       if (ps) ps.appendChild(prow);
+    } else if(m.type==="goal"){
+      var gl = document.getElementById('goallab');
+      var gs = document.getElementById('goals');
+      if (gl) gl.style.display = '';
+      if (gs) gs.style.display = '';
+      // Don't duplicate
+      if (document.querySelector('[data-gid="' + m.id + '"]')) return;
+      var grow = document.createElement('div');
+      grow.className = 'grow' + (m.state !== 'active' ? ' gdone' : '');
+      grow.dataset.gid = m.id;
+      grow.innerHTML = '<span class="gpri ' + esc(m.priority||'medium') + '">' + esc((m.priority||'M')[0].toUpperCase()) + '</span>'
+        + '<span class="gtxt">' + esc(m.text||'') + '</span>'
+        + '<span class="gid">' + esc(m.id||'') + '</span>';
+      if (gs) gs.appendChild(grow);
+    } else if(m.type==="goal_resolved"){
+      var el = document.querySelector('[data-gid="' + m.id + '"]');
+      if (el) el.classList.add('gdone');
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
