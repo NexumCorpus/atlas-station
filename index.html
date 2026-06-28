@@ -84,6 +84,9 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 .mbadge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:8px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
 .mbuild{background:rgba(255,194,75,.15);color:var(--amber);border:1px solid rgba(255,194,75,.3)}
 .mread{background:rgba(34,225,255,.1);color:var(--cyan);border:1px solid rgba(34,225,255,.25)}
+.mmodel{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;font-size:7.5px;font-weight:700;border-radius:2px;flex:none;letter-spacing:0}
+.mmodel-h{background:rgba(73,255,158,.12);color:var(--acid);border:1px solid rgba(73,255,158,.25)}
+.mmodel-o{background:rgba(255,45,149,.12);color:var(--mag);border:1px solid rgba(255,45,149,.25)}
 .statbadge{font-size:8.5px;padding:1px 5px;border:1px solid var(--line);border-radius:2px;letter-spacing:.06em;flex:none;white-space:nowrap}
 .acost2{font-size:9px;color:var(--acid);flex:none;letter-spacing:.03em;font-variant-numeric:tabular-nums}
 .bbadge2{font-size:9px;color:var(--amber);opacity:.8;flex:none;white-space:nowrap;letter-spacing:.04em}
@@ -728,6 +731,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       ? '<span class="mbadge mbuild">B</span>'
       : '<span class="mbadge mread">R</span>';
 
+    // Model tier badge: H (haiku) or O (opus); sonnet is default — no badge
+    var modelShort = '', modelTier = '';
+    if (a.model && a.model.includes('haiku')) { modelShort = 'H'; modelTier = 'h'; }
+    else if (a.model && a.model.includes('opus')) { modelShort = 'O'; modelTier = 'o'; }
+    var modelBadge = modelShort ? '<span class="mmodel mmodel-' + modelTier + '">' + modelShort + '</span>' : '';
+
     // State sigil + label
     var statLabel = needsyou
       ? '<span class="statbadge" style="color:var(--mag);border-color:rgba(255,45,149,.35)">⚡ reply</span>'
@@ -777,6 +786,7 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
     return '<div class="arow st-' + a.state + sel + fr + '" data-k="agent" data-id="' + esc(a.id) + '">'
       + '<div class="arowmain">'
       + modeBadge
+      + modelBadge
       + '<span class="aid">' + esc(a.id) + '</span>'
       + '<span class="atask ell">' + esc(taskFirst) + '</span>'
       + (branchHtml || toolHtml)

@@ -18,7 +18,10 @@ const _require = createRequire(import.meta.url);
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
-const MODEL = process.env.ATLAS_MODEL || "claude-sonnet-4-6"; // dispatch Sonnet by default
+const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
+const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
+const MODEL_OPUS   = "claude-opus-4-8";
+const MODEL = MODEL_SONNET; // default for ATLAS orchestrator
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -155,17 +158,18 @@ async function consume(id, iterable, build, branch) {
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
-async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS) {
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   sessionStats.agentCount++;
+  const agentModel = model || (mode === 'read' ? MODEL_HAIKU : MODEL_SONNET);
   let cwd = REPO, branch = null;
-  set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null });
+  set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: agentModel });
   const enriched = _memcontext ? _memcontext.inject(task) : task;
   if (mode === "build") {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
-  const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   let final = "";
   const ac = new AbortController();
   abortControllers.set(id, ac);
@@ -188,17 +192,20 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS) {
 // --- the fleet tools ATLAS holds ---
 const spawnTool = tool(
   "spawn_agent",
-  "Spawn a subagent to perform a task and get back its result. mode 'read' = read-only analysis/survey; mode 'build' = make changes (runs in an isolated git worktree on its own branch, reviewed before merge). Spawn several for parallel or staged work.",
+  "Spawn a subagent to perform a task and get back its result. mode 'read' = read-only analysis/survey; mode 'build' = make changes (runs in an isolated git worktree on its own branch, reviewed before merge). Spawn several for parallel or staged work. model param: 'haiku' for quick reads (faster, cheaper), 'sonnet' default for builds, 'opus' for complex multi-step reasoning.",
   {
     task: z.string().describe("the complete, self-contained task for the subagent"),
     mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
     timeoutMinutes: z.number().optional().describe("Auto-cancel after N minutes (default 20). Set 0 to disable."),
+    model: z.enum(["haiku", "sonnet", "opus"]).optional().describe("Model tier: haiku (fast/cheap reads), sonnet (default builds), opus (complex reasoning)"),
   },
   async (args) => {
     const agentTimeout = typeof args.timeoutMinutes === "number"
       ? (args.timeoutMinutes <= 0 ? 0 : args.timeoutMinutes * 60 * 1000)
       : DEFAULT_TIMEOUT_MS;
-    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout) }] };
+    const modelMap = { haiku: MODEL_HAIKU, sonnet: MODEL_SONNET, opus: MODEL_OPUS };
+    const model = modelMap[args.model] || undefined;
+    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout, model) }] };
   }
 );
 const checkTool = tool(
@@ -598,7 +605,7 @@ const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and D
 You have FULL tool access — shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command — just run it yourself.
 
 **Your tool kit:**
-- spawn_agent(task, mode, cwd, timeoutMinutes) — spawn a subagent. mode "build" = isolated worktree on fleet/<id>; mode "read" = no worktree. timeoutMinutes defaults to 20; set 0 to disable.
+- spawn_agent(task, mode, timeoutMinutes, model) — spawn a subagent. mode "build" = isolated worktree on fleet/<id>; mode "read" = no worktree. timeoutMinutes defaults to 20; set 0 to disable. model: 'haiku' for quick reads (faster, cheaper), 'sonnet' default for builds, 'opus' for complex multi-step reasoning.
 - check_fleet — list active agents and their states.
 - chain_agents(steps) — sequential pipeline: each step receives the prior result. Use for read→build→verify flows.
 - fleet_status — richer agent detail: cost, turns, branch, elapsed time.
