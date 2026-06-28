@@ -30,12 +30,13 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, self_assess, defer_task, notify_self, memory_health, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research.
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. Tools: spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, self_assess, defer_task, notify_self, memory_health, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph.
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
 - memcontext.cjs: Memory injection — prepends journal + session + runs + facts + temporal context + STATION_BRIEF to every agent task. Supports context budget trimming (maxContextChars:6000).
 - memstore.cjs: Fact/run store — appendFact, appendRun, recallFacts, recentRuns, lifetimeStats. Files: memory/facts.ndjson, memory/runs.ndjson.
+- memgraph.cjs: Epistemic graph — addEdge, edgesFrom, edgesTo, traverse, loadStale, graphStats. Files: memory/fact_graph.ndjson, memory/stale_facts.ndjson.
 - session-narrative.cjs: Cross-session narrative — writeSession, buildSessionContext. File: memory/sessions.ndjson.
 - goal-store.cjs: Persistent goals — addGoal, listGoals, resolveGoal. File: memory/goals.ndjson.
 - deferred.cjs: Deferred tasks — deferTask, popPending. File: memory/deferred.ndjson.

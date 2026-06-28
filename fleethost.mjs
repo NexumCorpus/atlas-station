@@ -48,6 +48,8 @@ let _notif = null;
 try { _notif = _require('./notifications.cjs'); } catch { _notif = null; }
 let _selfloop = null;
 try { _selfloop = _require('./selfloop.cjs'); } catch { _selfloop = null; }
+let _memgraph = null;
+try { _memgraph = _require('./memgraph.cjs'); } catch { _memgraph = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -371,10 +373,19 @@ const recallMemoryTool = tool(
   },
   async (args) => {
     try {
-      const facts = _memstore.recallFacts(args.query, {
+      let facts = _memstore.recallFacts(args.query, {
         dir: path.join(REPO, 'memory'),
         maxResults: args.maxResults || 8,
       });
+      // Filter out stale (superseded) facts
+      if (_memgraph) {
+        try {
+          const stale = _memgraph.loadStale(path.join(REPO, 'memory'));
+          if (stale.size > 0) {
+            facts = facts.filter(f => !stale.has(f.topic || f.key || ''));
+          }
+        } catch {}
+      }
       if (!facts.length) return { content: [{ type: 'text', text: 'no relevant facts found' }] };
       const lines = facts.map(f => `[${f.confidence}] ${f.fact} (${f.source})`);
       return { content: [{ type: 'text', text: lines.join('\n') }] };
@@ -506,7 +517,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -551,9 +562,10 @@ const capabilityManifestTool = tool(
       "self_assess", "defer_task", "notify_self", "memory_health",
       "capability_manifest", "trigger_selfloop",
       "write_doc", "read_doc", "list_docs",
-      "run_script", "memory_consolidate", "web_research"
+      "run_script", "memory_consolidate", "web_research",
+      "relate_facts", "fact_graph"
     ];
-    const modules = ["memcontext", "memstore", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
+    const modules = ["memcontext", "memstore", "memgraph", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
@@ -884,7 +896,57 @@ const webResearchTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool] });
+const relateFactsTool = tool(
+  "relate_facts",
+  "Declare a typed relationship between two memory facts. Relations: supports, contradicts, elaborates, supersedes, related_to. Use 'supersedes' when a new fact replaces an old one — the old fact is marked stale and filtered from future recalls.",
+  {
+    fromKey: z.string().describe("Key of the source fact"),
+    relation: z.enum(["supports", "contradicts", "elaborates", "supersedes", "related_to"]).describe("Relation type"),
+    toKey: z.string().describe("Key of the target fact"),
+  },
+  async (args) => {
+    if (!_memgraph) return { content: [{ type: 'text', text: 'memgraph not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const edge = _memgraph.addEdge(args.fromKey, args.relation, args.toKey, memDir);
+      return { content: [{ type: 'text', text: `Edge created: ${edge.fromKey} --[${edge.relation}]--> ${edge.toKey}${args.relation === 'supersedes' ? '\n(old fact marked stale)' : ''}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `relate_facts error: ${e.message}` }] };
+    }
+  }
+);
+
+const factGraphTool = tool(
+  "fact_graph",
+  "Show the graph neighborhood of a fact: all outbound/inbound edges and reachable related facts (up to 2 hops). Also shows graph stats. Use to explore the epistemic structure of memory.",
+  {
+    key: z.string().describe("Fact key to explore"),
+    maxDepth: z.number().optional().describe("Traversal depth (default 2)"),
+  },
+  async (args) => {
+    if (!_memgraph) return { content: [{ type: 'text', text: 'memgraph not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const outbound = _memgraph.edgesFrom(args.key, memDir);
+      const inbound = _memgraph.edgesTo(args.key, memDir);
+      const reachable = _memgraph.traverse(args.key, memDir, args.maxDepth || 2);
+      const stale = _memgraph.loadStale(memDir);
+      const stats = _memgraph.graphStats(memDir);
+      const lines = [
+        `Fact: ${args.key}${stale.has(args.key) ? ' [STALE]' : ''}`,
+        `Outbound (${outbound.length}): ${outbound.map(e => `--[${e.relation}]--> ${e.toKey}`).join(', ') || 'none'}`,
+        `Inbound (${inbound.length}): ${inbound.map(e => `${e.fromKey} --[${e.relation}]-->`).join(', ') || 'none'}`,
+        `Reachable (depth ${args.maxDepth || 2}): ${reachable.map(r => `${r.key} (via ${r.relation}, d=${r.depth})`).join(', ') || 'none'}`,
+        `Graph stats: ${stats.totalEdges} edges, ${stats.staleCount} stale facts`,
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `fact_graph error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -915,6 +977,8 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - run_script(command, cwd?, timeoutMs?) — execute a shell command or node script in the repo and return output (up to 3000 chars). Use for self-testing, git queries, npm lint checks. Destructive patterns blocked.
 - memory_consolidate(maxFacts?, focus?) — synthesize recent facts + journal into a higher-order insight via a Haiku read agent. Writes the synthesis as a 'consolidation' fact. Good for compressing noise into signal.
 - web_research(query, url?, saveAs?) — spawn a Haiku agent to search/fetch the web and summarize findings. Results stored as facts. Use for documentation lookup, verifying current info, or fetching specific pages.
+- relate_facts(fromKey, relation, toKey) — declare a typed edge between facts (supports/contradicts/elaborates/supersedes/related_to). 'supersedes' marks the old fact stale, filtering it from future recalls.
+- fact_graph(key, maxDepth?) — explore the graph neighborhood of a fact: edges, reachable nodes, stale status.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1159,8 +1223,8 @@ function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (26 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research`,
+        `## Tools (28 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
