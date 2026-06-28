@@ -263,7 +263,55 @@ const diagnoseTool = tool(
     return { content: [{ type: "text", text: checks.join("\n") }] };
   }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool] });
+const proposeTool = tool(
+  "propose_improvement",
+  "Queue a self-directed improvement proposal for Daniel to review. Use this when you identify something worth building or changing — even if Daniel hasn't asked for it. Proposals appear in the GUI.",
+  {
+    description: z.string().describe("What to build or change, and why"),
+    priority: z.enum(["high", "medium", "low"]).optional().describe("Urgency level (default: medium)"),
+    area: z.enum(["gui", "fleet", "memory", "autonomy", "other"]).optional().describe("Which part of the station"),
+  },
+  async (args) => {
+    const proposal = {
+      id: 'P-' + Date.now(),
+      ts: new Date().toISOString(),
+      description: args.description || '',
+      priority: args.priority || 'medium',
+      area: args.area || 'other',
+      state: 'pending',
+    };
+    // Persist to disk
+    try {
+      const fs = _require('fs');
+      const pfile = path.join(REPO, 'memory', 'proposals.ndjson');
+      fs.appendFileSync(pfile, JSON.stringify(proposal) + '\n', 'utf8');
+    } catch (_) {}
+    // Broadcast to GUI
+    send('proposal', proposal);
+    return { content: [{ type: 'text', text: `Proposal queued: ${proposal.id} — "${proposal.description.slice(0, 80)}"` }] };
+  }
+);
+const loadProposalsTool = tool(
+  "load_proposals",
+  "List pending self-improvement proposals. Use to review what's already been proposed before adding a duplicate.",
+  {},
+  async () => {
+    try {
+      const fs = _require('fs');
+      const pfile = path.join(REPO, 'memory', 'proposals.ndjson');
+      if (!fs.existsSync(pfile)) return { content: [{ type: 'text', text: 'no proposals yet' }] };
+      const lines = fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
+      const proposals = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      const pending = proposals.filter(p => p.state === 'pending');
+      if (!pending.length) return { content: [{ type: 'text', text: 'no pending proposals' }] };
+      const text = pending.map(p => `[${p.priority}] ${p.id}: ${p.description}`).join('\n');
+      return { content: [{ type: 'text', text }] };
+    } catch (_) {
+      return { content: [{ type: 'text', text: 'could not load proposals' }] };
+    }
+  }
+);
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -275,6 +323,8 @@ You have FULL tool access — shell, git, and file edits directly. Use it for me
 - chain_agents(steps) — sequential pipeline: each step receives the prior result. Use for read→build→verify flows.
 - fleet_status — richer agent detail: cost, turns, branch, elapsed time.
 - diagnose — self-check: verifies source files, memory, git state. Use when something seems wrong.
+- propose_improvement(description, priority, area) — queue a self-directed improvement proposal for Daniel to review. Use when you identify something worth building without being asked — proposals queue for Daniel's review.
+- load_proposals() — list pending proposals. Check before proposing to avoid duplicates.
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -455,5 +505,16 @@ try {
   if (_memstore && _memstore.lifetimeStats) {
     const stats = _memstore.lifetimeStats();
     send("lifetime", stats);
+  }
+} catch (_) {}
+
+// Broadcast pending proposals so the GUI can populate on startup
+try {
+  const fs = _require('fs');
+  const pfile = path.join(REPO, 'memory', 'proposals.ndjson');
+  if (fs.existsSync(pfile)) {
+    const lines = fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
+    const proposals = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    proposals.filter(p => p.state === 'pending').forEach(p => send('proposal', p));
   }
 } catch (_) {}

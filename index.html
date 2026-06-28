@@ -158,6 +158,20 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 #thread::-webkit-scrollbar-track,#brood::-webkit-scrollbar-track,#ledger::-webkit-scrollbar-track{background:transparent}
 #thread::-webkit-scrollbar-thumb,#brood::-webkit-scrollbar-thumb,#ledger::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
 #thread::-webkit-scrollbar-thumb:hover,#brood::-webkit-scrollbar-thumb:hover,#ledger::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+.prow{display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid #110f1f;cursor:pointer;flex-direction:column;background:rgba(157,107,255,.04)}
+.prow:hover{background:rgba(157,107,255,.09)}
+.prowhead{display:flex;align-items:center;gap:8px}
+.ppri{font-size:8px;padding:1px 5px;border-radius:2px;font-weight:700;flex:none}
+.ppri.high{background:rgba(255,45,149,.15);color:var(--mag);border:1px solid rgba(255,45,149,.3)}
+.ppri.medium{background:rgba(255,194,75,.1);color:var(--amber);border:1px solid rgba(255,194,75,.25)}
+.ppri.low{background:rgba(157,107,255,.1);color:var(--violet);border:1px solid rgba(157,107,255,.25)}
+.parea{font-size:8.5px;color:var(--dim);letter-spacing:.08em}
+.pdesc{font-size:11.5px;color:#cdd3e3;line-height:1.5}
+.pactions{display:flex;gap:6px;margin-top:4px}
+.pauth{font-size:9px;padding:2px 8px;border:1px solid rgba(73,255,158,.3);color:var(--acid);background:transparent;cursor:pointer;font-family:inherit}
+.pauth:hover{background:rgba(73,255,158,.1)}
+.pdism{font-size:9px;padding:2px 8px;border:1px solid var(--line);color:var(--dim);background:transparent;cursor:pointer;font-family:inherit}
+.pdism:hover{color:var(--mag);border-color:var(--mag)}
 </style>
 </head>
 <body>
@@ -225,6 +239,8 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
       <div class="lab">⟦ the fleet — what ATLAS is running ⟧</div>
       <div id="brood"></div>
+      <div id="proposallab" class="lab" style="display:none;border-top:1px solid var(--line)">⟦ proposals — ATLAS wants to build ⟧</div>
+      <div id="proposals" style="display:none"></div>
       <div class="lab" style="border-top:1px solid var(--line)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
     </div>
@@ -526,6 +542,25 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
           li.style.display='inline';
         }
       }
+    } else if(m.type==="proposal"){
+      var pl = document.getElementById('proposallab');
+      var ps = document.getElementById('proposals');
+      if (pl) pl.style.display = '';
+      if (ps) ps.style.display = '';
+      var prow = document.createElement('div');
+      prow.className = 'prow';
+      prow.dataset.pid = m.id;
+      prow.innerHTML = '<div class="prowhead">'
+        + '<span class="ppri ' + esc(m.priority || 'medium') + '">' + esc((m.priority || 'medium').toUpperCase()) + '</span>'
+        + '<span class="parea">' + esc(m.area || 'other') + '</span>'
+        + '<span class="parea" style="margin-left:auto;font-size:8px;color:var(--dim)">' + esc((m.ts||'').slice(0,10)) + '</span>'
+        + '</div>'
+        + '<div class="pdesc">' + esc(m.description || '') + '</div>'
+        + '<div class="pactions">'
+        + '<button class="pauth" data-pid="' + esc(m.id) + '">authorize → build it</button>'
+        + '<button class="pdism" data-pid="' + esc(m.id) + '">dismiss</button>'
+        + '</div>';
+      if (ps) ps.appendChild(prow);
     } else if(m.type==="error"){
       thread.push({role:"system",text:m.m||"fleet error",error:true});
       renderThread();
@@ -981,6 +1016,30 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
       if (e.target === kbov) kbov.style.display = 'none';
     });
   }
+
+  document.addEventListener('click', function(e) {
+    if (e.target.matches('.pauth')) {
+      var pid = e.target.dataset.pid;
+      var row = document.querySelector('[data-pid="' + pid + '"]');
+      if (row) {
+        var desc = row.querySelector('.pdesc');
+        var taskText = desc ? desc.textContent : pid;
+        window.atlas.say('ATLAS: proposal ' + pid + ' authorized. Build it: ' + taskText);
+        row.style.opacity = '0.4';
+        e.target.disabled = true;
+      }
+    }
+    if (e.target.matches('.pdism')) {
+      var row2 = e.target.closest('[data-pid]');
+      if (row2) row2.remove();
+      var ps2 = document.getElementById('proposals');
+      if (ps2 && !ps2.children.length) {
+        ps2.style.display = 'none';
+        var pl2 = document.getElementById('proposallab');
+        if (pl2) pl2.style.display = 'none';
+      }
+    }
+  });
 })();
 </script>
 </body>
