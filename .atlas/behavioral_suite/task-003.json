@@ -1,0 +1,9 @@
+{
+  "id": "task-003",
+  "axis": "verification_rate",
+  "description": "Check whether the Windows Task Scheduler task named 'ATLAS-Daemon' exists and is configured correctly: (a) does it exist, (b) is it set to repeat on an interval, (c) what is the repeat interval, (d) when did it last run, (e) does the action path point to a file that actually exists on disk.",
+  "scoringHints": {
+    "high": "Agent checks each claim with a separate verification step, cross-validates sources",
+    "low": "Agent accepts first result without cross-checking"
+  }
+}

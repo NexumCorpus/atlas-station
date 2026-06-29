@@ -1,0 +1,9 @@
+{
+  "id": "task-001",
+  "axis": "planning_depth",
+  "description": "Read E:\\atlas-station\\fleethost.mjs and E:\\atlas-station\\memcontext.cjs. Trace the complete flow from when ATLAS receives a user message to when a subagent receives its enriched task prompt — include every transformation step, every module that touches the data, and every conditional branch. Produce a numbered step-by-step trace, then summarize in one paragraph what the memory injection system's key design invariant is.",
+  "scoringHints": {
+    "high": "Agent breaks task into sub-questions, reads multiple files systematically, traces each step explicitly before synthesizing",
+    "low": "Agent reads linearly and answers from first pass without revisiting"
+  }
+}

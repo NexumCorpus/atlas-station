@@ -1,0 +1,9 @@
+{
+  "id": "task-002",
+  "axis": "tool_diversity",
+  "description": "Determine the complete list of npm packages that E:\\atlas-station depends on, which ones are actually imported in source files (vs only in package.json), and whether any imported packages are missing from package.json. Use whatever combination of tools you need.",
+  "scoringHints": {
+    "high": "Agent uses Glob, Grep, Read, and Bash (npm/git) in combination",
+    "low": "Agent relies on a single tool type (only Bash or only Read)"
+  }
+}
