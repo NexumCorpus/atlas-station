@@ -565,7 +565,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -618,7 +618,7 @@ const capabilityManifestTool = tool(
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
-      "drain_proposals"
+      "drain_proposals", "prune_facts"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson"];
@@ -1540,21 +1540,16 @@ const drainProposalsTool = tool(
       const fs = _require('fs');
       const proposalsFile = path.join(memDir, 'proposals.ndjson');
       if (!fs.existsSync(proposalsFile)) return { content: [{ type: 'text', text: 'No proposals file found.' }] };
-
       const proposals = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean)
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-
       const priority = (args.priority || 'HIGH').toUpperCase();
       const toDefer = priority === 'ALL'
         ? proposals.filter(p => p.state === 'pending')
         : proposals.filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === priority);
-
       if (!toDefer.length) return { content: [{ type: 'text', text: `No pending ${priority === 'ALL' ? '' : priority + ' '}proposals found.` }] };
-
       if (args.dryRun) {
         return { content: [{ type: 'text', text: `Would defer ${toDefer.length} proposals:\n${toDefer.map(p => `- ${(p.description || p.text || p.proposal || JSON.stringify(p)).slice(0, 80)}`).join('\n')}` }] };
       }
-
       let deferred = 0;
       for (const p of toDefer) {
         const text = p.description || p.text || p.proposal || String(p);
@@ -1568,7 +1563,53 @@ const drainProposalsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool] });
+const pruneFactsTool = tool(
+  "prune_facts",
+  "Mark old, low-value facts as stale. Identifies facts older than maxAgeDays with low confidence (inferred) and moves them to the stale index. Does not delete — facts can be recovered. Use memory_health to see fact age distribution first.",
+  {
+    maxAgeDays: z.number().optional().default(30).describe("Facts older than this (in days) are candidates for pruning. Default: 30."),
+    dryRun: z.boolean().optional().describe("If true, report what would be pruned without changing anything"),
+    confidenceFilter: z.string().optional().default("inferred").describe("Only prune facts with this confidence level. Default: 'inferred' (auto-extracted, lower reliability)."),
+  },
+  async (args) => {
+    if (!_memstore) return { content: [{ type: 'text', text: 'memstore module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const fs = _require('fs');
+      const factsFile = path.join(memDir, 'facts.ndjson');
+      if (!fs.existsSync(factsFile)) return { content: [{ type: 'text', text: 'No facts file.' }] };
+      const maxAgeMs = (args.maxAgeDays || 30) * 24 * 60 * 60 * 1000;
+      const confFilter = (args.confidenceFilter || 'inferred').toLowerCase();
+      const now = Date.now();
+      const lines = fs.readFileSync(factsFile, 'utf8').trim().split('\n').filter(Boolean);
+      const candidates = [];
+      for (const line of lines) {
+        try {
+          const f = JSON.parse(line);
+          const old = f.ts && (now - new Date(f.ts).getTime()) > maxAgeMs;
+          const matchesConf = !confFilter || (f.confidence || '').toLowerCase() === confFilter;
+          if (old && matchesConf) candidates.push(f);
+        } catch {}
+      }
+      if (!candidates.length) return { content: [{ type: 'text', text: `No facts matched (age > ${args.maxAgeDays}d, confidence: ${confFilter}).` }] };
+      if (args.dryRun) {
+        const preview = candidates.slice(0, 5).map(f => `- [${String(f.ts || '').slice(0, 10)}] ${f.topic}: ${String(f.fact || '').slice(0, 60)}`).join('\n');
+        return { content: [{ type: 'text', text: `Would prune ${candidates.length} facts:\n${preview}${candidates.length > 5 ? `\n... and ${candidates.length - 5} more` : ''}` }] };
+      }
+      const staleFile = path.join(memDir, 'stale_facts.ndjson');
+      for (const f of candidates) {
+        if (f.topic) {
+          fs.appendFileSync(staleFile, JSON.stringify({ key: f.topic, ts: new Date().toISOString(), reason: `pruned: age>${args.maxAgeDays}d, conf=${confFilter}` }) + '\n', 'utf8');
+        }
+      }
+      return { content: [{ type: 'text', text: `Pruned ${candidates.length} facts (marked stale in stale_facts.ndjson). Run memory_health to see updated distribution.` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `prune_facts error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1619,7 +1660,8 @@ run_routine(name) — retrieve routine steps for execution
 list_routines() — list all saved routines
 crystallize(showExisting?) — trigger/view session memory crystals; auto-fires every 5 turns
 cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
-drain_proposals(priority?,dryRun?) — convert pending proposals from proposals.ndjson into deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH); dryRun previews without committing
+drain_proposals(priority?,dryRun?) — convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
+prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) — mark old low-confidence facts stale; use memory_health first to see age distribution
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2007,8 +2049,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (45 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals`,
+        `## Tools (46 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
