@@ -569,7 +569,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -624,7 +624,7 @@ const capabilityManifestTool = tool(
       "crystallize", "cluster_facts",
       "drain_proposals", "prune_facts",
       "rate_build", "build_outcomes", "revert_build",
-      "capture_insight"
+      "capture_insight", "context_telemetry"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -1683,6 +1683,51 @@ const buildOutcomesTool = tool(
   }
 );
 
+const contextTelemetryTool = tool(
+  "context_telemetry",
+  "Analyze historical context budget usage — average utilization, which sections are largest, how often budget is exceeded. Use to evaluate whether context improvements (semantic routing, decay, crystals) are actually working.",
+  {
+    lastN: z.number().optional().default(20).describe("Analyze the last N turns. Default: 20."),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const telFile = path.join(REPO, 'memory', 'context_telemetry.ndjson');
+      if (!fs.existsSync(telFile)) return { content: [{ type: 'text', text: 'No telemetry data yet. Telemetry is recorded per ATLAS turn.' }] };
+      const n = args.lastN || 20;
+      const lines = fs.readFileSync(telFile, 'utf8').trim().split('\n').filter(Boolean);
+      const entries = lines.slice(-n).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      if (!entries.length) return { content: [{ type: 'text', text: 'No telemetry entries found.' }] };
+      const avgUtil = Math.round(entries.reduce((s, e) => s + (e.utilization || 0), 0) / entries.length);
+      const trimCount = entries.filter(e => e.trimmed).length;
+      const sectionTotals = {};
+      const sectionCounts = {};
+      for (const entry of entries) {
+        for (const s of (entry.sections || [])) {
+          const key = s.header.replace(/\[|\]/g, '').trim().slice(0, 30);
+          sectionTotals[key] = (sectionTotals[key] || 0) + s.chars;
+          sectionCounts[key] = (sectionCounts[key] || 0) + 1;
+        }
+      }
+      const sectionAvgs = Object.entries(sectionTotals)
+        .map(([k, total]) => ({ section: k, avgChars: Math.round(total / sectionCounts[k]) }))
+        .sort((a, b) => b.avgChars - a.avgChars);
+      const out = [
+        `Context telemetry (last ${entries.length} turns):`,
+        `  Average utilization: ${avgUtil}%`,
+        `  Budget exceeded: ${trimCount}/${entries.length} turns`,
+        `  Budget: ${entries[0]?.budget?.toLocaleString() || 'unknown'} chars`,
+        ``,
+        `Section averages (chars):`,
+        ...sectionAvgs.slice(0, 6).map(s => `  ${s.section}: ${s.avgChars.toLocaleString()}`),
+      ];
+      return { content: [{ type: 'text', text: out.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `context_telemetry error: ${e.message}` }] };
+    }
+  }
+);
+
 const revertBuildTool = tool(
   "revert_build",
   "Revert a fleet build by finding its merge commit and running git revert. Use when verify_build or manual review shows a build introduced problems. Creates a new revert commit — does not force-push or lose history.",
@@ -1714,7 +1759,7 @@ const revertBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1771,6 +1816,7 @@ rate_build(agentId,rating,notes?) — record quality rating (good/partial/bad) f
 build_outcomes(showRecent?) — show aggregate build quality: success rate, distribution, recent ratings
 revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 capture_insight(insight,category?) — manually crystallize a mid-conversation observation into persistent memory
+context_telemetry(lastN?) — historical context budget analysis: avg utilization, section sizes, trim frequency over last N turns
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1866,7 +1912,23 @@ async function orchestrate(userText) {
   } else {
     enriched = userText;
   }
-  if (_ctxStats) send('context_budget', { stats: _ctxStats });
+  if (_ctxStats) {
+    send('context_budget', { stats: _ctxStats });
+    // Persist context telemetry for historical analysis
+    try {
+      const fs = _require('fs');
+      const telFile = path.join(REPO, 'memory', 'context_telemetry.ndjson');
+      const entry = {
+        ts: new Date().toISOString(),
+        total: _ctxStats.total,
+        budget: _ctxStats.budget,
+        utilization: _ctxStats.budget > 0 ? Math.round((_ctxStats.total / _ctxStats.budget) * 100) : 0,
+        sections: (_ctxStats.sections || []).map(s => ({ header: s.header.slice(0, 40), chars: s.chars })),
+        trimmed: _ctxStats.budget > 0 && _ctxStats.total >= _ctxStats.budget,
+      };
+      fs.appendFileSync(telFile, JSON.stringify(entry) + '\n', 'utf8');
+    } catch {}
+  }
   set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null });
   // Dynamic self-instructions injection
   let dynamicRole = ORCH_ROLE;
@@ -2176,8 +2238,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (50 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight`,
+        `## Tools (51 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
