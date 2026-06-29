@@ -95,6 +95,94 @@ function _getMemstore() {
 let _resonance = null;
 try { _resonance = require('./resonance.cjs'); } catch { _resonance = null; }
 
+// Null-guard require: returns null instead of throwing if a module is absent.
+// Used by _buildDynamicBrief() to soft-load optional station modules.
+function _nullGuardRequire(mod) {
+  try { return require(mod); } catch { return null; }
+}
+
+/**
+ * _buildDynamicBrief(memDir) — Optional startup awareness sections.
+ *
+ * Returns a string with up to four sections injected after [Station Architecture]:
+ *   [Active Projects]   — in-progress multi-session initiatives with current phase
+ *   [Goals]             — active goals from goal-store, by priority
+ *   [Self-Instructions] — standing behavioral rules ATLAS has set for itself
+ *   [Build Quality]     — ratio of good/total rated build outcomes
+ *
+ * Every section is individually guarded — any missing file or broken module is
+ * silently skipped. Never throws.
+ */
+function _buildDynamicBrief(memDir) {
+  const lines = [];
+
+  // 1. Active Projects
+  try {
+    const _projects = _nullGuardRequire('./projects.cjs');
+    if (_projects) {
+      const projects = _projects.listProjects(memDir).filter(p => p.status === 'active');
+      if (projects.length > 0) {
+        lines.push('[Active Projects]');
+        for (const p of projects) {
+          const phase = p.phases && p.phases[p.currentPhaseIndex] ? p.phases[p.currentPhaseIndex] : '?';
+          lines.push(`- ${p.name} (${p.id}): phase ${p.currentPhaseIndex + 1}/${p.phases.length} — ${phase}`);
+        }
+        lines.push('');
+      }
+    }
+  } catch {}
+
+  // 2. Goals
+  try {
+    const goalFile = path.join(memDir, 'goals.ndjson');
+    if (fs.existsSync(goalFile)) {
+      const goals = fs.readFileSync(goalFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .filter(g => g.state === 'active');
+      if (goals.length > 0) {
+        lines.push('[Goals]');
+        for (const g of goals) {
+          lines.push(`- [${g.priority}] ${g.text}`);
+        }
+        lines.push('');
+      }
+    }
+  } catch {}
+
+  // 3. Self-Instructions
+  try {
+    const instrFile = path.join(memDir, 'instructions.ndjson');
+    if (fs.existsSync(instrFile)) {
+      const instrs = fs.readFileSync(instrFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .filter(i => i.active !== false);
+      if (instrs.length > 0) {
+        lines.push('[Self-Instructions]');
+        for (const i of instrs) {
+          lines.push(`- ${i.id}: ${i.rule}`);
+        }
+        lines.push('');
+      }
+    }
+  } catch {}
+
+  // 4. Build Quality
+  try {
+    const _ot = _nullGuardRequire('./outcome-tracker.cjs');
+    if (_ot) {
+      const outcomes = _ot.getOutcomes(memDir);
+      if (outcomes.length > 0) {
+        const good = outcomes.filter(o => o.rating === 'good').length;
+        const pct  = Math.round(good / outcomes.length * 100);
+        lines.push(`[Build Quality] ${good}/${outcomes.length} good (${pct}%)`);
+        lines.push('');
+      }
+    }
+  } catch {}
+
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -248,6 +336,15 @@ function buildContext(task, opts = {}) {
     parts.push('[Working in: E:\\atlas-station isolated worktree. Do not orchestrate or call fleet tools — implement only.]');
   } else {
     parts.push(STATION_BRIEF);
+  }
+
+  // Dynamic startup awareness: projects, goals, self-instructions, build quality.
+  // Full tier only — build agents work in isolation and don't need situational awareness.
+  if (tier !== 'build') {
+    const dynamicBrief = _buildDynamicBrief(memDir);
+    if (dynamicBrief.trim()) {
+      parts.push(dynamicBrief.trim());
+    }
   }
 
   // Priority-ordered budget trim: temporal → session → journal → runs → facts. STATION_BRIEF never trimmed.
