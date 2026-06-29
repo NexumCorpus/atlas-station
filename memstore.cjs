@@ -94,6 +94,27 @@ function appendFact(fact, dir = DEFAULT_DIR) {
     supersedes: supersedes ? String(supersedes) : null,
   };
   _appendLine(path.join(dir, FACTS_FILE), entry);
+
+  // Auto-relate: find overlapping recent facts and add graph edges
+  try {
+    const _memgraph = require('./memgraph.cjs');
+    const _resonance = require('./resonance.cjs');
+    const recentLines = _loadLines(path.join(dir, FACTS_FILE)).slice(-21, -1); // last 20 before this one
+    const newTokens = _resonance.tokenize(entry.fact || '');
+    if (newTokens.length > 0) {
+      for (const line of recentLines) {
+        let prev;
+        try { prev = JSON.parse(line); } catch { continue; }
+        if (!prev || !prev.id) continue;
+        const prevTokens = _resonance.tokenize(prev.fact || '');
+        const overlap = _resonance.similarity(newTokens, prevTokens);
+        if (overlap > 0.3) {
+          try { _memgraph.addEdge(entry.id, 'related_to', prev.id, dir); } catch { /* best-effort */ }
+        }
+      }
+    }
+  } catch { /* non-fatal: graph is optional */ }
+
   return entry;
 }
 
