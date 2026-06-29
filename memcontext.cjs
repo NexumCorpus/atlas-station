@@ -85,6 +85,11 @@ function _getMemstore() {
   return _memstore;
 }
 
+// Lazy-load resonance.cjs for semantic similarity scoring.
+// If absent or broken, fact ranking silently degrades to recency order.
+let _resonance = null;
+try { _resonance = require('./resonance.cjs'); } catch { _resonance = null; }
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -112,7 +117,11 @@ function buildContext(task, opts = {}) {
     maxContextChars = 6000,
     memDir          = path.join(__dirname, 'memory'),
     tier            = 'full',  // 'full' = orchestrator, 'build' = build agent
+    returnStats     = false,   // when true, return { context, stats } instead of plain string
   } = opts;
+
+  // Compute effective budget once — needed both for the trim pass and returnStats.
+  const effectiveMaxChars = tier === 'build' ? Math.min(maxContextChars, 2500) : maxContextChars;
 
   const parts = [];
 
@@ -158,7 +167,22 @@ function buildContext(task, opts = {}) {
     // 3. Relevant facts ───────────────────────────────────────────────────────
     try {
       const factLimit = tier === 'build' ? 2 : maxFacts;
-      const facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
+      let facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
+      // Relevance-rank facts by Jaccard similarity to current task.
+      // Build agents skip this — they get a fast path and don't need ranked recall.
+      if (tier !== 'build' && _resonance && facts && facts.length > 1) {
+        try {
+          const taskTokens = _resonance.tokenize(task || '');
+          if (taskTokens.length > 0) {
+            facts = facts.map(f => {
+              const factText = [f.topic, f.fact, f.source].filter(Boolean).join(' ');
+              const factTokens = _resonance.tokenize(factText);
+              const score = _resonance.similarity(taskTokens, factTokens);
+              return { ...f, _score: score };
+            }).sort((a, b) => b._score - a._score);
+          }
+        } catch {}
+      }
       if (facts.length > 0) {
         const snippet = String(task).slice(0, 80);
         const lines   = facts.map(f => `- [${f.confidence}] ${f.fact} (source: ${f.source})`);
@@ -189,7 +213,7 @@ function buildContext(task, opts = {}) {
     } catch {}
   }
 
-  if (!parts.length) return '';
+  if (!parts.length) return returnStats ? { context: '', stats: { total: 0, sections: [], budget: effectiveMaxChars } } : '';
   // Include station architecture brief (compact for build agents)
   if (tier === 'build') {
     parts.push('[Working in: E:\\atlas-station isolated worktree. Do not orchestrate or call fleet tools — implement only.]');
@@ -197,7 +221,6 @@ function buildContext(task, opts = {}) {
     parts.push(STATION_BRIEF);
   }
 
-  const effectiveMaxChars = tier === 'build' ? Math.min(maxContextChars, 2500) : maxContextChars;
   // Priority-ordered budget trim: temporal → session → journal → runs → facts. STATION_BRIEF never trimmed.
   const TRIM_ORDER = [
     /^\[Now\]/,
@@ -222,7 +245,16 @@ function buildContext(task, opts = {}) {
       body = parts.join('\n\n');
     }
   }
-  return `--- ATLAS MEMORY ---\n${body}\n--- END MEMORY ---`;
+  const assembled = `--- ATLAS MEMORY ---\n${body}\n--- END MEMORY ---`;
+  if (returnStats) {
+    const sectionStats = parts.map(s => {
+      const lines = s.split('\n');
+      const header = lines[0] || '(unnamed)';
+      return { header: header.slice(0, 40), chars: s.length };
+    });
+    return { context: assembled, stats: { total: assembled.length, sections: sectionStats, budget: effectiveMaxChars } };
+  }
+  return assembled;
 }
 
 /**
