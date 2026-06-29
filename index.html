@@ -10,7 +10,7 @@
   --ink:#cfd6e6;--dim:#5a5870;--voice:'Iowan Old Style',Palatino,Georgia,serif;
   --accent:var(--violet);--fg:var(--ink);--border:#1c1830;
 }
-@keyframes scan{0%{background-position:0 0}100%{background-position:0 -240px}}
+@keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(3px)}}
 @keyframes drift{0%{transform:translateY(0)}100%{transform:translateY(-12px)}}
 
 @keyframes shimmer{from{left:-60%}to{left:110%}}
@@ -44,7 +44,7 @@ body.booted::before{opacity:.5;transition:opacity 0.6s ease}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:#9aa0b8;font-family:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:1.5;overflow:hidden}
 body{display:flex;flex-direction:column;position:relative;background-image:radial-gradient(circle at 20% 80%, rgba(157,107,255,.03) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(100,180,255,.02) 0%, transparent 50%)}
-body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);animation:scan 9s linear infinite;opacity:.5}
+body::before{content:"";position:fixed;top:-4px;left:0;right:0;bottom:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);will-change:transform;animation:scan .15s linear infinite;opacity:.5}
 body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;background:radial-gradient(60% 40% at 30% 0%,rgba(34,225,255,.06),transparent 70%),radial-gradient(50% 40% at 90% 100%,rgba(255,45,149,.05),transparent 70%);animation:drift 11s ease-in-out infinite alternate}
 .dim{color:var(--dim)}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid rgba(157,107,255,.12);font-size:10px;letter-spacing:.16em;text-transform:uppercase;flex:none;z-index:2;
@@ -354,7 +354,7 @@ input:focus-visible{outline:none}
 #say{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:5px;color:var(--fg);font-family:inherit;font-size:13px;padding:8px 12px;resize:none;outline:none;transition:border-color .2s,background .2s,box-shadow .25s;line-height:1.5;
   box-shadow:inset 0 1px 3px rgba(0,0,0,.3);caret-color:var(--violet)}
 #say:focus{border-color:rgba(157,107,255,.55);background:rgba(157,107,255,.05);
-  box-shadow:0 0 0 1px rgba(157,107,255,.18),0 0 20px -6px rgba(157,107,255,.35),inset 0 1px 6px rgba(157,107,255,.06)}
+  box-shadow:0 0 0 1px rgba(157,107,255,.18),0 0 10px -4px rgba(157,107,255,.3),inset 0 1px 4px rgba(157,107,255,.05)}
 #say::placeholder{color:rgba(90,88,112,.6);opacity:1}
 /* ── send button ──────────────────────────────── */
 #sendbtn:hover{background:rgba(157,107,255,.22);border-color:rgba(157,107,255,.5);color:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.2)}
@@ -460,31 +460,36 @@ input:focus-visible{outline:none}
         <svg id="eye" viewBox="0 0 64 64" width="48" height="48" style="flex:none;cursor:pointer;overflow:visible">
           <!-- Outer dashed orbit ring — CSS rotation -->
           <circle id="sig-ring1" cx="32" cy="32" r="28"
-            fill="none" stroke="#9d6bff" stroke-width="0.7"
-            stroke-dasharray="3 9" opacity="0.22"
+            fill="none" stroke="#9d6bff" stroke-width="1"
+            stroke-dasharray="3 9" opacity="0.38"
             style="transform-origin:32px 32px;animation:sig-orbit1 24s linear infinite"/>
           <!-- Hexagon frame -->
           <polygon id="sig-hex"
             points="32,11 49,21.5 49,42.5 32,53 15,42.5 15,21.5"
-            fill="none" stroke="#9d6bff" stroke-width="0.7" opacity="0.18"/>
+            fill="none" stroke="#9d6bff" stroke-width="1" opacity="0.3"/>
+          <!-- Cardinal tick marks (static — don't rotate with ring) -->
+          <line x1="32" y1="4" x2="32" y2="9" stroke="#9d6bff" stroke-width="1.5" opacity="0.55"/>
+          <line x1="60" y1="32" x2="55" y2="32" stroke="#9d6bff" stroke-width="1.5" opacity="0.55"/>
+          <line x1="32" y1="60" x2="32" y2="55" stroke="#9d6bff" stroke-width="1.5" opacity="0.55"/>
+          <line x1="4" y1="32" x2="9" y2="32" stroke="#9d6bff" stroke-width="1.5" opacity="0.55"/>
           <!-- Activity arcs — opacity driven by JS (ACT level) -->
           <path id="sig-arc0" d="M 25 32 A 7 7 0 0 1 39 32"
-            fill="none" stroke="#22e1ff" stroke-width="2" stroke-linecap="round" opacity="0.12"/>
+            fill="none" stroke="#22e1ff" stroke-width="2.5" stroke-linecap="round" opacity="0.28"/>
           <path id="sig-arc1" d="M 20 32 A 12 12 0 0 1 44 32"
-            fill="none" stroke="#22e1ff" stroke-width="1.5" stroke-linecap="round" opacity="0.08"/>
+            fill="none" stroke="#22e1ff" stroke-width="2" stroke-linecap="round" opacity="0.18"/>
           <path id="sig-arc2" d="M 15 32 A 17 17 0 0 1 49 32"
-            fill="none" stroke="#22e1ff" stroke-width="1.2" stroke-linecap="round" opacity="0.05"/>
+            fill="none" stroke="#22e1ff" stroke-width="1.5" stroke-linecap="round" opacity="0.1"/>
           <!-- Inner orbit ring — opposite direction, faster -->
           <circle id="sig-ring2" cx="32" cy="32" r="17"
-            fill="none" stroke="#9d6bff" stroke-width="1"
-            stroke-dasharray="11 22" stroke-linecap="round" opacity="0.35"
+            fill="none" stroke="#9d6bff" stroke-width="1.5"
+            stroke-dasharray="11 22" stroke-linecap="round" opacity="0.5"
             style="transform-origin:32px 32px;animation:sig-orbit2 10s linear infinite reverse"/>
-          <!-- Glow halo -->
-          <circle id="sig-glow" cx="32" cy="32" r="9" fill="#9d6bff" opacity="0" filter="url(#ng)"/>
+          <!-- Glow halo — permanent low presence, brightens with activity -->
+          <circle id="sig-glow" cx="32" cy="32" r="11" fill="#9d6bff" opacity="0.1" filter="url(#ng)"/>
           <!-- Core dot -->
-          <circle id="sig-core" cx="32" cy="32" r="4.5" fill="#9d6bff" opacity="0.88"/>
+          <circle id="sig-core" cx="32" cy="32" r="5" fill="#9d6bff" opacity="1"/>
           <!-- Specular highlight -->
-          <circle cx="33.5" cy="30.5" r="1.3" fill="white" opacity="0.22"/>
+          <circle cx="33.5" cy="30.5" r="1.6" fill="white" opacity="0.35"/>
         </svg>
         <div><div class="atlas-wordmark">ATLAS</div><div class="atlas-tagline">// station</div><div class="sub" id="status">overseer · idle</div></div>
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
@@ -2095,8 +2100,10 @@ input:focus-visible{outline:none}
   var sayEl = $('say');
   if (sayEl) {
     sayEl.addEventListener('input', function() {
-      sayEl.style.height = 'auto';
-      sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
+      requestAnimationFrame(function() {
+        sayEl.style.height = 'auto';
+        sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
+      });
       var counter = document.getElementById('say-counter');
       if (counter) {
         var len = sayEl.value.length;
@@ -2461,25 +2468,27 @@ input:focus-visible{outline:none}
   }
 
   // ── sigil rAF loop ───────────────────────────────────
-  var _sigFrame=0;
+  var _sigFrame=0,_sigBt=0;
   (function loop(){
     requestAnimationFrame(loop);
     _sigFrame=(_sigFrame+1)%2; // 30fps throttle
     if(_sigFrame!==0){return;}
+    _sigBt+=0.025+ACT*0.06;
     // Smooth color interpolation
     for(var i=0;i<3;i++)cur[i]+=(COND[i]-cur[i])*0.08;
     var c='rgb('+(cur[0]|0)+','+(cur[1]|0)+','+(cur[2]|0)+')';
-    // Core
-    if(sigCore){sigCore.setAttribute('fill',c);}
-    // Glow — brightens with activity
+    var pulse=0.82+Math.sin(_sigBt)*0.18; // slow breathe: 0.64–1.0
+    // Core — color + slow opacity pulse
+    if(sigCore){sigCore.setAttribute('fill',c);sigCore.setAttribute('opacity',pulse.toFixed(3));}
+    // Glow — permanent low floor + activity boost
     if(sigGlow){
       sigGlow.setAttribute('fill',c);
-      sigGlow.setAttribute('opacity',(ACT*0.45).toFixed(3));
+      sigGlow.setAttribute('opacity',(0.1+ACT*0.42+Math.abs(Math.sin(_sigBt*0.5))*0.06).toFixed(3));
     }
     // Activity arcs — light up progressively
-    if(sigArc0)sigArc0.setAttribute('opacity',(0.12+ACT*0.55).toFixed(3));
-    if(sigArc1)sigArc1.setAttribute('opacity',(0.08+Math.max(0,ACT-0.25)*0.6).toFixed(3));
-    if(sigArc2)sigArc2.setAttribute('opacity',(0.05+Math.max(0,ACT-0.55)*0.65).toFixed(3));
+    if(sigArc0)sigArc0.setAttribute('opacity',(0.28+ACT*0.5).toFixed(3));
+    if(sigArc1)sigArc1.setAttribute('opacity',(0.18+Math.max(0,ACT-0.25)*0.55).toFixed(3));
+    if(sigArc2)sigArc2.setAttribute('opacity',(0.1+Math.max(0,ACT-0.5)*0.6).toFixed(3));
     // Wave
     tickWave(ACT*3);
   })();
