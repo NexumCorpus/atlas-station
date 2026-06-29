@@ -1980,17 +1980,23 @@ const pruneFactsTool = tool(
 
 const rateBuildTool = tool(
   "rate_build",
-  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes.",
+  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes. Always provide causalChain for 'bad' ratings — record which reasoning steps broke and what assumptions they violated.",
   {
     agentId: z.string().describe("Agent ID to rate (e.g. 'B-91')"),
     rating: z.enum(["good", "partial", "bad"]).describe("good = achieved goal cleanly; partial = worked but with issues; bad = missed the goal or introduced problems"),
     notes: z.string().optional().describe("What specifically was good or bad about this build"),
+    causalChain: z.array(z.object({
+      step: z.string(),
+      assumption: z.string(),
+      violated: z.boolean(),
+      evidence: z.string(),
+    })).optional().describe("3-5 causal chain items explaining what reasoning steps led to this outcome. Required for 'bad' ratings."),
   },
   async (args) => {
     if (!_outcomeTracker) return { content: [{ type: 'text', text: 'outcome-tracker module not available' }] };
     try {
       const memDir = path.join(REPO, 'memory');
-      const entry = _outcomeTracker.rateOutcome(args.agentId, args.rating, args.notes, memDir);
+      const entry = _outcomeTracker.rateOutcome(args.agentId, args.rating, args.notes, memDir, undefined, args.causalChain);
       return { content: [{ type: 'text', text: `Rated ${args.agentId}: ${entry.rating}${args.notes ? ' — ' + args.notes : ''}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `rate_build error: ${e.message}` }] };
@@ -2019,6 +2025,15 @@ const buildOutcomesTool = tool(
         recent.length ? `\nRecent (last ${Math.min(n, recent.length)}):` : '',
         ...recent.slice(-n).map(o => `  [${String(o.ts).slice(0, 10)}] ${o.agentId}: ${o.rating}${o.notes ? ' — ' + o.notes.slice(0, 60) : ''}`),
       ];
+      if (_outcomeTracker && _outcomeTracker.failureProfile) {
+        try {
+          const profile = _outcomeTracker.failureProfile(path.join(REPO, 'memory'));
+          if (profile.length) {
+            lines.push('\n\nTop violated assumptions:');
+            lines.push(...profile.slice(0, 3).map(p => `  ${p.count}x "${p.assumption}"`));
+          }
+        } catch {}
+      }
       return { content: [{ type: 'text', text: lines.filter(Boolean).join('\n') }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `build_outcomes error: ${e.message}` }] };
