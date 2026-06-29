@@ -103,6 +103,7 @@ let orchSession = null;  // ATLAS conversation session (persisted, resumes on re
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
 let orchTurnCount = 0;
+let _completedBuildCount = 0; // triggers improvement cycle every N builds
 
 // Restore persistent session counters from prior runs
 if (_sessionState) {
@@ -174,6 +175,25 @@ function set(id, patch) {
     const cur = agents.get(id);
     if (cur && cur.branch && cur.mode === "build") {
       setTimeout(() => pruneAgent(id), 5000);
+    }
+    // Post-build improvement trigger: every 5th completed build, spawn a background
+    // pattern analysis agent so improvement is continual, not just scheduled.
+    if (patch.state === "done" && cur && cur.mode === "build") {
+      _completedBuildCount++;
+      if (_completedBuildCount % 5 === 0) {
+        setTimeout(() => {
+          const improvTask =
+            'Background improvement scan triggered after ' + _completedBuildCount + ' builds. ' +
+            'Do not write to the user or wait for input. Work silently: ' +
+            '1. call build_outcomes() to get the last 10 builds and find the most common failure pattern. ' +
+            '2. call load_proposals() to see what is already pending. ' +
+            '3. If there is a clear failure pattern NOT already covered by a pending proposal: ' +
+            'call propose_improvement() with a specific, targeted fix for that failure pattern. ' +
+            '4. call capture_insight(category:"improvement-scan", text: one-sentence summary of what you found). ' +
+            'That is all. Do not build anything — only analyze and propose. End your response with: SCAN COMPLETE.';
+          runSubagent(improvTask, 'read', 10 * 60 * 1000, null).catch(() => {});
+        }, 3000); // 3s delay to let the current build settle
+      }
     }
   }
 }

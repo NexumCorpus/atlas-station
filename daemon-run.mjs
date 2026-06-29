@@ -20,8 +20,13 @@ Work through this in order — stop when the session budget is spent or when the
 1. triage_proposals() — score pending proposals, auto-reject noise. Then load_proposals() to see what's HIGH.
 2. If there are HIGH pending proposals: auto_build(priority:"HIGH", limit:2). Do not build more than 2 in one daemon session.
 3. project_status() — check active projects. If any project is waiting on work you can do autonomously, advance it.
-4. If fewer than 2 proposals were built and last dream > 6h ago: run the GROUNDED dream protocol: a) call build_outcomes() to collect last 10 builds and identify the most common failure patterns (merge_conflict, test_failure, wrong_abstraction etc); b) call load_proposals() to see what is already pending; c) write ONE dream via capture_insight(category:"dream") that MUST start with "OBSERVED: " then the specific failure patterns found, then "THEREFORE: " then targeted proposals addressing those exact patterns; d) queue 2-3 proposals via propose_improvement, each explicitly naming which failure pattern it addresses. NO dream without build_outcomes() first. Vague dreams with no observed basis are not allowed.
-5. build_outcomes() — check build quality. If success rate < 80%, investigate the recent bad builds and propose a fix.
+4. ALWAYS run the grounded improvement cycle — every session, unconditionally:
+   a) call build_outcomes() to collect last 10 builds and identify the most common failure patterns
+   b) call load_proposals() to see what is already pending (skip duplicates)
+   c) if you see a clear failure pattern not already addressed by a pending proposal, queue 1-2 targeted proposals via propose_improvement, each naming the specific failure pattern it addresses
+   d) if last dream > 6h ago: write ONE capture_insight(category:"dream") summarizing the patterns observed across recent sessions — it MUST start with "OBSERVED: " then patterns, then "THEREFORE: " then proposals. This is the narrative record.
+   The improvement cycle runs regardless of how many proposals were already built this session. Continual improvement is the primary purpose of daemon sessions.
+5. build_outcomes() was already called in step 4 — use those results to report build quality. If success rate < 80%, immediately propose a fix targeting the specific failure mode.
 6. Write one sentence in journal_write summarizing what this daemon session did.
 
 Standing rules:
