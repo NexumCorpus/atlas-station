@@ -3,6 +3,8 @@
 import { spawn } from "child_process";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
 
 const NODE = "C:\\Program Files\\nodejs\\node.exe";
 const DIR  = "E:\\atlas-station";
@@ -48,6 +50,21 @@ host.on("message", (m) => {
       done = true;
       const reply = (m.reply || m.summary || "(no reply)").slice(0, 3000);
       writeLog({ event: "daemon-done", state: m.state, reply });
+      // Auto-defer merge_conflict failures for next daemon session
+      try {
+        const _ot = _require('./outcome-tracker.cjs');
+        const _def = _require('./deferred.cjs');
+        const outcomes = _ot.getOutcomes(join(DIR, 'memory'));
+        const recentMergeConflicts = outcomes.slice(-5).filter(o => o.rating === 'bad' && o.failureMode === 'merge_conflict');
+        if (recentMergeConflicts.length > 0) {
+          _def.deferTask(
+            'Retry merge-conflict builds: ' + recentMergeConflicts.map(o => o.agentId).join(', ') + '. Use staged_verify_build first, then re-attempt.',
+            'auto-deferred by daemon: merge_conflict recovery',
+            join(DIR, 'memory')
+          );
+          writeLog({ event: 'merge-conflict-deferred', ids: recentMergeConflicts.map(o => o.agentId) });
+        }
+      } catch {}
       console.log("[daemon] ATLAS", m.state, "—", reply.slice(0, 200));
       try { host.kill(); } catch (_) {}
       process.exit(0);
