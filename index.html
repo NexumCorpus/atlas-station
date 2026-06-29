@@ -102,12 +102,12 @@ body::after{content:"";position:fixed;inset:-20%;pointer-events:none;z-index:0;b
 /* Cost + timing */
 .card-meta{font-size:9px;color:var(--dim);padding:0 9px 5px;display:flex;gap:8px}
 .card-elapsed{font-variant-numeric:tabular-nums}
-/* Expanded detail */
-.arow-detail{display:none;padding:6px 9px 8px;border-top:1px solid rgba(255,255,255,.05);font-size:11px;line-height:1.5;color:rgba(220,220,220,.7);max-height:200px;overflow-y:auto}
+/* Expanded detail — smooth max-height transition */
+.arow-detail{max-height:0;overflow:hidden;transition:max-height .2s ease;padding:0 9px;font-size:11px;line-height:1.5;color:rgba(220,220,220,.7)}
 .arow-detail code{background:#12101e;padding:1px 4px;border-radius:2px;font-size:10.5px;color:var(--cyan)}
 .arow-detail pre{background:#0c0a18;padding:8px 10px;border-radius:3px;overflow-x:auto;border:1px solid var(--border);margin:4px 0}
 .arow-detail pre code{background:none;padding:0;color:#b8c4d8}
-.arow.sel .arow-detail{display:block}
+.arow.sel .arow-detail{max-height:200px;overflow-y:auto;padding:6px 9px 8px;border-top:1px solid rgba(255,255,255,.05)}
 .det-hint{font-size:9px;color:var(--dim);font-style:italic;margin-bottom:4px}
 #broodcount{font-size:9px;color:var(--dim);margin-left:auto;padding-right:2px}
 .particle{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;animation:particle 700ms ease-out forwards;z-index:10}
@@ -343,13 +343,10 @@ input:focus-visible{outline:none}
 /* ── system error messages ────────────────────── */
 .msg.system.error .msg-text{color:rgba(255,100,100,.7)}
 .msg.system.error .msg-avatar{background:rgba(255,100,100,.1);border-color:rgba(255,100,100,.25)}
-/* ── station health panel ─────────────────────── */
-#stationhealthlab{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.04)}
-#stationhealthlab:hover{color:rgba(200,200,200,.6)}
+/* ── station health panel (always expanded in STATION tab) ── */
+#stationhealthlab{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;border-top:1px solid rgba(255,255,255,.04)}
 #stationhealthlab .sh-title{flex:1}
-#stationhealthlab .sh-chevron{font-size:8px;color:var(--dim);transition:transform .2s;display:inline-block}
-#stationhealthlab.open .sh-chevron{transform:rotate(90deg)}
-#stationhealth{display:none;padding:4px 8px 8px}
+#stationhealth{padding:4px 8px 8px}
 .sh-section{margin-bottom:6px}
 .sh-sec-title{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:3px;opacity:.7}
 .sh-goal{font-size:10px;color:rgba(200,195,215,.7);padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -371,6 +368,14 @@ input:focus-visible{outline:none}
 .sh-daemon-ts{font-size:9px;color:var(--dim);opacity:.7}
 .sh-empty{font-size:10px;color:var(--dim);font-style:italic;opacity:.5}
 .sh-divider{height:1px;background:rgba(255,255,255,.04);margin:5px 0}
+
+/* ── tab system ────────────────────────────────── */
+#tabs{display:flex;gap:2px;padding:5px 8px;border-bottom:1px solid var(--border);flex:none;background:var(--panel)}
+.tab{font-family:inherit;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:3px 10px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;border-radius:2px;transition:all .15s}
+.tab:hover{color:var(--fg);border-color:rgba(255,255,255,.15)}
+.tab.active{background:rgba(157,107,255,.15);border-color:rgba(157,107,255,.4);color:var(--violet)}
+.tab-panel{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto}
+.tab-panel[style*="display:none"]{display:none!important}
 </style>
 </head>
 <body>
@@ -452,81 +457,93 @@ input:focus-visible{outline:none}
     <div id="coldivider"></div>
     <div id="fleetcol" class="boot-seq">
       <div id="notiftray" style="display:none"></div>
-      <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
-      <div class="lab">⟦ the fleet — what ATLAS is running ⟧<span id="broodcount"></span></div>
-      <div id="brood"></div>
-      <div id="proposallab" class="lab panel-hd" style="display:none"><span class="ph-title">proposals</span><span class="ph-count" id="proposal-count"></span><span class="ph-chevron">›</span></div>
-      <div id="proposals" style="display:none"></div>
-      <div id="goallab" class="lab panel-hd" style="display:none"><span class="ph-title">goals</span><span class="ph-count" id="goal-count"></span><span class="ph-chevron">›</span></div>
-      <div id="goals" style="display:none"></div>
-      <div id="memfactslab" class="lab panel-hd" style="display:none"><span class="ph-title">memory</span><span class="ph-count" id="memfacts-count"></span><span class="ph-chevron">›</span></div>
-      <div id="memfacts" style="display:none;flex-direction:column"></div>
-      <div id="docslab" class="panel-hd"><span class="ph-title">docs</span><span class="ph-count" id="docsbadge"></span><span class="ph-chevron">›</span></div>
-      <div id="docs">
-        <div id="docslist"></div>
-        <div id="docscontent"></div>
+      <div id="tabs">
+        <button class="tab active" data-tab="fleet">FLEET</button>
+        <button class="tab" data-tab="memory">MEMORY</button>
+        <button class="tab" data-tab="station">STATION</button>
       </div>
-      <div id="metricslab" class="panel-hd"><span class="ph-title">metrics</span><span class="ph-chevron">›</span></div>
-      <div id="metrics">
-        <div id="metricsinner"></div>
+
+      <!-- FLEET TAB -->
+      <div id="tab-fleet" class="tab-panel">
+        <div id="fleetstats">R: 0 · B: 0 · ✓: 0 · ✗: 0</div>
+        <div class="lab">⟦ the fleet — what ATLAS is running ⟧<span id="broodcount"></span></div>
+        <div id="brood"></div>
+        <div id="proposallab" class="lab panel-hd" style="display:none"><span class="ph-title">proposals</span><span class="ph-count" id="proposal-count"></span><span class="ph-chevron">›</span></div>
+        <div id="proposals" style="display:none"></div>
+        <div id="goallab" class="lab panel-hd" style="display:none"><span class="ph-title">goals</span><span class="ph-count" id="goal-count"></span><span class="ph-chevron">›</span></div>
+        <div id="goals" style="display:none"></div>
       </div>
-      <div id="cosmoslab" class="panel-hd"><span class="ph-title">✦ Cosmos</span><span class="ph-chevron">›</span></div>
-      <div id="cosmos" style="display:none">
-        <div style="padding:6px 8px;display:flex;gap:6px;align-items:center">
-          <button onclick="window.loadConstellation()" style="font-size:11px;padding:2px 8px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer">refresh</button>
-          <span id="cosmosstatus" style="font-size:11px;color:var(--dim)">—</span>
+
+      <!-- MEMORY TAB -->
+      <div id="tab-memory" class="tab-panel" style="display:none">
+        <div id="memfactslab" class="lab panel-hd" style="display:none"><span class="ph-title">memory</span><span class="ph-count" id="memfacts-count"></span><span class="ph-chevron">›</span></div>
+        <div id="memfacts" style="display:none;flex-direction:column"></div>
+        <div id="docslab" class="panel-hd"><span class="ph-title">docs</span><span class="ph-count" id="docsbadge"></span><span class="ph-chevron">›</span></div>
+        <div id="docs">
+          <div id="docslist"></div>
+          <div id="docscontent"></div>
         </div>
-        <canvas id="constellationCanvas" width="260" height="240" style="display:block;margin:0 auto;cursor:crosshair"></canvas>
-        <div id="cosmostooltip" style="font-size:10px;color:var(--fg);padding:4px 8px;min-height:28px;word-break:break-all"></div>
-      </div>
-      <div id="budgetlab" class="panel-hd"><span class="ph-title">⧉ Budget</span><span class="ph-chevron">›</span></div>
-      <div id="budget" style="display:none">
-        <div style="padding:8px 10px 2px;font-size:9px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">CONTEXT BUDGET</div>
-        <div id="budget-bar-wrap" style="padding:2px 10px 8px">
-          <div id="budget-bar" style="height:16px;border-radius:3px;overflow:hidden;display:flex;background:#0d0d0d;margin-bottom:5px;border:1px solid var(--border)"></div>
-          <div id="budget-total" style="font-size:9px;color:var(--dim);margin-bottom:6px;font-variant-numeric:tabular-nums"></div>
-          <div id="budget-sections" style="font-size:10px;line-height:1.7"></div>
+        <div id="cosmoslab" class="panel-hd"><span class="ph-title">✦ Cosmos</span><span class="ph-chevron">›</span></div>
+        <div id="cosmos" style="display:none">
+          <div style="padding:6px 8px;display:flex;gap:6px;align-items:center">
+            <button onclick="window.loadConstellation()" style="font-size:11px;padding:2px 8px;border-radius:3px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer">refresh</button>
+            <span id="cosmosstatus" style="font-size:11px;color:var(--dim)">—</span>
+          </div>
+          <canvas id="constellationCanvas" width="260" height="240" style="display:block;margin:0 auto;cursor:crosshair"></canvas>
+          <div id="cosmostooltip" style="font-size:10px;color:var(--fg);padding:4px 8px;min-height:28px;word-break:break-all"></div>
         </div>
-      </div>
-      <div id="stationhealthlab"><span class="sh-title">◈ Station</span><span class="sh-chevron">›</span></div>
-      <div id="stationhealth">
-        <div class="sh-section" id="sh-goals-wrap">
-          <div class="sh-sec-title">Goals</div>
-          <div id="sh-goals"><div class="sh-empty">loading…</div></div>
-        </div>
-        <div class="sh-divider"></div>
-        <div class="sh-section" id="sh-proposals-wrap">
-          <div class="sh-sec-title">Proposals (pending HIGH)</div>
-          <div id="sh-proposals"><div class="sh-empty">loading…</div></div>
-        </div>
-        <div class="sh-divider"></div>
-        <div class="sh-section">
-          <div class="sh-sec-title">Build Quality (last 20)</div>
-          <div id="sh-quality"><div class="sh-empty">loading…</div></div>
-        </div>
-        <div class="sh-divider"></div>
-        <div class="sh-section">
-          <div class="sh-sec-title">Daemon</div>
-          <div id="sh-daemon"><div class="sh-empty">loading…</div></div>
+        <div id="budgetlab" class="panel-hd"><span class="ph-title">⧉ Budget</span><span class="ph-chevron">›</span></div>
+        <div id="budget" style="display:none">
+          <div style="padding:8px 10px 2px;font-size:9px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">CONTEXT BUDGET</div>
+          <div id="budget-bar-wrap" style="padding:2px 10px 8px">
+            <div id="budget-bar" style="height:16px;border-radius:3px;overflow:hidden;display:flex;background:#0d0d0d;margin-bottom:5px;border:1px solid var(--border)"></div>
+            <div id="budget-total" style="font-size:9px;color:var(--dim);margin-bottom:6px;font-variant-numeric:tabular-nums"></div>
+            <div id="budget-sections" style="font-size:10px;line-height:1.7"></div>
+          </div>
         </div>
       </div>
-      <div class="lab" style="border-top:1px solid var(--border)">⟦ the ledger — what's been built ⟧</div>
-      <div id="ledger"></div>
-      <div id="timelinelab">⬡ activity</div>
-      <div id="timeline"></div>
+
+      <!-- STATION TAB -->
+      <div id="tab-station" class="tab-panel" style="display:none">
+        <div id="stationhealthlab" style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;border-top:1px solid rgba(255,255,255,.04)"><span class="sh-title">◈ Station Health</span></div>
+        <div id="stationhealth" style="padding:4px 8px 8px">
+          <div class="sh-section" id="sh-goals-wrap">
+            <div class="sh-sec-title">Goals</div>
+            <div id="sh-goals"><div class="sh-empty">loading…</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section" id="sh-proposals-wrap">
+            <div class="sh-sec-title">Proposals (pending HIGH)</div>
+            <div id="sh-proposals"><div class="sh-empty">loading…</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section">
+            <div class="sh-sec-title">Build Quality (last 20)</div>
+            <div id="sh-quality"><div class="sh-empty">loading…</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section">
+            <div class="sh-sec-title">Daemon</div>
+            <div id="sh-daemon"><div class="sh-empty">loading…</div></div>
+          </div>
+        </div>
+        <div id="metricslab" class="panel-hd"><span class="ph-title">metrics</span><span class="ph-chevron">›</span></div>
+        <div id="metrics">
+          <div id="metricsinner"></div>
+        </div>
+        <div class="lab" style="border-top:1px solid var(--border)">⟦ the ledger — what's been built ⟧</div>
+        <div id="ledger"></div>
+        <div id="timelinelab">⬡ activity</div>
+        <div id="timeline"></div>
+      </div>
     </div>
   </div>
 
   <div id="reply"></div>
 
   <div class="bar boot-seq">
-    <button id="modetoggle" class="modetoggle" title="Toggle: ATLAS / dispatch agent">ATLAS</button>
-    <span class="to" id="barprefix">↳ to ATLAS</span>
-    <textarea id="say" rows="1" placeholder="tell ATLAS what you want — it runs the fleet…" autofocus style="overflow:hidden;"></textarea>
-    <select id="agentmode" class="agentmode" style="display:none">
-      <option value="read">read</option>
-      <option value="build">build</option>
-    </select>
+    <span class="to" id="barprefix">↳ ATLAS</span>
+    <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" autofocus style="overflow:hidden;"></textarea>
     <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
     <span class="hint">enter</span>
   </div>
@@ -565,10 +582,12 @@ input:focus-visible{outline:none}
         <div class="kb-row"><kbd>✕ btn</kbd><span>cancel agent</span></div>
       </div>
       <div class="kb-section">
-        <div class="kb-section-title">Search</div>
-        <div class="kb-row"><kbd>Enter</kbd><span>next match</span></div>
-        <div class="kb-row"><kbd>Shift+Enter</kbd><span>prev match</span></div>
-        <div class="kb-row"><kbd>Esc</kbd><span>close search</span></div>
+        <div class="kb-section-title">Dispatching Agents</div>
+        <div class="kb-row"><kbd>@build task</kbd><span>dispatch build agent</span></div>
+        <div class="kb-row"><kbd>@read task</kbd><span>dispatch read agent</span></div>
+        <div class="kb-row"><kbd>@b task</kbd><span>shorthand for @build</span></div>
+        <div class="kb-row"><kbd>@r task</kbd><span>shorthand for @read</span></div>
+        <div class="kb-row"><span style="font-size:9px;color:var(--dim);text-align:right">otherwise sends to ATLAS</span></div>
       </div>
       <div class="kb-section">
         <div class="kb-section-title">Interface</div>
@@ -576,6 +595,7 @@ input:focus-visible{outline:none}
         <div class="kb-row"><kbd>Esc</kbd><span>close overlays</span></div>
         <div class="kb-row"><kbd>click eye</kbd><span>ATLAS status</span></div>
         <div class="kb-row"><kbd>drag divider</kbd><span>resize columns</span></div>
+        <div class="kb-row"><kbd>Search</kbd><span>Ctrl+F in thread</span></div>
       </div>
     </div>
   </div>
@@ -594,7 +614,7 @@ input:focus-visible{outline:none}
     try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
   }
   function getPanelStates() {
-    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget','stationhealth'];
+    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget'];
     var s = {};
     ids.forEach(function(id) {
       var el = document.getElementById(id);
@@ -670,8 +690,6 @@ input:focus-visible{outline:none}
       if (cosmosLab) cosmosLab.classList.toggle('open', !!p.panels.cosmos);
       var budgetLab = document.getElementById('budgetlab');
       if (budgetLab) budgetLab.classList.toggle('open', !!p.panels.budget);
-      var stationHealthLab = document.getElementById('stationhealthlab');
-      if (stationHealthLab) stationHealthLab.classList.toggle('open', !!p.panels.stationhealth);
     }
   })();
 
@@ -1029,10 +1047,12 @@ input:focus-visible{outline:none}
       prow.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
         + '<span class="ppri ' + esc(m.priority || 'medium') + '">' + esc((m.priority || 'medium').toUpperCase()) + '</span>'
         + '<span class="ptitle">' + esc(m.description || m.area || '') + '</span>'
+        + (m._score != null ? '<span style="font-size:8px;color:var(--dim);margin-left:auto">#' + Number(m._score).toFixed(0) + '</span>' : '')
         + '</div>'
-        + (m.area ? '<div class="pdesc">' + esc(m.area) + '</div>' : '')
+        + (m.area && m.description && m.area !== m.description ? '<div class="pdesc">' + esc(m.area) + '</div>' : '')
         + '<div class="pbtns">'
         + '<button class="pbtn auth" data-pid="' + esc(m.id) + '">authorize</button>'
+        + '<button class="pbtn info" data-pid="' + esc(m.id) + '" data-desc="' + esc(m.description||'') + '" style="border-color:rgba(100,180,255,.2);color:#7ab8e8">tell me more</button>'
         + '<button class="pbtn dis" data-pid="' + esc(m.id) + '">dismiss</button>'
         + '</div>';
       if (ps) { ps.appendChild(prow); updateProposalCount(); }
@@ -1047,7 +1067,7 @@ input:focus-visible{outline:none}
       var grow = document.createElement('div');
       grow.className = 'grow' + (m.state !== 'active' ? ' gdone' : '');
       grow.dataset.gid = m.id;
-      grow.innerHTML = '<span class="gcheck">○</span>'
+      grow.innerHTML = '<span class="gcheck" style="cursor:pointer" title="mark complete">○</span>'
         + '<span class="gpri ' + esc(m.priority||'medium') + '">' + esc((m.priority||'M')[0].toUpperCase()) + '</span>'
         + '<span class="gtitle">' + esc(m.text||'') + '</span>';
       if (gs) { gs.appendChild(grow); updateGoalCount(); }
@@ -1078,6 +1098,15 @@ input:focus-visible{outline:none}
         + '<div class="nts">' + esc((m.ts||'').replace('T',' ').slice(0,16)) + '</div></span>'
         + '<button class="ndism" data-nid="' + esc(m.id) + '">×</button>';
       tray.insertBefore(row, tray.firstChild);
+      // Add dismiss-all button if not already present
+      if (!tray.querySelector('.ndismall')) {
+        var da = document.createElement('button');
+        da.className = 'ndismall';
+        da.textContent = 'dismiss all';
+        da.style.cssText = 'font-size:9px;border:none;background:transparent;color:var(--dim);cursor:pointer;padding:3px 8px;float:right;letter-spacing:.08em';
+        da.addEventListener('click', function() { tray.innerHTML=''; tray.style.display='none'; });
+        tray.appendChild(da);
+      }
     } else if(m.type==="pulse"){
       showToast('♡ pulse','pulse',2000);
       addTimelineEvent('♡','pulse — '+(m.ts?new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'heartbeat'),'evpulse');
@@ -1615,31 +1644,10 @@ input:focus-visible{outline:none}
   }
 
   function say(text){
-    playBtnRipple(document.getElementById('modetoggle'));
     thread.push({role:"user",text:text,ts:Date.now()});
     thread.push({role:"atlas",text:"",pending:true,activity:"thinking",lastTool:null,ts:Date.now()});
     window.atlas.say(text);
     renderThread();
-  }
-
-  var dispatchMode = false;
-  var modetoggle = document.getElementById('modetoggle');
-  var barprefix = document.getElementById('barprefix');
-  var agentmode = document.getElementById('agentmode');
-  var sayinput = document.getElementById('say');
-
-  if (modetoggle) {
-    modetoggle.addEventListener('click', function() {
-      dispatchMode = !dispatchMode;
-      modetoggle.textContent = dispatchMode ? 'AGENT' : 'ATLAS';
-      modetoggle.className = 'modetoggle' + (dispatchMode ? ' dispatch' : '');
-      if (barprefix) barprefix.textContent = dispatchMode ? '↳ dispatch' : '↳ to ATLAS';
-      if (agentmode) agentmode.style.display = dispatchMode ? 'inline-block' : 'none';
-      if (sayinput) sayinput.placeholder = dispatchMode
-        ? 'task description for the agent…'
-        : 'tell ATLAS what you want — it runs the fleet…';
-      if (sayinput) sayinput.focus();
-    });
   }
 
   function renderMemFacts(facts) {
@@ -2057,19 +2065,64 @@ input:focus-visible{outline:none}
 
   $('say').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey && $('say').value.trim()) {
-      var text = $('say').value.trim();
-      if (dispatchMode) {
-        playBtnRipple(document.getElementById('modetoggle'));
-        var mode = agentmode ? agentmode.value : 'read';
-        window.atlas.dispatch(text, null, mode);
-        thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + text.slice(0, 60), error: false, ts: Date.now() });
+      var sayEl2 = $('say');
+      var text = sayEl2.value.trim();
+      var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
+      if (agentMatch) {
+        var mode = agentMatch[1].toLowerCase().startsWith('b') ? 'build' : 'read';
+        var task = agentMatch[2].trim();
+        window.atlas.dispatch(task, null, mode);
+        thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + task.slice(0, 60), error: false, ts: Date.now() });
         renderThread();
-      } else {
-        say(text);
+        sayEl2.value = '';
+        sayEl2.style.height = 'auto';
+        savePrefs({ draft: '' });
+        return;
       }
-      $('say').value = '';
-      $('say').style.height = 'auto';
+      say(text);
+      sayEl2.value = '';
+      sayEl2.style.height = 'auto';
       savePrefs({ draft: '' });
+    }
+  });
+
+  // ── tab switching ───────────────────────────────────
+  var tabBtns = document.querySelectorAll('.tab');
+  tabBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      tabBtns.forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      var which = btn.dataset.tab;
+      document.getElementById('tab-fleet').style.display = which === 'fleet' ? '' : 'none';
+      document.getElementById('tab-memory').style.display = which === 'memory' ? '' : 'none';
+      document.getElementById('tab-station').style.display = which === 'station' ? '' : 'none';
+      if (which === 'station') loadStationHealth();
+      savePrefs({ activeTab: which });
+    });
+  });
+  // restore saved tab
+  (function() {
+    var saved = loadPrefs().activeTab;
+    if (saved && saved !== 'fleet') {
+      var btn = document.querySelector('.tab[data-tab="' + saved + '"]');
+      if (btn) btn.click();
+    }
+  })();
+
+  // ── goal checkbox interactivity ──────────────────────
+  document.getElementById('goals').addEventListener('click', function(e) {
+    if (e.target.matches('.gcheck')) {
+      var row = e.target.closest('.grow');
+      if (!row) return;
+      var gid = row.dataset.gid;
+      var isDone = row.classList.contains('gdone');
+      if (!isDone) {
+        row.classList.add('gdone');
+        e.target.textContent = '✓';
+        e.target.style.color = 'var(--acid)';
+        var titleEl = row.querySelector('.gtitle');
+        window.atlas.say('Goal completed: ' + gid + ' — ' + (titleEl ? titleEl.textContent : ''));
+      }
     }
   });
 
@@ -2093,9 +2146,16 @@ input:focus-visible{outline:none}
   function updateBroodCount() {
     var rows = document.querySelectorAll('#brood .arow');
     var bc = document.getElementById('broodcount');
-    if (!bc) return;
-    var working = document.querySelectorAll('#brood .arow.st-working').length;
-    bc.textContent = rows.length + ' agents' + (working ? ' · ' + working + ' active' : '');
+    if (bc) {
+      var working = document.querySelectorAll('#brood .arow.st-working').length;
+      bc.textContent = rows.length + ' agents' + (working ? ' · ' + working + ' active' : '');
+    }
+    // Update fleet tab badge
+    var fleetTab = document.querySelector('.tab[data-tab="fleet"]');
+    if (fleetTab) {
+      var workingCount = document.querySelectorAll('#brood .arow.st-working').length;
+      fleetTab.textContent = workingCount > 0 ? 'FLEET · ' + workingCount : 'FLEET';
+    }
   }
   function updateProposalCount() {
     var count = document.querySelectorAll('#proposals .prow').length;
@@ -2207,9 +2267,17 @@ input:focus-visible{outline:none}
         qualEl.innerHTML = '<div class="sh-empty">no data</div>';
       } else {
         var pct = oc.goodPct;
-        var color = pct >= 80 ? '#49ff9e' : pct >= 60 ? '#ffc24b' : '#ff6464';
-        qualEl.innerHTML = '<div class="sh-stat"><span class="sh-stat-val" style="color:' + color + '">'
-          + pct + '%</span><span style="color:var(--dim);font-size:9px">good · ' + oc.total + ' sampled</span></div>';
+        var barColor = pct >= 80 ? 'var(--acid)' : pct >= 60 ? 'var(--amber)' : 'var(--mag)';
+        qualEl.innerHTML = '<div style="margin-bottom:4px">'
+          + '<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
+          + '<span style="font-size:9px;color:var(--dim)">build quality</span>'
+          + '<span style="font-size:11px;font-weight:700;color:' + barColor + '">' + pct + '%</span>'
+          + '</div>'
+          + '<div style="height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">'
+          + '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:2px;transition:width .4s"></div>'
+          + '</div>'
+          + '<div style="font-size:9px;color:var(--dim);margin-top:2px">' + oc.total + ' sampled</div>'
+          + '</div>';
       }
     }
 
@@ -2239,26 +2307,14 @@ input:focus-visible{outline:none}
     }
   }
 
-  var stationhealthlab = document.getElementById('stationhealthlab');
-  if (stationhealthlab) {
-    stationhealthlab.addEventListener('click', function() {
-      var panel = document.getElementById('stationhealth');
-      if (!panel) return;
-      var opening = panel.style.display === 'none';
-      panel.style.display = opening ? 'block' : 'none';
-      stationhealthlab.classList.toggle('open', opening);
-      if (opening) loadStationHealth();
-      savePrefs({ panels: getPanelStates() });
-    });
-  }
-
+  // Station health is always shown in STATION tab — no toggle needed
   // Auto-refresh every 30 seconds
   setInterval(function() {
-    var panel = document.getElementById('stationhealth');
-    if (panel && panel.style.display !== 'none') loadStationHealth();
+    var stationTab = document.getElementById('tab-station');
+    if (stationTab && stationTab.style.display !== 'none') loadStationHealth();
   }, 30000);
 
-  // Fetch on load (panel starts closed, load anyway so data is ready when opened)
+  // Fetch on load so data is ready
   loadStationHealth();
 
   renderThread();renderBrood();renderLedger();
@@ -2450,6 +2506,10 @@ input:focus-visible{outline:none}
         e.target.disabled = true;
       }
     }
+    if (e.target.matches('.pbtn.info')) {
+      var desc = e.target.dataset.desc;
+      window.atlas.say('Tell me more about this proposal: ' + desc);
+    }
     if (e.target.matches('.pbtn.dis')) {
       var row2 = e.target.closest('[data-pid]');
       if (row2) row2.remove();
@@ -2465,7 +2525,7 @@ input:focus-visible{outline:none}
       var nrow = e.target.closest('[data-nid]');
       if (nrow) nrow.remove();
       var tray2 = document.getElementById('notiftray');
-      if (tray2 && !tray2.children.length) tray2.style.display = 'none';
+      if (tray2 && !tray2.querySelector('.notif')) tray2.style.display = 'none';
     }
   });
 })();
