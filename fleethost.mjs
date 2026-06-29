@@ -68,6 +68,8 @@ let _outcomeTracker = null;
 try { _outcomeTracker = _require('./outcome-tracker.cjs'); } catch { _outcomeTracker = null; }
 let _sessionLog = null;
 try { _sessionLog = _require('./session-log.cjs'); } catch { _sessionLog = null; }
+let _projects = null;
+try { _projects = _require('./projects.cjs'); } catch { _projects = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -569,7 +571,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -624,7 +626,8 @@ const capabilityManifestTool = tool(
       "crystallize", "cluster_facts",
       "drain_proposals", "prune_facts",
       "rate_build", "build_outcomes", "revert_build",
-      "capture_insight", "context_telemetry"
+      "capture_insight", "context_telemetry",
+      "project_create", "project_advance", "project_status", "project_complete"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -1759,7 +1762,126 @@ const revertBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool] });
+const projectCreateTool = tool(
+  "project_create",
+  "Start a new named project with phases and optional milestones. Projects persist across sessions — check project_status() at session start to resume in-progress work. Use for any multi-session initiative.",
+  {
+    name: z.string().describe("Project name"),
+    description: z.string().describe("What this project is about and why"),
+    phases: z.array(z.string()).min(1).describe("Ordered phases, e.g. ['Research', 'Build', 'Verify', 'Deploy']"),
+    area: z.string().optional().describe("Domain area: fleet, memory, gui, autonomy, etc. (default: general)"),
+    milestones: z.array(z.string()).optional().describe("Optional milestone labels (checkboxes within the project)"),
+    linkedGoalId: z.string().optional().describe("Link to an existing goal ID (G-...) if this project serves a goal"),
+  },
+  async (args) => {
+    if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const p = _projects.createProject(
+        args.name,
+        args.description,
+        args.phases,
+        { area: args.area, milestones: args.milestones, linkedGoalId: args.linkedGoalId },
+        memDir
+      );
+      return { content: [{ type: 'text', text: `Created project ${p.id}: ${p.name} [Phase: ${p.phases[0]}]` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `project_create error: ${e.message}` }] };
+    }
+  }
+);
+
+const projectAdvanceTool = tool(
+  "project_advance",
+  "Advance a project to its next phase, recording transition notes. When the last phase completes, the project is automatically marked done.",
+  {
+    id: z.string().describe("Project ID (P-...)"),
+    notes: z.string().optional().describe("Notes on this phase transition — what was done, what was learned"),
+  },
+  async (args) => {
+    if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const p = _projects.advanceProject(args.id, args.notes, memDir);
+      if (!p) return { content: [{ type: 'text', text: `Project ${args.id} not found` }] };
+      if (p.status === 'completed') {
+        return { content: [{ type: 'text', text: `Project ${p.name}: completed all phases.` }] };
+      }
+      const prev = p.phases[p.currentPhaseIndex - 1] || '?';
+      const next = p.phases[p.currentPhaseIndex];
+      return { content: [{ type: 'text', text: `Project ${p.name}: ${prev} → ${next}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `project_advance error: ${e.message}` }] };
+    }
+  }
+);
+
+const projectStatusTool = tool(
+  "project_status",
+  "Show status of active projects (or a specific project). Use at session start to see what's in progress.",
+  {
+    id: z.string().optional().describe("Project ID for detailed view. Omit to list all active projects."),
+    showAll: z.boolean().optional().describe("If true, include completed and abandoned projects"),
+  },
+  async (args) => {
+    if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      if (args.id) {
+        const p = _projects.getProject(args.id, memDir);
+        if (!p) return { content: [{ type: 'text', text: `Project ${args.id} not found` }] };
+        const phase = p.phases[p.currentPhaseIndex] || 'done';
+        const milestones = p.milestones && p.milestones.length
+          ? '\nMilestones: ' + p.milestones.map(m => (m.done ? '✓' : '○') + ' ' + m.label).join(', ')
+          : '';
+        const phases = 'Phases: ' + p.phases.map((ph, i) => (i === p.currentPhaseIndex ? `[${ph}]` : ph)).join(' → ');
+        const recentLog = (p.log || []).slice(-3).map(e => `  [${String(e.ts).slice(0, 10)}] ${e.action}${e.notes ? ': ' + e.notes.slice(0, 60) : ''}`).join('\n');
+        const lines = [
+          `${p.id}: ${p.name} [${p.status}]`,
+          `Area: ${p.area || 'general'} | Current phase: ${phase}`,
+          phases,
+          milestones,
+          p.linkedGoalId ? `Linked goal: ${p.linkedGoalId}` : '',
+          recentLog ? `Recent log:\n${recentLog}` : '',
+        ].filter(Boolean);
+        return { content: [{ type: 'text', text: lines.join('\n') }] };
+      }
+      const filter = args.showAll ? 'all' : 'active';
+      const projects = _projects.listProjects(filter, memDir);
+      if (!projects.length) return { content: [{ type: 'text', text: `No ${filter === 'all' ? '' : 'active '}projects found.` }] };
+      const lines = projects.map(p => {
+        const phase = p.phases[p.currentPhaseIndex] || 'done';
+        return `[${p.status}] ${p.id}: ${p.name} — Phase ${p.currentPhaseIndex + 1}/${p.phases.length}: ${phase}`;
+      });
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `project_status error: ${e.message}` }] };
+    }
+  }
+);
+
+const projectCompleteTool = tool(
+  "project_complete",
+  "Mark a project as completed or abandoned. Records an outcome note.",
+  {
+    id: z.string().describe("Project ID (P-...)"),
+    outcome: z.enum(["completed", "abandoned"]).describe("completed = finished successfully; abandoned = dropped"),
+    notes: z.string().optional().describe("Final outcome note — what was achieved or why abandoned"),
+  },
+  async (args) => {
+    if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const p = _projects.updateProject(args.id, { status: args.outcome, notes: args.notes || '' }, memDir);
+      if (!p) return { content: [{ type: 'text', text: `Project ${args.id} not found` }] };
+      return { content: [{ type: 'text', text: `Project ${p.name} (${p.id}) marked ${args.outcome}.${args.notes ? ' Notes: ' + args.notes : ''}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `project_complete error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1817,6 +1939,10 @@ build_outcomes(showRecent?) — show aggregate build quality: success rate, dist
 revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 capture_insight(insight,category?) — manually crystallize a mid-conversation observation into persistent memory
 context_telemetry(lastN?) — historical context budget analysis: avg utilization, section sizes, trim frequency over last N turns
+project_create(name,description,phases[],area?,milestones?,linkedGoalId?) — start a named multi-phase project persisted across sessions
+project_advance(id,notes?) — advance project to next phase; auto-completes on last phase
+project_status(id?,showAll?) — list active projects or detail a specific project (phases, milestones, log)
+project_complete(id,outcome,notes?) — mark project completed or abandoned with outcome note
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2238,8 +2364,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (51 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry`,
+        `## Tools (55 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
