@@ -200,13 +200,33 @@ async function consume(id, iterable, build, branch) {
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
-async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model) {
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   sessionStats.agentCount++;
   const agentModel = model || (mode === 'read' ? MODEL_HAIKU : MODEL_SONNET);
   let cwd = REPO, branch = null;
   set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: agentModel });
-  const enriched = _memcontext ? _memcontext.inject(task, { tier: mode === 'build' ? 'build' : 'full' }) : task;
+  let enrichedTask = task;
+  if (projectId && _projects) {
+    try {
+      const proj = _projects.getProject(projectId, path.join(REPO, 'memory'));
+      if (proj && proj.status === 'active') {
+        const phase = proj.phases && proj.phases[proj.currentPhaseIndex] ? proj.phases[proj.currentPhaseIndex] : 'unknown';
+        const milestoneStatus = (proj.milestones || []).map(m => (m.done ? '✓' : '○') + ' ' + m.label).join(', ');
+        const projBrief = [
+          '',
+          '## Project Context',
+          'Project: ' + proj.name + ' (' + proj.id + ')',
+          'Phase ' + (proj.currentPhaseIndex + 1) + '/' + proj.phases.length + ': ' + phase,
+          milestoneStatus ? 'Milestones: ' + milestoneStatus : '',
+          proj.description ? 'Goal: ' + proj.description : '',
+          ''
+        ].filter(l => l !== undefined).join('\n');
+        enrichedTask = projBrief + task;
+      }
+    } catch {}
+  }
+  const enriched = _memcontext ? _memcontext.inject(enrichedTask, { tier: mode === 'build' ? 'build' : 'full' }) : enrichedTask;
   if (mode === "build") {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
@@ -1907,6 +1927,7 @@ const autoBuildTool = tool(
     limit: z.number().optional().default(1).describe("Max number of proposals to build simultaneously. Default: 1."),
     dryRun: z.boolean().optional().describe("If true, show what would be built without spawning agents"),
     priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().default("HIGH").describe("Which priority to draw from. Default: HIGH only."),
+    projectId: z.string().optional().describe("Project ID (P-xxx) to link spawned builds to — context is injected into build agents"),
   },
   async (args) => {
     try {
@@ -1950,7 +1971,8 @@ const autoBuildTool = tool(
       const launched = [];
       for (const proposal of toRun) {
         const proposalText = proposal.description || proposal.text || proposal.proposal || String(proposal);
-        const resultStr = await runSubagent(proposalText, 'build');
+        const resolvedProjectId = proposal.projectId || args.projectId || null;
+        const resultStr = await runSubagent(proposalText, 'build', undefined, undefined, resolvedProjectId);
         const idMatch = resultStr.match(/Subagent (B-\d+)/);
         const bareId = idMatch ? idMatch[1] : ('B-' + _maxCounter);
         const rating = autoRate(resultStr);
