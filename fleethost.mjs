@@ -294,8 +294,12 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
       set(id, { state: "interrupted", summary: "cancelled by user" });
       final = "(cancelled)";
     } else {
+      const failureMode = _outcomeTracker ? _outcomeTracker.parseFailureMode(e.stderr || e.message || '') : 'unknown';
       set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
       final = "(subagent errored: " + String(e?.message ?? e).slice(0, 120) + ")";
+      if (_outcomeTracker) {
+        try { _outcomeTracker.rateOutcome(id, 'bad', 'auto-tagged: ' + failureMode, path.join(REPO, 'memory'), failureMode); } catch {}
+      }
     }
   } finally {
     abortControllers.delete(id);
