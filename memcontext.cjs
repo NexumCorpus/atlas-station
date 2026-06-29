@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...42 tools, call capability_manifest() for full list]
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...43 tools, call capability_manifest() for full list]
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
@@ -47,6 +47,7 @@ E:\\atlas-station source files:
 - mutationmap.cjs: Codebase churn tracker — recordMutation, topChurn, fileHistory. File: memory/mutations.ndjson.
 - instructions.cjs: Standing self-instructions — setInstruction, clearInstruction, listInstructions. File: memory/instructions.ndjson.
 - routines.cjs: Workflow subroutine library — saveRoutine, getRoutine, listRoutines. File: memory/routines.ndjson.
+- clusters.cjs: Fact topology — assignCluster, listClusters, recluster. File: memory/clusters.ndjson.
 - prune.mjs: Sprawl cleanup — removes merged fleet/* branches and their worktrees. Run: node prune.mjs.
 Fleet pattern: build agents use isolated git worktrees at E:\\atlas-wt\\<id> on branch fleet/<id>.
 Resonance: all build agents automatically receive a PAST EXPERIENCE block injected into their prompts when semantically similar past tasks exist — institutional memory propagates through the fleet.`;

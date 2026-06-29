@@ -60,6 +60,8 @@ let _instructions = null;
 try { _instructions = _require('./instructions.cjs'); } catch { _instructions = null; }
 let _routines = null;
 try { _routines = _require('./routines.cjs'); } catch { _routines = null; }
+let _clusters = null;
+try { _clusters = _require('./clusters.cjs'); } catch { _clusters = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -396,6 +398,9 @@ const journalWriteTool = tool(
         confidence: args.confidence || 'inferred',
       };
       _memstore.appendFact(fact, path.join(REPO, 'memory'));
+      if (_clusters) {
+        try { _clusters.assignCluster(fact, path.join(REPO, 'memory')); } catch {}
+      }
       send('fact_written', { topic: fact.topic, snippet: fact.fact.slice(0, 80) });
       return { content: [{ type: 'text', text: `Recorded: "${fact.fact.slice(0, 100)}"` }] };
     } catch (e) {
@@ -557,7 +562,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, cluster_facts`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -608,10 +613,10 @@ const capabilityManifestTool = tool(
       "read_self", "fan_research",
       "signal_propagate", "generate_tool", "verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
-      "save_routine", "run_routine", "list_routines"
+      "save_routine", "run_routine", "list_routines", "cluster_facts"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "clusters"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "clusters.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
@@ -876,6 +881,9 @@ Write the synthesis note now:`;
             source: 'memory_consolidate',
             confidence: 'inferred',
           }, memDir);
+          if (_clusters) {
+            try { _clusters.assignCluster({ topic: 'consolidation', fact: synthesis, source: 'memory_consolidate', confidence: 'inferred' }, memDir); } catch {}
+          }
           send('fact_written', { key: 'consolidation', value: synthesis.slice(0, 80) + '...' });
         } catch (_) {}
       }
@@ -931,6 +939,9 @@ const webResearchTool = tool(
             source: 'web_research',
             confidence: 'fetched',
           }, memDir);
+          if (_clusters) {
+            try { _clusters.assignCluster({ topic: key, fact: summary, source: 'web_research', confidence: 'fetched' }, memDir); } catch {}
+          }
           send('fact_written', { key, value: summary.slice(0, 80) + '...' });
         } catch (_) {}
       }
@@ -1135,6 +1146,9 @@ Write a unified 300-400 word synthesis. Highlight where angles agree, where they
             source: 'fan_research',
             confidence: 'high',
           }, memDir);
+          if (_clusters) {
+            try { _clusters.assignCluster({ topic: args.saveAs, fact: synthesis.slice(0, 800), source: 'fan_research', confidence: 'high' }, memDir); } catch {}
+          }
         } catch {}
       }
 
@@ -1165,6 +1179,14 @@ const signalPropagateTool = tool(
           source: 'signal_propagate',
           confidence: 'inferred',
         }, memDir);
+        if (_clusters) {
+          try { _clusters.assignCluster({
+            topic: `review_flag:${args.factKey}`,
+            fact: `Signal propagation flagged ${result.flagged.length} contradicted facts for review: ${result.flagged.join(', ')}`,
+            source: 'signal_propagate',
+            confidence: 'inferred',
+          }, memDir); } catch {}
+        }
       }
 
       const lines = [];
@@ -1284,6 +1306,14 @@ const verifyBuildTool = tool(
             source: 'verify_build',
             confidence: 'verified',
           }, path2.join(REPO, 'memory'));
+          if (_clusters) {
+            try { _clusters.assignCluster({
+              topic: factKey,
+              fact: `${summary}. Files: ${filesToCheck.join(', ').slice(0, 200)}`,
+              source: 'verify_build',
+              confidence: 'verified',
+            }, path2.join(REPO, 'memory')); } catch {}
+          }
         } catch {}
       }
 
@@ -1438,7 +1468,36 @@ const listRoutinesTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool] });
+const clusterFactsTool = tool(
+  "cluster_facts",
+  "Show the semantic topology of ATLAS's memory — how facts have self-organized into named topic clusters. Each cluster represents a coherent area of knowledge. Use recluster:true to rebuild cluster assignments from all current facts.",
+  {
+    recluster: z.boolean().optional().describe("If true, rebuild all cluster assignments from scratch (takes a moment for large memories)"),
+    showKeywords: z.boolean().optional().describe("If true, show top keywords for each cluster"),
+  },
+  async (args) => {
+    if (!_clusters) return { content: [{ type: 'text', text: 'clusters module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      if (args.recluster) {
+        const result = _clusters.recluster(memDir);
+        return { content: [{ type: 'text', text: result.message }] };
+      }
+      const cs = _clusters.listClusters(memDir);
+      if (!cs.length) return { content: [{ type: 'text', text: 'No clusters yet. Clusters form automatically as facts accumulate. Use recluster:true to process existing facts.' }] };
+      const lines = cs.map(c => {
+        let line = `${c.label} (${c.factCount || 0} facts)`;
+        if (args.showKeywords && c.keywords) line += ` — ${c.keywords.slice(0, 5).join(', ')}`;
+        return line;
+      });
+      return { content: [{ type: 'text', text: `Memory clusters (${cs.length}):\n${lines.join('\n')}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `cluster_facts error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, clusterFactsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1487,6 +1546,7 @@ clear_instruction(key) — remove a standing instruction
 save_routine(name,description,steps) — save a named workflow sequence as a reusable routine
 run_routine(name) — retrieve routine steps for execution
 list_routines() — list all saved routines
+cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1807,8 +1867,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (42 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`,
+        `## Tools (43 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, cluster_facts`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
@@ -1909,6 +1969,14 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
                 source: 'dream_protocol',
                 confidence: 'inferred',
               }, memDir);
+              if (_clusters) {
+                try { _clusters.assignCluster({
+                  topic: 'proposal:dream',
+                  fact: JSON.stringify({ title: p.title, description: p.description, priority: p.priority || 'medium', source: 'dream' }),
+                  source: 'dream_protocol',
+                  confidence: 'inferred',
+                }, memDir); } catch {}
+              }
             } catch {}
           }
         }
