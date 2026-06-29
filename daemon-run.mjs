@@ -50,44 +50,47 @@ let done = false;
 let restartAttempts = 0;
 const MAX_RESTARTS = 1;
 
-host.on("message", (m) => {
-  if (m.type === "ready") {
-    if (DRY_RUN) {
-      writeLog({ event: "dry-run-ready" });
-      console.log("[daemon] dry-run: fleethost started OK, IPC ready. Exiting.");
-      clearTimeout(timer);
-      try { host.kill(); } catch (_) {}
-      process.exit(0);
+// Message handler factory — takes the live process ref so send() goes to the right host
+function makeMessageHandler(proc) {
+  return (m) => {
+    if (m.type === "ready") {
+      if (DRY_RUN) {
+        writeLog({ event: "dry-run-ready" });
+        console.log("[daemon] dry-run: fleethost started OK, IPC ready. Exiting.");
+        clearTimeout(timer);
+        try { proc.kill(); } catch (_) {}
+        process.exit(0);
+      }
+      proc.send({ t: "say", text: PROMPT });
+      writeLog({ event: "prompt-sent" });
+    } else if (m.type === "agent" && m.id === "ATLAS") {
+      if ((m.state === "done" || m.state === "failed") && !done) {
+        done = true;
+        const reply = (m.reply || m.summary || "(no reply)").slice(0, 3000);
+        writeLog({ event: "daemon-done", state: m.state, reply });
+        try {
+          const _ot = _require('./outcome-tracker.cjs');
+          const _def = _require('./deferred.cjs');
+          const outcomes = _ot.getOutcomes(join(DIR, 'memory'));
+          const recentMergeConflicts = outcomes.slice(-5).filter(o => o.rating === 'bad' && o.failureMode === 'merge_conflict');
+          if (recentMergeConflicts.length > 0) {
+            _def.deferTask(
+              'Retry merge-conflict builds: ' + recentMergeConflicts.map(o => o.agentId).join(', ') + '. Use staged_verify_build first, then re-attempt.',
+              'auto-deferred by daemon: merge_conflict recovery',
+              join(DIR, 'memory')
+            );
+            writeLog({ event: 'merge-conflict-deferred', ids: recentMergeConflicts.map(o => o.agentId) });
+          }
+        } catch {}
+        console.log("[daemon] ATLAS", m.state, "—", reply.slice(0, 200));
+        try { proc.kill(); } catch (_) {}
+        process.exit(0);
+      }
     }
-    host.send({ t: "say", text: PROMPT });
-    writeLog({ event: "prompt-sent" });
-  } else if (m.type === "agent" && m.id === "ATLAS") {
-    if ((m.state === "done" || m.state === "failed") && !done) {
-      done = true;
-      const reply = (m.reply || m.summary || "(no reply)").slice(0, 3000);
-      writeLog({ event: "daemon-done", state: m.state, reply });
-      // Auto-defer merge_conflict failures for next daemon session
-      try {
-        const _ot = _require('./outcome-tracker.cjs');
-        const _def = _require('./deferred.cjs');
-        const outcomes = _ot.getOutcomes(join(DIR, 'memory'));
-        const recentMergeConflicts = outcomes.slice(-5).filter(o => o.rating === 'bad' && o.failureMode === 'merge_conflict');
-        if (recentMergeConflicts.length > 0) {
-          _def.deferTask(
-            'Retry merge-conflict builds: ' + recentMergeConflicts.map(o => o.agentId).join(', ') + '. Use staged_verify_build first, then re-attempt.',
-            'auto-deferred by daemon: merge_conflict recovery',
-            join(DIR, 'memory')
-          );
-          writeLog({ event: 'merge-conflict-deferred', ids: recentMergeConflicts.map(o => o.agentId) });
-        }
-      } catch {}
-      console.log("[daemon] ATLAS", m.state, "—", reply.slice(0, 200));
-      try { host.kill(); } catch (_) {}
-      process.exit(0);
-    }
-  }
-});
+  };
+}
 
+host.on("message", makeMessageHandler(host));
 if (host.stderr) host.stderr.on("data", (b) => process.stderr.write("[host] " + b));
 
 const timer = setTimeout(() => {
@@ -106,7 +109,7 @@ host.on("exit", (code) => {
       writeLog({ event: "daemon-restart", attempt: restartAttempts });
       console.log("[daemon] host exited early — restarting (attempt " + restartAttempts + ")");
       const retry = spawn(NODE, ["fleethost.mjs"], { stdio: ["pipe","pipe","pipe","ipc"], env: process.env, cwd: DIR });
-      retry.on("message", host.listeners("message")[0]);
+      retry.on("message", makeMessageHandler(retry)); // fix: send() targets the live retry process
       if (retry.stderr) retry.stderr.on("data", (b) => process.stderr.write("[host-retry] " + b));
       retry.on("exit", () => { if (!done) { writeLog({ event: "retry-exited-early" }); process.exit(1); } });
     } else {
