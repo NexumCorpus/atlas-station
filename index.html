@@ -343,6 +343,34 @@ input:focus-visible{outline:none}
 /* ── system error messages ────────────────────── */
 .msg.system.error .msg-text{color:rgba(255,100,100,.7)}
 .msg.system.error .msg-avatar{background:rgba(255,100,100,.1);border-color:rgba(255,100,100,.25)}
+/* ── station health panel ─────────────────────── */
+#stationhealthlab{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.04)}
+#stationhealthlab:hover{color:rgba(200,200,200,.6)}
+#stationhealthlab .sh-title{flex:1}
+#stationhealthlab .sh-chevron{font-size:8px;color:var(--dim);transition:transform .2s;display:inline-block}
+#stationhealthlab.open .sh-chevron{transform:rotate(90deg)}
+#stationhealth{display:none;padding:4px 8px 8px}
+.sh-section{margin-bottom:6px}
+.sh-sec-title{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:3px;opacity:.7}
+.sh-goal{font-size:10px;color:rgba(200,195,215,.7);padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh-goal-pri{font-size:8px;font-weight:700;padding:0 3px;border-radius:2px;margin-right:4px;text-transform:uppercase}
+.sh-goal-pri.high{color:#ff784e}
+.sh-goal-pri.medium{color:#f0b840}
+.sh-goal-pri.low{color:#7ab8e8}
+.sh-proposal{font-size:10px;color:rgba(200,195,215,.7);padding:1px 0;display:flex;align-items:center;gap:4px;overflow:hidden}
+.sh-prop-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh-prop-score{font-size:8px;color:var(--dim);flex-shrink:0}
+.sh-stat{font-size:10px;color:rgba(200,195,215,.7);display:flex;align-items:center;gap:6px}
+.sh-stat-val{font-variant-numeric:tabular-nums}
+.sh-daemon{font-size:10px;padding:2px 0;display:flex;align-items:center;gap:6px}
+.sh-daemon-status{font-size:9px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px}
+.sh-daemon-status.HEALTHY{background:rgba(73,255,158,.12);color:#49ff9e;border:1px solid rgba(73,255,158,.25)}
+.sh-daemon-status.DELAYED{background:rgba(255,194,75,.1);color:#ffc24b;border:1px solid rgba(255,194,75,.2)}
+.sh-daemon-status.STALE{background:rgba(255,100,100,.1);color:#ff6464;border:1px solid rgba(255,100,100,.2)}
+.sh-daemon-status.NEVER-RUN{background:rgba(100,100,120,.1);color:var(--dim);border:1px solid rgba(100,100,120,.2)}
+.sh-daemon-ts{font-size:9px;color:var(--dim);opacity:.7}
+.sh-empty{font-size:10px;color:var(--dim);font-style:italic;opacity:.5}
+.sh-divider{height:1px;background:rgba(255,255,255,.04);margin:5px 0}
 </style>
 </head>
 <body>
@@ -460,6 +488,28 @@ input:focus-visible{outline:none}
           <div id="budget-sections" style="font-size:10px;line-height:1.7"></div>
         </div>
       </div>
+      <div id="stationhealthlab"><span class="sh-title">◈ Station</span><span class="sh-chevron">›</span></div>
+      <div id="stationhealth">
+        <div class="sh-section" id="sh-goals-wrap">
+          <div class="sh-sec-title">Goals</div>
+          <div id="sh-goals"><div class="sh-empty">loading…</div></div>
+        </div>
+        <div class="sh-divider"></div>
+        <div class="sh-section" id="sh-proposals-wrap">
+          <div class="sh-sec-title">Proposals (pending HIGH)</div>
+          <div id="sh-proposals"><div class="sh-empty">loading…</div></div>
+        </div>
+        <div class="sh-divider"></div>
+        <div class="sh-section">
+          <div class="sh-sec-title">Build Quality (last 20)</div>
+          <div id="sh-quality"><div class="sh-empty">loading…</div></div>
+        </div>
+        <div class="sh-divider"></div>
+        <div class="sh-section">
+          <div class="sh-sec-title">Daemon</div>
+          <div id="sh-daemon"><div class="sh-empty">loading…</div></div>
+        </div>
+      </div>
       <div class="lab" style="border-top:1px solid var(--border)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
       <div id="timelinelab">⬡ activity</div>
@@ -544,7 +594,7 @@ input:focus-visible{outline:none}
     try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
   }
   function getPanelStates() {
-    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget'];
+    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget','stationhealth'];
     var s = {};
     ids.forEach(function(id) {
       var el = document.getElementById(id);
@@ -620,6 +670,8 @@ input:focus-visible{outline:none}
       if (cosmosLab) cosmosLab.classList.toggle('open', !!p.panels.cosmos);
       var budgetLab = document.getElementById('budgetlab');
       if (budgetLab) budgetLab.classList.toggle('open', !!p.panels.budget);
+      var stationHealthLab = document.getElementById('stationhealthlab');
+      if (stationHealthLab) stationHealthLab.classList.toggle('open', !!p.panels.stationhealth);
     }
   })();
 
@@ -2097,6 +2149,117 @@ input:focus-visible{outline:none}
       if (e.key === 'g') { e.preventDefault(); var inp=document.getElementById('inp')||$('say'); if(inp)inp.focus(); }
     }
   });
+
+  // ── station health panel ────────────────────────────
+  function renderStationHealth(data) {
+    if (!data) return;
+
+    // Goals
+    var goalsEl = document.getElementById('sh-goals');
+    if (goalsEl) {
+      var activeGoals = data.goals || [];
+      if (!activeGoals.length) {
+        goalsEl.innerHTML = '<div class="sh-empty">none active</div>';
+      } else {
+        goalsEl.innerHTML = '<div class="sh-stat" style="color:var(--dim);font-size:9px;margin-bottom:3px">'
+          + activeGoals.length + ' active</div>'
+          + activeGoals.map(function(g) {
+            var pri = (g.priority || 'medium').toLowerCase();
+            var txt = (g.text || '').slice(0, 60) + (g.text && g.text.length > 60 ? '…' : '');
+            return '<div class="sh-goal"><span class="sh-goal-pri ' + esc(pri) + '">'
+              + esc(pri[0].toUpperCase()) + '</span>' + esc(txt) + '</div>';
+          }).join('');
+      }
+    }
+
+    // Proposals (pending HIGH only in summary count, list all pending)
+    var propsEl = document.getElementById('sh-proposals');
+    if (propsEl) {
+      var pendingProps = data.proposals || [];
+      var highCount = pendingProps.filter(function(p) { return (p.priority || '').toUpperCase() === 'HIGH'; }).length;
+      if (!pendingProps.length) {
+        propsEl.innerHTML = '<div class="sh-empty">none pending</div>';
+      } else {
+        propsEl.innerHTML = '<div class="sh-stat" style="color:var(--dim);font-size:9px;margin-bottom:3px">'
+          + pendingProps.length + ' pending'
+          + (highCount ? ' · <span style="color:#ff784e">' + highCount + ' HIGH</span>' : '')
+          + '</div>'
+          + pendingProps.slice(0, 4).map(function(p) {
+            var titleTxt = (p.title || '').slice(0, 50) + (p.title && p.title.length > 50 ? '…' : '');
+            var scoreStr = p._score != null ? '#' + Number(p._score).toFixed(1) : '';
+            var pri = (p.priority || '').toUpperCase();
+            var priColor = pri === 'HIGH' ? '#ff784e' : pri === 'MEDIUM' ? '#f0b840' : '#7ab8e8';
+            return '<div class="sh-proposal">'
+              + '<span style="font-size:8px;font-weight:700;color:' + priColor + ';flex-shrink:0">' + esc(pri[0] || '') + '</span>'
+              + '<span class="sh-prop-title">' + esc(titleTxt) + '</span>'
+              + (scoreStr ? '<span class="sh-prop-score">' + esc(scoreStr) + '</span>' : '')
+              + '</div>';
+          }).join('')
+          + (pendingProps.length > 4 ? '<div class="sh-empty">+' + (pendingProps.length - 4) + ' more</div>' : '');
+      }
+    }
+
+    // Build quality
+    var qualEl = document.getElementById('sh-quality');
+    if (qualEl) {
+      var oc = data.outcomes || {};
+      if (oc.total == null || oc.total === 0) {
+        qualEl.innerHTML = '<div class="sh-empty">no data</div>';
+      } else {
+        var pct = oc.goodPct;
+        var color = pct >= 80 ? '#49ff9e' : pct >= 60 ? '#ffc24b' : '#ff6464';
+        qualEl.innerHTML = '<div class="sh-stat"><span class="sh-stat-val" style="color:' + color + '">'
+          + pct + '%</span><span style="color:var(--dim);font-size:9px">good · ' + oc.total + ' sampled</span></div>';
+      }
+    }
+
+    // Daemon
+    var daemonEl = document.getElementById('sh-daemon');
+    if (daemonEl) {
+      var d = data.daemon || {};
+      var statusCls = (d.health || 'NEVER-RUN').replace('-', '-');
+      var tsStr = '';
+      if (d.lastRunTs) {
+        var dt = new Date(d.lastRunTs);
+        tsStr = dt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        if (d.hoursSinceRun != null) tsStr += ' (' + d.hoursSinceRun + 'h ago)';
+      }
+      daemonEl.innerHTML = '<div class="sh-daemon">'
+        + '<span class="sh-daemon-status ' + esc(d.health || 'NEVER-RUN') + '">' + esc(d.health || 'NEVER-RUN') + '</span>'
+        + (tsStr ? '<span class="sh-daemon-ts">' + esc(tsStr) + '</span>' : '')
+        + '</div>';
+    }
+  }
+
+  function loadStationHealth() {
+    if (window.atlas && window.atlas.stationHealth) {
+      window.atlas.stationHealth().then(function(data) {
+        renderStationHealth(data);
+      }).catch(function() {});
+    }
+  }
+
+  var stationhealthlab = document.getElementById('stationhealthlab');
+  if (stationhealthlab) {
+    stationhealthlab.addEventListener('click', function() {
+      var panel = document.getElementById('stationhealth');
+      if (!panel) return;
+      var opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      stationhealthlab.classList.toggle('open', opening);
+      if (opening) loadStationHealth();
+      savePrefs({ panels: getPanelStates() });
+    });
+  }
+
+  // Auto-refresh every 30 seconds
+  setInterval(function() {
+    var panel = document.getElementById('stationhealth');
+    if (panel && panel.style.display !== 'none') loadStationHealth();
+  }, 30000);
+
+  // Fetch on load (panel starts closed, load anyway so data is ready when opened)
+  loadStationHealth();
 
   renderThread();renderBrood();renderLedger();
   renderTimeline();
