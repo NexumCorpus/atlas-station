@@ -102,6 +102,67 @@ function _nullGuardRequire(mod) {
 }
 
 /**
+ * _buildCalibration(memDir) — Epistemic health signals injected at the end of the dynamic brief.
+ *
+ * Returns a single-line string (or empty string on any error).  Three checks:
+ *   1. Build quality proxy — recent outcome ratings from outcomes.ndjson
+ *   2. Proposal aging — HIGH proposals unactioned for > 72 h
+ *   3. Goal coverage — whether any active goals exist
+ *
+ * Never throws.
+ */
+function _buildCalibration(memDir) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const warnings = [];
+
+    // 1. autoRate accuracy proxy: check if any 'bad' or 'partial' in recent outcomes
+    const otFile = path.join(memDir, 'outcomes.ndjson');
+    if (fs.existsSync(otFile)) {
+      const outcomes = fs.readFileSync(otFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .slice(-20);
+      if (outcomes.length >= 5) {
+        const good = outcomes.filter(o => o.rating === 'good').length;
+        const pct = Math.round(good / outcomes.length * 100);
+        if (pct < 80) warnings.push('build quality ' + pct + '% (below 80% target)');
+      }
+    }
+
+    // 2. Proposal aging: check for pending proposals older than 72h
+    const propFile = path.join(memDir, 'proposals.ndjson');
+    if (fs.existsSync(propFile)) {
+      const props = fs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .filter(p => p.state === 'pending' && p.priority === 'HIGH');
+      const now = Date.now();
+      const aged = props.filter(p => {
+        if (!p.ts) return false;
+        const age = now - new Date(p.ts).getTime();
+        return age > 72 * 60 * 60 * 1000; // 72 hours
+      });
+      if (aged.length > 0) warnings.push(aged.length + ' HIGH proposal(s) unactioned >72h');
+    }
+
+    // 3. Goals: count active vs completed
+    const goalFile = path.join(memDir, 'goals.ndjson');
+    if (fs.existsSync(goalFile)) {
+      const goals = fs.readFileSync(goalFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      const active = goals.filter(g => g.state === 'active').length;
+      const completed = goals.filter(g => g.state === 'completed').length;
+      if (active === 0 && completed > 0) warnings.push('no active goals — consider setting new ones');
+    }
+
+    if (warnings.length === 0) return '[Calibration] All signals nominal.';
+    return '[Calibration] ⚠ ' + warnings.join('; ');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * _buildDynamicBrief(memDir) — Optional startup awareness sections.
  *
  * Returns a string with up to four sections injected after [Station Architecture]:
@@ -178,6 +239,13 @@ function _buildDynamicBrief(memDir) {
         lines.push('');
       }
     }
+  } catch {}
+
+  // 5. Epistemic calibration: build quality, proposal aging, goal coverage
+  try {
+    const cal = _buildCalibration(memDir);
+    if (cal) lines.push(cal);
+    lines.push('');
   } catch {}
 
   return lines.join('\n');

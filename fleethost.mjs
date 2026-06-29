@@ -2801,6 +2801,25 @@ async function runDeferredTasks() {
         20 * 60 * 1000,
         null
       );
+      // Mark matching proposals as 'consumed' so they don't re-trigger via auto_build
+      try {
+        const _fs = _require('fs');
+        const _path = _require('path');
+        const propFile = _path.join(memDir, 'proposals.ndjson');
+        if (_fs.existsSync(propFile)) {
+          const lines = _fs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean);
+          const props = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          const taskSnippet = (entry.description || entry.task || '').slice(0, 60).toLowerCase();
+          const updated = props.map(p => {
+            const descSnippet = (p.description || '').slice(0, 60).toLowerCase();
+            if (p.state === 'deferred' && descSnippet && taskSnippet && descSnippet.includes(taskSnippet.slice(0, 40))) {
+              return { ...p, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-task' };
+            }
+            return p;
+          });
+          _fs.writeFileSync(propFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+        }
+      } catch {}
     }
   } catch (e) {
     send('deferred_error', { error: e.message });
