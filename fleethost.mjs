@@ -1482,14 +1482,33 @@ const stagedVerifyTool = tool(
           }
         }
       }
+      // Step 3.5: require() smoke-test for newly added .cjs files
+      const addedResult = spawnSync('git', ['diff', '--name-only', '--diff-filter=A', 'master', branch], { cwd: REPO, encoding: 'utf8' });
+      const newCjsFiles = (addedResult.stdout || '').trim().split('\n').filter(f => f && f.endsWith('.cjs'));
+      const smokeTestResults = [];
+      for (const relFile of newCjsFiles) {
+        const absFile = path.join(REPO, relFile).replace(/\\/g, '/');
+        const smokeRun = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(absFile)})`], { cwd: REPO, encoding: 'utf8', timeout: 10000 });
+        const ok = smokeRun.status === 0;
+        smokeTestResults.push({ file: relFile, ok, error: ok ? null : (smokeRun.stderr || '').split('\n')[0].slice(0, 200) });
+      }
+      const smokeTestPassed = smokeTestResults.every(r => r.ok);
       // Abort staged merge and clean up — never commits to master
       try { gitC(['merge', '--abort']); } catch { try { gitC(['reset', '--hard', 'HEAD']); } catch {} }
       gitC(['checkout', 'master']);
       gitC(['branch', '-D', temp]);
-      if (!checkOk) {
-        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: ' + checkErr }] };
+      const allPassed = checkOk && smokeTestPassed;
+      if (!allPassed) {
+        let failMsg = '';
+        if (!checkOk) failMsg += 'STAGED VERIFY FAIL: ' + checkErr;
+        if (!smokeTestPassed) {
+          const failures = smokeTestResults.filter(r => !r.ok).map(r => `  ${r.file}: ${r.error}`).join('\n');
+          failMsg += (failMsg ? '\n' : 'STAGED VERIFY FAIL: ') + 'require() smoke-test failed:\n' + failures;
+        }
+        return { content: [{ type: 'text', text: failMsg }] };
       }
-      return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' }] };
+      const smokeNote = smokeTestResults.length ? ` | smoke-tested ${smokeTestResults.length} new .cjs file${smokeTestResults.length !== 1 ? 's' : ''}` : '';
+      return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' + smokeNote }] };
     } catch (e) {
       // Emergency cleanup — restore master regardless of what went wrong
       try { gitC(['merge', '--abort']); } catch {}
