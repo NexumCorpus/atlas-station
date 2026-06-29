@@ -2856,7 +2856,7 @@ crystallize(showExisting?) — trigger/view session memory crystals; auto-fires 
 cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
 drain_proposals(priority?,dryRun?) — convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
 prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) — mark old low-confidence facts stale; use memory_health first to see age distribution
-rate_build(agentId,rating,notes?) — record quality rating (good/partial/bad) for a build; feeds success-rate metric
+rate_build(agentId,rating,notes?,causalChain?) — record quality rating (good/partial/bad) for a build; causalChain required for 'bad' ratings — record which reasoning steps broke
 build_outcomes(showRecent?) — show aggregate build quality: success rate, distribution, recent ratings
 revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 capture_insight(insight,category?) — manually crystallize a mid-conversation observation into persistent memory
@@ -2878,6 +2878,10 @@ daemon_health() — check scheduler job status + last run time; health: healthy/
 - Verify subagent claims against actual git state and file reads — never trust a written summary alone.
 - Call verify_build(agentId) after every merge — confirms syntax integrity and stores verdict as fact. Then call run_tests() to confirm behavioral integrity.
 - Agents auto-cancel after 20 minutes by default.
+
+**Stigmergy — reading the pheromone field:**
+- Before dispatching build agents, you MAY run \`node stigma-read.mjs E:\\atlas-station\` via Bash to see which subsystems are coldest (lowest confidence + heat). Cold zones are where improvement effort is most needed and least duplicated.
+- stigma-write.mjs runs automatically after every build — no action needed. But add git trailers to your commits when agents use the conventional format: Directive: <hint for next agent>, Rejected: <approach that failed>, Confidence: <0-1 float>.
 
 **Station architecture you should know:**
 - main.cjs: Electron main, IPC relay (say/dispatch/reply/cancel/self-build)
