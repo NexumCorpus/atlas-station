@@ -1882,6 +1882,13 @@ const projectCompleteTool = tool(
   }
 );
 
+function autoRate(resultStr) {
+  const text = (resultStr || '').toLowerCase();
+  if (text.includes('syntaxerror') || text.includes('error:') || text.includes('failed to') || text.includes('conflict')) return 'bad';
+  if (text.includes('pass') || (text.includes('done') && !text.includes('error'))) return 'good';
+  return 'partial';
+}
+
 const autoBuildTool = tool(
   "auto_build",
   "Autonomously initiate fleet builds from the proposals backlog. Reads pending HIGH-priority proposals, spawns a build agent for each (up to limit), marks them as queued, and notifies Daniel. Use to self-direct work without requiring a per-build prompt.",
@@ -1933,14 +1940,20 @@ const autoBuildTool = tool(
       const launched = [];
       for (const proposal of toRun) {
         const proposalText = proposal.description || proposal.text || proposal.proposal || String(proposal);
-        const agentId = await runSubagent(proposalText, 'build');
-        launched.push({ agentId, proposal: proposalText.slice(0, 80) });
+        const resultStr = await runSubagent(proposalText, 'build');
+        const idMatch = resultStr.match(/Subagent (B-\d+)/);
+        const bareId = idMatch ? idMatch[1] : ('B-' + _maxCounter);
+        const rating = autoRate(resultStr);
+        if (_outcomeTracker) {
+          try { _outcomeTracker.rateOutcome(bareId, rating, 'auto-rated by auto_build', path.join(REPO, 'memory')); } catch {}
+        }
+        launched.push({ agentId: bareId, proposal: proposalText.slice(0, 80), rating });
 
         // Mark proposal as queued — match by ts (unique ISO timestamp)
         try {
           const updated = all.map(p =>
             (p.ts === proposal.ts)
-              ? { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId }
+              ? { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId: bareId }
               : p
           );
           fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
@@ -1950,13 +1963,13 @@ const autoBuildTool = tool(
       // 4. Notify
       if (_notif) {
         try {
-          const summary = launched.map(l => `• ${l.agentId}: ${l.proposal}`).join('\n');
+          const summary = launched.map(l => `• ${l.agentId}: ${l.proposal} [${l.rating}]`).join('\n');
           const n = _notif.notify(`auto_build launched ${launched.length} agent(s):\n${summary}`, 'info', path.join(REPO, 'memory'));
           if (n) send('notification', n);
         } catch {}
       }
 
-      const result = launched.map(l => `${l.agentId}: ${l.proposal}`).join('\n');
+      const result = launched.map(l => `${l.agentId}: ${l.proposal} [${l.rating}]`).join('\n');
       return { content: [{ type: 'text', text: `Launched ${launched.length} build agent(s):\n${result}` }] };
 
     } catch (e) {
@@ -2554,6 +2567,18 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
             const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
             for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
               _deferred.deferTask(proposal, 'auto-deferred from dream protocol (HIGH priority)', memDir);
+              // Also write to proposals.ndjson so auto_build can find it
+              try {
+                const pEntry = {
+                  ts: new Date().toISOString(),
+                  description: proposal,
+                  priority: 'HIGH',
+                  area: 'dream',
+                  state: 'pending',
+                  source: 'dream-auto',
+                };
+                fs.appendFileSync(path.join(memDir, 'proposals.ndjson'), JSON.stringify(pEntry) + '\n', 'utf8');
+              } catch {}
               send('toast', { text: `Dream → deferred: ${proposal.slice(0, 60)}...` });
             }
           } catch {}
