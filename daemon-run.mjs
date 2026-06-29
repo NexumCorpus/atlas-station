@@ -20,12 +20,13 @@ Work through this in order — stop when the session budget is spent or when the
 1. triage_proposals() — score pending proposals, auto-reject noise. Then load_proposals() to see what's HIGH.
 2. If there are HIGH pending proposals: auto_build(priority:"HIGH", limit:2). Do not build more than 2 in one daemon session.
 3. project_status() — check active projects. If any project is waiting on work you can do autonomously, advance it.
-4. If fewer than 2 proposals were built and the last dream was more than 6 hours ago: run the dream protocol — load_dreams(), then write a new dream (capture_insight with category:"dream") and queue 2-3 proposals from it via propose_improvement.
+4. If fewer than 2 proposals were built and last dream > 6h ago: run the GROUNDED dream protocol: a) call build_outcomes() to collect last 10 builds and identify the most common failure patterns (merge_conflict, test_failure, wrong_abstraction etc); b) call load_proposals() to see what is already pending; c) write ONE dream via capture_insight(category:"dream") that MUST start with "OBSERVED: " then the specific failure patterns found, then "THEREFORE: " then targeted proposals addressing those exact patterns; d) queue 2-3 proposals via propose_improvement, each explicitly naming which failure pattern it addresses. NO dream without build_outcomes() first. Vague dreams with no observed basis are not allowed.
 5. build_outcomes() — check build quality. If success rate < 80%, investigate the recent bad builds and propose a fix.
 6. Write one sentence in journal_write summarizing what this daemon session did.
 
 Standing rules:
 - Never spawn more than 2 build agents in one daemon session.
+- Never write a dream without first calling build_outcomes() to ground it in observed failure data.
 - After any merge, call both verify_build() AND run_tests() — if run_tests returns FAIL, you MUST attempt repair:
   1. Spawn a build agent with the failing test output as context: "These tests are failing after the last merge: [test output]. Fix the root cause."
   2. After the repair agent completes, call run_tests() again.
