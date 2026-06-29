@@ -1,6 +1,10 @@
 // Bridge: dispatch agents, reply into an agent's conversation, receive fleet state.
 const { contextBridge, ipcRenderer } = require("electron");
 
+// Keep a reference so re-registration (hot reload) removes the previous handler
+// before adding a new one — prevents duplicate message delivery on page reload.
+let _fleetListener = null;
+
 contextBridge.exposeInMainWorld("atlas", {
   say: (text) => ipcRenderer.send("say", { text }),
   dispatch: (task, cwd, mode) => ipcRenderer.send("dispatch", { task, cwd, mode }),
@@ -14,5 +18,9 @@ contextBridge.exposeInMainWorld("atlas", {
   listDocs: () => ipcRenderer.send("list-docs"),
   readGraph: () => ipcRenderer.send("read-graph"),
   stationHealth: () => ipcRenderer.invoke("atlas:station-health"),
-  onFleet: (cb) => ipcRenderer.on("fleet", (_e, m) => cb(m)),
+  onFleet: (cb) => {
+    if (_fleetListener) ipcRenderer.removeListener("fleet", _fleetListener);
+    _fleetListener = (_e, m) => cb(m);
+    ipcRenderer.on("fleet", _fleetListener);
+  },
 });
