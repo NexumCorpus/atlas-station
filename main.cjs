@@ -35,10 +35,10 @@ function createWindow() {
 
 // Auto-reload the renderer whenever index.html changes on disk, so ATLAS's GUI
 // edits appear instantly (no manual Ctrl+R). The fleet sidecar keeps running.
+// Watch the specific file rather than the whole directory to reduce callback overhead.
 function watchIndexForReload() {
   try {
-    fs.watch(__dirname, (_evt, filename) => {
-      if (!filename || filename !== "index.html") return;
+    fs.watch(path.join(__dirname, "index.html"), { persistent: false }, () => {
       clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => {
         if (win && !win.isDestroyed()) { try { win.webContents.reloadIgnoringCache(); } catch (_) {} }
@@ -98,12 +98,12 @@ ipcMain.on("cancel", (_e, p) => {
   try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}
 });
 
-ipcMain.on("read-memory", (_e) => {
+ipcMain.on("read-memory", async (_e) => {
   try {
-    const memDir = path.join(__dirname, "memory");
-    const file = path.join(memDir, "facts.ndjson");
-    if (!fs.existsSync(file)) { if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [] }); return; }
-    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    const file = path.join(__dirname, "memory", "facts.ndjson");
+    let data;
+    try { data = await fs.promises.readFile(file, "utf8"); } catch { if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [] }); return; }
+    const lines = data.trim().split("\n").filter(Boolean);
     const facts = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse(); // newest first
     if (win) win.webContents.send("fleet", { type: "memory_facts", facts: facts.slice(0, 100) });
   } catch (e) {
@@ -111,29 +111,30 @@ ipcMain.on("read-memory", (_e) => {
   }
 });
 
-ipcMain.on("read-graph", () => {
+ipcMain.on("read-graph", async () => {
   try {
     const memDir = path.join(__dirname, "memory");
+    async function tryRead(file) { try { return await fs.promises.readFile(file, "utf8"); } catch { return ""; } }
     // Read facts
-    const factsFile = path.join(memDir, "facts.jsonl");
     let facts = [];
-    if (fs.existsSync(factsFile)) {
-      facts = fs.readFileSync(factsFile, "utf8").trim().split("\n").filter(Boolean)
+    const factsData = await tryRead(path.join(memDir, "facts.jsonl"));
+    if (factsData) {
+      facts = factsData.trim().split("\n").filter(Boolean)
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
         .slice(-80); // last 80 facts
     }
     // Read graph edges
-    const graphFile = path.join(memDir, "fact_graph.ndjson");
     let edges = [];
-    if (fs.existsSync(graphFile)) {
-      edges = fs.readFileSync(graphFile, "utf8").trim().split("\n").filter(Boolean)
+    const graphData = await tryRead(path.join(memDir, "fact_graph.ndjson"));
+    if (graphData) {
+      edges = graphData.trim().split("\n").filter(Boolean)
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     }
     // Read stale keys
-    const staleFile = path.join(memDir, "stale_facts.ndjson");
     let staleKeys = [];
-    if (fs.existsSync(staleFile)) {
-      staleKeys = fs.readFileSync(staleFile, "utf8").trim().split("\n").filter(Boolean)
+    const staleData = await tryRead(path.join(memDir, "stale_facts.ndjson"));
+    if (staleData) {
+      staleKeys = staleData.trim().split("\n").filter(Boolean)
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
         .map(s => s.key);
     }
@@ -158,11 +159,12 @@ ipcMain.on("export-conversation", (_e, p) => {
   }
 });
 
-ipcMain.on("read-runs", (_e) => {
+ipcMain.on("read-runs", async (_e) => {
   try {
     const file = path.join(__dirname, "memory", "runs.jsonl");
-    if (!fs.existsSync(file)) { if (win) win.webContents.send("fleet", { type: "runs_data", runs: [] }); return; }
-    const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    let data;
+    try { data = await fs.promises.readFile(file, "utf8"); } catch { if (win) win.webContents.send("fleet", { type: "runs_data", runs: [] }); return; }
+    const lines = data.trim().split("\n").filter(Boolean);
     const runs = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     if (win) win.webContents.send("fleet", { type: "runs_data", runs: runs.slice(-200) }); // last 200 runs
   } catch (e) {
@@ -170,51 +172,50 @@ ipcMain.on("read-runs", (_e) => {
   }
 });
 
-ipcMain.on("list-docs", (_e) => {
+ipcMain.on("list-docs", async (_e) => {
   try {
     const docsDir = path.join(__dirname, "docs");
-    if (!fs.existsSync(docsDir)) { if (win) win.webContents.send("fleet", { type: "docs_list", files: [] }); return; }
-    const files = fs.readdirSync(docsDir).filter(f => !f.startsWith('.'));
-    if (win) win.webContents.send("fleet", { type: "docs_list", files });
+    let files;
+    try { files = await fs.promises.readdir(docsDir); } catch { if (win) win.webContents.send("fleet", { type: "docs_list", files: [] }); return; }
+    if (win) win.webContents.send("fleet", { type: "docs_list", files: files.filter(f => !f.startsWith('.')) });
   } catch (e) { if (win) win.webContents.send("fleet", { type: "docs_list", files: [] }); }
 });
 
-ipcMain.on("read-doc", (_e, filename) => {
+ipcMain.on("read-doc", async (_e, filename) => {
+  const cleaned = (filename || '').replace(/[^a-zA-Z0-9._-]/g, '_');
   try {
-    const cleaned = (filename || '').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const docsDir = path.join(__dirname, "docs");
-    const filepath = path.join(docsDir, cleaned);
-    if (!fs.existsSync(filepath)) { if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content: '(not found)' }); return; }
-    const content = fs.readFileSync(filepath, 'utf8').slice(0, 8000);
-    if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content });
+    const filepath = path.join(__dirname, "docs", cleaned);
+    let raw;
+    try { raw = await fs.promises.readFile(filepath, 'utf8'); } catch { if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content: '(not found)' }); return; }
+    if (win) win.webContents.send("fleet", { type: "doc_content", filename: cleaned, content: raw.slice(0, 8000) });
   } catch (e) { if (win) win.webContents.send("fleet", { type: "doc_content", filename: filename || '', content: `Error: ${e.message}` }); }
 });
 
-ipcMain.handle("atlas:station-health", () => {
+ipcMain.handle("atlas:station-health", async () => {
   const memDir = path.join(__dirname, "memory");
-  function readNdjson(file) {
+  async function readNdjson(file) {
     try {
-      if (!fs.existsSync(file)) return [];
-      return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      const data = await fs.promises.readFile(file, "utf8");
+      return data.split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     } catch { return []; }
   }
 
   // Goals: active (not completed)
-  const allGoals = readNdjson(path.join(memDir, "goals.ndjson"));
+  const allGoals = await readNdjson(path.join(memDir, "goals.ndjson"));
   const goals = allGoals.filter(g => g.state !== "completed").map(g => ({ text: g.text, priority: g.priority, state: g.state }));
 
   // Proposals: pending or deferred
-  const allProposals = readNdjson(path.join(memDir, "proposals.ndjson"));
+  const allProposals = await readNdjson(path.join(memDir, "proposals.ndjson"));
   const proposals = allProposals.filter(p => p.state === "pending" || p.state === "deferred").map(p => ({ title: p.title, priority: p.priority, _score: p._score }));
 
   // Outcomes: last 20
-  const allOutcomes = readNdjson(path.join(memDir, "outcomes.ndjson"));
+  const allOutcomes = await readNdjson(path.join(memDir, "outcomes.ndjson"));
   const last20 = allOutcomes.slice(-20);
   const goodCount = last20.filter(o => o.rating === "good").length;
   const outcomes = { total: last20.length, goodPct: last20.length ? Math.round(goodCount / last20.length * 100) : null };
 
   // Daemon: last daemon-start event from daemon-log.ndjson
-  const allDaemon = readNdjson(path.join(memDir, "daemon-log.ndjson"));
+  const allDaemon = await readNdjson(path.join(memDir, "daemon-log.ndjson"));
   const lastStart = allDaemon.filter(e => e.event === "daemon-start").slice(-1)[0] || null;
   let daemon;
   if (!lastStart) {
