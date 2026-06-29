@@ -56,6 +56,10 @@ let _resonance = null;
 try { _resonance = _require('./resonance.cjs'); } catch { _resonance = null; }
 let _mutmap = null;
 try { _mutmap = _require('./mutationmap.cjs'); } catch { _mutmap = null; }
+let _instructions = null;
+try { _instructions = _require('./instructions.cjs'); } catch { _instructions = null; }
+let _routines = null;
+try { _routines = _require('./routines.cjs'); } catch { _routines = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -553,7 +557,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -601,10 +605,12 @@ const capabilityManifestTool = tool(
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
-      "signal_propagate", "generate_tool", "verify_build", "mutation_map"
+      "signal_propagate", "generate_tool", "verify_build", "mutation_map",
+      "set_instruction", "get_instructions", "clear_instruction",
+      "save_routine", "run_routine", "list_routines"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
     }
@@ -1208,7 +1214,120 @@ const mutationMapTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool] });
+const setInstructionTool = tool(
+  "set_instruction",
+  "Write a standing behavioral instruction to persistent memory. These instructions are injected into your own operating context at the start of every session — they become part of how you work. Use to encode learned best practices, recurring preferences, or standing rules Daniel has communicated. Replaces any existing instruction with the same key.",
+  {
+    key: z.string().describe("Short identifier for this instruction (e.g. 'post_merge', 'verbosity', 'verify_always')"),
+    instruction: z.string().describe("The instruction text — first person, specific, actionable"),
+  },
+  async (args) => {
+    if (!_instructions) return { content: [{ type: 'text', text: 'instructions module not available' }] };
+    try {
+      _instructions.setInstruction(args.key, args.instruction, path.join(REPO, 'memory'));
+      return { content: [{ type: 'text', text: `Instruction set: [${args.key}] ${args.instruction}\nThis will be active in all future sessions.` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `set_instruction error: ${e.message}` }] };
+    }
+  }
+);
+
+const getInstructionsTool = tool(
+  "get_instructions",
+  "List all active self-instructions — your own standing behavioral directives from prior sessions. Call to audit what rules you've set for yourself.",
+  {},
+  async () => {
+    if (!_instructions) return { content: [{ type: 'text', text: 'instructions module not available' }] };
+    try {
+      const all = _instructions.listInstructions(path.join(REPO, 'memory'));
+      if (!all.length) return { content: [{ type: 'text', text: 'No standing instructions set. Use set_instruction to encode learned rules.' }] };
+      const text = all.map(i => `[${i.key}] ${i.instruction}  (set: ${String(i.ts).slice(0,10)})`).join('\n');
+      return { content: [{ type: 'text', text: `Active self-instructions (${all.length}):\n${text}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `get_instructions error: ${e.message}` }] };
+    }
+  }
+);
+
+const clearInstructionTool = tool(
+  "clear_instruction",
+  "Remove a standing self-instruction by key. Use when a rule is no longer relevant or was set by mistake.",
+  {
+    key: z.string().describe("The instruction key to remove"),
+  },
+  async (args) => {
+    if (!_instructions) return { content: [{ type: 'text', text: 'instructions module not available' }] };
+    try {
+      _instructions.clearInstruction(args.key, path.join(REPO, 'memory'));
+      return { content: [{ type: 'text', text: `Instruction removed: [${args.key}]` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `clear_instruction error: ${e.message}` }] };
+    }
+  }
+);
+
+const saveRoutineTool = tool(
+  "save_routine",
+  "Save a named workflow routine — a reusable sequence of tool calls. Build up a library of best-practice sequences (e.g. 'post_merge_suite', 'morning_check'). Steps are stored and can be retrieved with run_routine.",
+  {
+    name: z.string().describe("Routine name (snake_case)"),
+    description: z.string().describe("What this routine does"),
+    steps: z.array(z.object({
+      tool: z.string().describe("Tool name to call"),
+      args: z.record(z.unknown()).optional().describe("Arguments for this tool call"),
+      description: z.string().optional().describe("Why this step"),
+    })).describe("Ordered steps — each with tool name and args"),
+  },
+  async (args) => {
+    if (!_routines) return { content: [{ type: 'text', text: 'routines module not available' }] };
+    try {
+      _routines.saveRoutine(args.name, args.description, args.steps, path.join(REPO, 'memory'));
+      return { content: [{ type: 'text', text: `Routine saved: ${args.name} (${args.steps.length} steps)\n${args.description}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `save_routine error: ${e.message}` }] };
+    }
+  }
+);
+
+const runRoutineTool = tool(
+  "run_routine",
+  "Retrieve and display a saved routine's steps as executable instructions. Returns the full step sequence so you can execute each tool call in order. Does not auto-execute — you perform each step.",
+  {
+    name: z.string().describe("Routine name to retrieve"),
+  },
+  async (args) => {
+    if (!_routines) return { content: [{ type: 'text', text: 'routines module not available' }] };
+    try {
+      const r = _routines.getRoutine(args.name, path.join(REPO, 'memory'));
+      if (!r) return { content: [{ type: 'text', text: `Routine not found: ${args.name}. Use list_routines to see available routines.` }] };
+      const steps = r.steps.map((s, i) =>
+        `Step ${i+1}: ${s.tool}(${s.args ? JSON.stringify(s.args) : ''})${s.description ? '  // ' + s.description : ''}`
+      );
+      return { content: [{ type: 'text', text: `Routine: ${r.name}\n${r.description}\n\n${steps.join('\n')}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `run_routine error: ${e.message}` }] };
+    }
+  }
+);
+
+const listRoutinesTool = tool(
+  "list_routines",
+  "List all saved workflow routines — named sequences of tool calls you've built up as best practices.",
+  {},
+  async () => {
+    if (!_routines) return { content: [{ type: 'text', text: 'routines module not available' }] };
+    try {
+      const all = _routines.listRoutines(path.join(REPO, 'memory'));
+      if (!all.length) return { content: [{ type: 'text', text: 'No routines saved yet. Use save_routine to build a workflow library.' }] };
+      const text = all.map(r => `${r.name} (${r.steps.length} steps): ${r.description}`).join('\n');
+      return { content: [{ type: 'text', text: `Saved routines (${all.length}):\n${text}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `list_routines error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1249,6 +1368,12 @@ signal_propagate(factKey) — propagate a fact's signal through memory graph; re
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
+set_instruction(key,instruction) — write a standing behavioral directive to memory; injected into your context every session
+get_instructions() — list all active self-instructions
+clear_instruction(key) — remove a standing instruction
+save_routine(name,description,steps) — save a named workflow sequence as a reusable routine
+run_routine(name) — retrieve routine steps for execution
+list_routines() — list all saved routines
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1272,13 +1397,25 @@ mutation_map(file?,topN?) — codebase churn map: most-edited files, which agent
 async function orchestrate(userText) {
   const enriched = _memcontext ? _memcontext.inject(userText) : userText;
   set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null });
+  // Dynamic self-instructions injection
+  let dynamicRole = ORCH_ROLE;
+  if (_instructions) {
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const instr = _instructions.listInstructions(memDir);
+      if (instr.length) {
+        dynamicRole = ORCH_ROLE + '\n\n**Your standing self-instructions (written by you in prior sessions):**\n' +
+          instr.map(i => `- [${i.key}] ${i.instruction}`).join('\n');
+      }
+    } catch {}
+  }
   try {
     for await (const m of query({
       prompt: enriched,
       options: {
         resume: orchSession || undefined,
         model: MODEL,
-        systemPrompt: { type: "preset", preset: "claude_code", append: ORCH_ROLE },
+        systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
       },
@@ -1557,8 +1694,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (34 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`,
+        `## Tools (40 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
