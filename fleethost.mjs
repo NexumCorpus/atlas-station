@@ -64,6 +64,8 @@ let _crystals = null;
 try { _crystals = _require('./crystals.cjs'); } catch { _crystals = null; }
 let _clusters = null;
 try { _clusters = _require('./clusters.cjs'); } catch { _clusters = null; }
+let _outcomeTracker = null;
+try { _outcomeTracker = _require('./outcome-tracker.cjs'); } catch { _outcomeTracker = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -565,7 +567,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -618,10 +620,11 @@ const capabilityManifestTool = tool(
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
-      "drain_proposals", "prune_facts"
+      "drain_proposals", "prune_facts",
+      "rate_build", "build_outcomes", "revert_build"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
@@ -1609,7 +1612,86 @@ const pruneFactsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool] });
+const rateBuildTool = tool(
+  "rate_build",
+  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes.",
+  {
+    agentId: z.string().describe("Agent ID to rate (e.g. 'B-91')"),
+    rating: z.enum(["good", "partial", "bad"]).describe("good = achieved goal cleanly; partial = worked but with issues; bad = missed the goal or introduced problems"),
+    notes: z.string().optional().describe("What specifically was good or bad about this build"),
+  },
+  async (args) => {
+    if (!_outcomeTracker) return { content: [{ type: 'text', text: 'outcome-tracker module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const entry = _outcomeTracker.rateOutcome(args.agentId, args.rating, args.notes, memDir);
+      return { content: [{ type: 'text', text: `Rated ${args.agentId}: ${entry.rating}${args.notes ? ' — ' + args.notes : ''}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `rate_build error: ${e.message}` }] };
+    }
+  }
+);
+
+const buildOutcomesTool = tool(
+  "build_outcomes",
+  "Show aggregate build quality metrics — success rate, rating distribution, recent outcomes. Use to evaluate whether the fleet is improving over time.",
+  {
+    showRecent: z.number().optional().describe("Show this many most recent rated builds (default 5)"),
+  },
+  async (args) => {
+    if (!_outcomeTracker) return { content: [{ type: 'text', text: 'outcome-tracker module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const stats = _outcomeTracker.outcomeStats(memDir);
+      if (!stats.total) return { content: [{ type: 'text', text: 'No outcomes recorded yet. Use rate_build after completing a build.' }] };
+      const n = args.showRecent || 5;
+      const recent = stats.recent || [];
+      const lines = [
+        `Build outcomes (${stats.total} rated):`,
+        `  Good: ${stats.good} | Partial: ${stats.partial} | Bad: ${stats.bad}`,
+        `  Success rate: ${stats.successRate}`,
+        recent.length ? `\nRecent (last ${Math.min(n, recent.length)}):` : '',
+        ...recent.slice(-n).map(o => `  [${String(o.ts).slice(0, 10)}] ${o.agentId}: ${o.rating}${o.notes ? ' — ' + o.notes.slice(0, 60) : ''}`),
+      ];
+      return { content: [{ type: 'text', text: lines.filter(Boolean).join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `build_outcomes error: ${e.message}` }] };
+    }
+  }
+);
+
+const revertBuildTool = tool(
+  "revert_build",
+  "Revert a fleet build by finding its merge commit and running git revert. Use when verify_build or manual review shows a build introduced problems. Creates a new revert commit — does not force-push or lose history.",
+  {
+    agentId: z.string().describe("Agent ID whose merge commit to revert (e.g. 'B-91')"),
+    dryRun: z.boolean().optional().describe("If true, show which commit would be reverted without reverting"),
+  },
+  async (args) => {
+    try {
+      let mergeLog = '';
+      try { mergeLog = gitC(["log", "--oneline", "--regexp-ignore-case", "--grep", `fleet/${args.agentId}`, "-1"]).trim(); } catch {}
+      if (!mergeLog) return { content: [{ type: 'text', text: `No merge commit found for ${args.agentId}. Check git log manually.` }] };
+      const hash = mergeLog.split(' ')[0];
+      if (args.dryRun) return { content: [{ type: 'text', text: `Would revert: ${mergeLog}` }] };
+      let parentCount = 1;
+      try {
+        const parents = gitC(["log", "--format=%P", "-1", hash]).trim().split(' ').filter(Boolean);
+        parentCount = parents.length;
+      } catch {}
+      const revertArgs = parentCount > 1 ? ["revert", "-m", "1", "--no-edit", hash] : ["revert", "--no-edit", hash];
+      const result = gitC(revertArgs);
+      if (_outcomeTracker) {
+        try { _outcomeTracker.rateOutcome(args.agentId, 'bad', 'reverted', path.join(REPO, 'memory')); } catch {}
+      }
+      return { content: [{ type: 'text', text: `Reverted fleet/${args.agentId} (${hash}):\n${result}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `revert_build error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1662,6 +1744,9 @@ crystallize(showExisting?) — trigger/view session memory crystals; auto-fires 
 cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
 drain_proposals(priority?,dryRun?) — convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
 prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) — mark old low-confidence facts stale; use memory_health first to see age distribution
+rate_build(agentId,rating,notes?) — record quality rating (good/partial/bad) for a build; feeds success-rate metric
+build_outcomes(showRecent?) — show aggregate build quality: success rate, distribution, recent ratings
+revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2049,8 +2134,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (46 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts`,
+        `## Tools (49 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,

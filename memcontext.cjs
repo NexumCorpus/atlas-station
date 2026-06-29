@@ -49,6 +49,7 @@ E:\\atlas-station source files:
 - routines.cjs: Workflow subroutine library — saveRoutine, getRoutine, listRoutines. File: memory/routines.ndjson.
 - crystals.cjs: Session crystallization — distills session activity into 3-sentence crystals every 5 turns. File: memory/crystals.ndjson.
 - clusters.cjs: Fact topology — assignCluster, listClusters, recluster. File: memory/clusters.ndjson.
+- outcome-tracker.cjs: Build quality tracking — rateOutcome, outcomeStats. File: memory/outcomes.ndjson.
 - prune.mjs: Sprawl cleanup — removes merged fleet/* branches and their worktrees. Run: node prune.mjs.
 Fleet pattern: build agents use isolated git worktrees at E:\\atlas-wt\\<id> on branch fleet/<id>.
 Resonance: all build agents automatically receive a PAST EXPERIENCE block injected into their prompts when semantically similar past tasks exist — institutional memory propagates through the fleet.`;
