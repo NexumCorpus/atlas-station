@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...57 tools, call capability_manifest() for full list]
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...58 tools, call capability_manifest() for full list]
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
@@ -176,6 +176,18 @@ function _buildCalibration(memDir) {
  */
 function _buildDynamicBrief(memDir) {
   const lines = [];
+
+  // 0. Session State — persistent counters across daemon restarts
+  try {
+    const _ss = require('./session-state.cjs');
+    const st = _ss.load(memDir);
+    if (st.orchTurnCount > 0 || st.pulseCount > 0) {
+      lines.push('[Session State] turn:' + st.orchTurnCount + ' pulse:' + st.pulseCount +
+        (st.lastDreamTs ? ' last-dream:' + new Date(st.lastDreamTs).toISOString().slice(0,10) : '') +
+        (st.lastSessionTs ? ' resumed:' + new Date(st.lastSessionTs).toISOString().slice(0,10) : ''));
+      lines.push('');
+    }
+  } catch {}
 
   // 1. Active Projects
   try {

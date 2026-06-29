@@ -70,6 +70,10 @@ let _sessionLog = null;
 try { _sessionLog = _require('./session-log.cjs'); } catch { _sessionLog = null; }
 let _projects = null;
 try { _projects = _require('./projects.cjs'); } catch { _projects = null; }
+let _sessionState = null;
+try { _sessionState = _require('./session-state.cjs'); } catch { _sessionState = null; }
+let _proposalScorer = null;
+try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -79,6 +83,15 @@ let orchSession = null;  // ATLAS conversation session (persisted, resumes on re
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
 let orchTurnCount = 0;
+
+// Restore persistent session counters from prior runs
+if (_sessionState) {
+  try {
+    const _savedState = _sessionState.load(path.join(REPO, 'memory'));
+    if (_savedState.orchTurnCount > 0) orchTurnCount = _savedState.orchTurnCount;
+    if (_savedState.pulseCount > 0) pulseCount = _savedState.pulseCount;
+  } catch {}
+}
 
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function pruneAgent(id) {
@@ -593,7 +606,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -2093,7 +2106,99 @@ const autoBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool] });
+const triageProposalsTool = tool(
+  "triage_proposals",
+  "Score and triage pending proposals using proposal-scorer: filters by minScore and rejects high-effort/low-impact proposals. Returns proposals sorted highest score first. Helps prioritize what to act on and clears low-value backlog.",
+  {
+    priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().describe("Which priority to triage (default: HIGH)"),
+    minScore: z.number().optional().describe("Proposals below this score are rejected (default: 30)"),
+  },
+  async (args) => {
+    if (!_proposalScorer) return { content: [{ type: 'text', text: 'proposal-scorer not available' }] };
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const proposalsFile = path.join(memDir, 'proposals.ndjson');
+      if (!fs.existsSync(proposalsFile)) return { content: [{ type: 'text', text: 'No proposals file found.' }] };
+
+      const priority = (args.priority || 'HIGH').toUpperCase();
+      const minScore = typeof args.minScore === 'number' ? args.minScore : 30;
+
+      // Load proposals
+      const allLines = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean);
+      const all = allLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      const pending = priority === 'ALL'
+        ? all.filter(p => p.state === 'pending')
+        : all.filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === priority);
+
+      if (!pending.length) return { content: [{ type: 'text', text: `No pending ${priority === 'ALL' ? '' : priority + ' '}proposals found.` }] };
+
+      // Load active goals for scoring context
+      let activeGoals = [];
+      try {
+        const goalFile = path.join(memDir, 'goals.ndjson');
+        if (fs.existsSync(goalFile)) {
+          activeGoals = fs.readFileSync(goalFile, 'utf8').trim().split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+            .filter(g => g.state === 'active');
+        }
+      } catch {}
+
+      // Score each proposal
+      const scored = pending.map(p => {
+        const { score, coherence, effortLevel, impactLevel, reason } = _proposalScorer.scoreProposal(p, activeGoals);
+        return { ...p, _score: score, _coherence: coherence, _effortLevel: effortLevel, _impactLevel: impactLevel, _reason: reason };
+      });
+
+      // Reject low-score or high-effort/low-impact proposals
+      const rejected = [];
+      const kept = [];
+      for (const p of scored) {
+        const shouldReject = p._score < minScore || (p._effortLevel === 'high' && p._impactLevel === 'low');
+        if (shouldReject) {
+          rejected.push(p);
+        } else {
+          kept.push(p);
+        }
+      }
+
+      // Write back updated proposals.ndjson with rejected states
+      if (rejected.length > 0) {
+        const rejectedIds = new Set(rejected.map(p => p.ts));
+        const updated = all.map(p => {
+          if (rejectedIds.has(p.ts) && p.state === 'pending') {
+            const scorer = rejected.find(r => r.ts === p.ts);
+            return { ...p, state: 'rejected', rejectionReason: scorer ? scorer._reason : 'below minScore or high-effort/low-impact' };
+          }
+          return p;
+        });
+        fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+      }
+
+      // Sort kept proposals by score descending
+      kept.sort((a, b) => b._score - a._score);
+
+      const lines = [
+        `Triage complete — ${kept.length} kept, ${rejected.length} rejected (minScore:${minScore}, priority:${priority})`,
+        '',
+      ];
+      for (const p of kept) {
+        lines.push(`[score:${p._score}] [${p.priority || '?'}] ${(p.description || p.text || '').slice(0, 80)} — ${p._reason}`);
+      }
+      if (rejected.length) {
+        lines.push('', `Rejected (${rejected.length}):`);
+        for (const p of rejected) {
+          lines.push(`  [score:${p._score}] ${(p.description || p.text || '').slice(0, 60)} — ${p._reason}`);
+        }
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `triage_proposals error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2157,6 +2262,7 @@ project_advance(id,notes?) — advance project to next phase; auto-completes on 
 project_status(id?,showAll?) — list active projects or detail a specific project (phases, milestones, log)
 project_complete(id,outcome,notes?) — mark project completed or abandoned with outcome note
 auto_build(focus?,limit?,dryRun?,priority?) — autonomously spawn builds from the proposals backlog; reads pending HIGH proposals, launches agents, marks as queued, notifies Daniel
+triage_proposals(priority?,minScore?) — score pending proposals via proposal-scorer; reject below minScore(default:30) or high-effort/low-impact; returns sorted list highest score first
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2345,6 +2451,10 @@ async function orchestrate(userText) {
         orchTurnCount++;
         if (orchTurnCount % 5 === 0 && _crystals) {
           triggerCrystallization(orchTurnCount).catch(() => {});
+        }
+        // Persist session counters across daemon restarts
+        if (_sessionState) {
+          try { _sessionState.save({ orchTurnCount, pulseCount }, path.join(REPO, 'memory')); } catch {}
         }
       }
     }
@@ -2542,6 +2652,10 @@ try {
 const PULSE_INTERVAL = parseInt(process.env.ATLAS_PULSE_MS || '') || (25 * 60 * 1000);
 async function runPulse() {
   pulseCount++;
+  // Persist session counters after each pulse
+  if (_sessionState) {
+    try { _sessionState.save({ orchTurnCount, pulseCount }, path.join(REPO, 'memory')); } catch {}
+  }
   try {
     const pulsePath = path.join(REPO, 'memory', 'pulse.ndjson');
     const gitLog = gitC(["log", "--oneline", "-3"]).trim();
@@ -2578,8 +2692,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (57 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`,
+        `## Tools (58 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
