@@ -77,6 +77,24 @@ try { _sessionState = _require('./session-state.cjs'); } catch { _sessionState =
 let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 
+// Debounced persist — fires at most once per second to avoid thrashing disk on
+// streaming updates (which call set() dozens of times per second).
+// Terminal states (done/failed) bypass the debounce to avoid data loss on exit.
+var _persistTimer = null;
+var _persistPending = null;
+function debouncedPersist(state) {
+  _persistPending = state;
+  if (!_persistTimer) {
+    _persistTimer = setTimeout(function() {
+      _persistTimer = null;
+      if (_persistPending) {
+        try { _persist.save(_persistPending); } catch (_) {}
+        _persistPending = null;
+      }
+    }, 1000); // persist at most once per second
+  }
+}
+
 const agents = new Map();
 const abortControllers = new Map();
 const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
@@ -144,7 +162,14 @@ function set(id, patch) {
     const runningCost = [...agents.values()].reduce((s, ag) => s + (Number(ag.cost) || 0), 0);
     send('session_cost', { total: runningCost, agentCount: sessionStats.agentCount });
   }
-  if (_persist) { try { _persist.save({ agents: [...agents.values()], maxCounter: _maxCounter, orchSession }); } catch {} }
+  if (_persist) {
+    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession };
+    if (patch.state === 'done' || patch.state === 'failed') {
+      try { _persist.save(newState); } catch (_) {} // immediate — don't lose terminal state on exit
+    } else {
+      debouncedPersist(newState); // debounced — streaming updates fire dozens/sec
+    }
+  }
   if ((patch.state === "done" || patch.state === "failed") && id !== "ATLAS") {
     const cur = agents.get(id);
     if (cur && cur.branch && cur.mode === "build") {

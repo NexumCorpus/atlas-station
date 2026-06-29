@@ -78,6 +78,29 @@ function loadJournalExcerpt(journalPath, maxChars) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Git context cache — spawnSync is synchronous and blocks the process for up
+// to 3 s per call. Cache the results for 30 s so rapid consecutive dispatches
+// don't all pay the full git I/O cost.
+var _gitCache = { status: '', log: '', ts: 0 };
+var GIT_CACHE_TTL = 30000; // 30 seconds
+
+function getGitContext() {
+  var now = Date.now();
+  if (now - _gitCache.ts < GIT_CACHE_TTL) return _gitCache;
+  try {
+    const { spawnSync } = require('child_process');
+    var statusResult = spawnSync('git', ['status', '--short'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+    var logResult    = spawnSync('git', ['log', '--oneline', '-3'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
+    _gitCache = {
+      status: (statusResult.stdout || '').trim(),
+      log:    (logResult.stdout    || '').trim(),
+      ts: now
+    };
+  } catch (_) {}
+  return _gitCache;
+}
+
 // Lazy-load memstore so this module has no hard dependency on it.
 // If memstore.cjs is absent or broken, we just skip those sections.
 // Sentinel: undefined = not yet attempted; null = attempted but failed; object = loaded.
@@ -379,21 +402,12 @@ function buildContext(task, opts = {}) {
   // 4. Temporal awareness — skipped for build agents (they work in their own worktree)
   if (tier !== 'build') {
     try {
-      const { spawnSync } = require('child_process');
       const now = new Date();
       const lines = [`Now: ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`];
-      // Last 3 git commits — spawnSync avoids shell interpolation
-      const logResult = spawnSync('git', ['log', '--oneline', '-3'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
-      if (logResult.status === 0) {
-        const gitLog = (logResult.stdout || '').trim();
-        if (gitLog) lines.push(`Recent commits:\n${gitLog}`);
-      }
-      // Git status summary
-      const statusResult = spawnSync('git', ['status', '--short'], { cwd: __dirname, timeout: 3000, encoding: 'utf8' });
-      if (statusResult.status === 0) {
-        const gitStatus = (statusResult.stdout || '').trim();
-        lines.push(`Working tree: ${gitStatus ? 'dirty\n' + gitStatus : 'clean'}`);
-      }
+      // Last 3 git commits and status — use 30-second cache to avoid blocking on every dispatch
+      const gitCtx = getGitContext();
+      if (gitCtx.log) lines.push(`Recent commits:\n${gitCtx.log}`);
+      lines.push(`Working tree: ${gitCtx.status ? 'dirty\n' + gitCtx.status : 'clean'}`);
       if (lines.length > 1) parts.push(`[Now]\n${lines.join('\n')}`);
     } catch {}
   }
