@@ -414,13 +414,38 @@ const proposeTool = tool(
     area: z.enum(["gui", "fleet", "memory", "autonomy", "other"]).optional().describe("Which part of the station"),
   },
   async (args) => {
+    // Auto-score at intake
+    let intakeScore = null;
+    let intakeEffort = null;
+    let intakeImpact = null;
+    if (_proposalScorer) {
+      try {
+        const fs = _require('fs');
+        const goalsFile = path.join(REPO, 'memory', 'goals.ndjson');
+        const activeGoals = fs.existsSync(goalsFile)
+          ? fs.readFileSync(goalsFile, 'utf8').trim().split('\n').filter(Boolean)
+              .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+              .filter(g => (g.state || g.status) !== 'completed')
+          : [];
+        const scored = _proposalScorer.scoreProposal({ description: args.description || args.proposal, priority: args.priority }, activeGoals);
+        intakeScore = scored.score;
+        intakeEffort = scored.effortLevel;
+        intakeImpact = scored.impactLevel;
+      } catch {}
+    }
+    const priority = args.priority || 'medium';
+    const autoRejected = intakeScore !== null && intakeScore < 20 && priority !== 'high';
     const proposal = {
       id: 'P-' + Date.now(),
       ts: new Date().toISOString(),
       description: args.description || '',
-      priority: args.priority || 'medium',
+      priority,
       area: args.area || 'other',
-      state: 'pending',
+      state: autoRejected ? 'rejected' : 'pending',
+      ...(autoRejected ? { rejectionReason: 'auto-rejected at intake: score ' + intakeScore } : {}),
+      _score: intakeScore,
+      _effortLevel: intakeEffort,
+      _impactLevel: intakeImpact,
     };
     // Persist to disk
     try {
@@ -430,7 +455,8 @@ const proposeTool = tool(
     } catch (_) {}
     // Broadcast to GUI
     send('proposal', proposal);
-    return { content: [{ type: 'text', text: `Proposal queued: ${proposal.id} — "${proposal.description.slice(0, 80)}"` }] };
+    const statusNote = autoRejected ? ` (auto-rejected: score ${intakeScore})` : intakeScore !== null ? ` (score: ${intakeScore})` : '';
+    return { content: [{ type: 'text', text: `Proposal queued: ${proposal.id} — "${proposal.description.slice(0, 80)}"${statusNote}` }] };
   }
 );
 const loadProposalsTool = tool(
