@@ -694,7 +694,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -743,7 +743,7 @@ const capabilityManifestTool = tool(
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
       "read_self", "fan_research",
-      "signal_propagate", "generate_tool", "verify_build", "staged_verify_build", "mutation_map",
+      "signal_propagate", "generate_tool", "verify_build", "run_tests", "staged_verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
@@ -1465,6 +1465,64 @@ const verifyBuildTool = tool(
   }
 );
 
+const runTestsTool = tool(
+  "run_tests",
+  "Run the ATLAS behavioral and smoke test suites. Returns structured pass/fail results with failing test names. Call after every merge or build to verify behavioral integrity. Required before marking any daemon build session successful.",
+  {},
+  async (_args) => {
+    try {
+      const { execSync } = _require('child_process');
+      const results = { behavioral: null, smoke: null, passed: 0, failed: 0, failures: [] };
+
+      // Run behavioral tests
+      try {
+        const out = execSync(`node tests/behavioral.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 60000 });
+        const passMatch = out.match(/(\d+) passed/);
+        const failMatch = out.match(/(\d+) failed/);
+        const bPassed = passMatch ? parseInt(passMatch[1]) : 0;
+        const bFailed = failMatch ? parseInt(failMatch[1]) : 0;
+        const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:'));
+        results.behavioral = { passed: bPassed, failed: bFailed, failures: failLines };
+        results.passed += bPassed;
+        results.failed += bFailed;
+        results.failures.push(...failLines);
+      } catch (e) {
+        const out = (e.stdout || '') + (e.stderr || '');
+        const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:'));
+        results.behavioral = { passed: 0, failed: 99, error: e.message.slice(0, 200), failures: failLines };
+        results.failed += failLines.length || 1;
+        results.failures.push(...failLines);
+      }
+
+      // Run smoke tests
+      try {
+        const out = execSync(`node tests/smoke.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 30000 });
+        const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:') || l.includes('FAIL'));
+        const passLines = out.split('\n').filter(l => l.trim().startsWith('OK  ') || l.includes(' ok,'));
+        results.smoke = { passed: passLines.length, failed: failLines.length, failures: failLines };
+        results.passed += passLines.length;
+        results.failed += failLines.length;
+        results.failures.push(...failLines);
+      } catch (e) {
+        const out = (e.stdout || '') + (e.stderr || '');
+        const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:') || l.includes('FAIL'));
+        results.smoke = { passed: 0, failed: 1, error: e.message.slice(0, 200), failures: failLines };
+        results.failed += failLines.length || 1;
+        results.failures.push(...failLines);
+      }
+
+      const verdict = results.failed === 0 ? 'PASS' : 'FAIL';
+      const summary = `run_tests: ${verdict} — ${results.passed} passed, ${results.failed} failed`;
+      if (results.failures.length > 0) {
+        return { content: [{ type: 'text', text: summary + '\n\nFailing tests:\n' + results.failures.slice(0, 20).join('\n') }] };
+      }
+      return { content: [{ type: 'text', text: summary }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `run_tests error: ${e.message}` }] };
+    }
+  }
+);
+
 const stagedVerifyTool = tool(
   "staged_verify_build",
   "Merge fleet branch into a temp branch off master, run node --check, report pass/fail — never touches master. Call before committing a real merge.",
@@ -1522,18 +1580,38 @@ const stagedVerifyTool = tool(
       try { gitC(['merge', '--abort']); } catch { try { gitC(['reset', '--hard', 'HEAD']); } catch {} }
       gitC(['checkout', 'master']);
       gitC(['branch', '-D', temp]);
-      const allPassed = checkOk && smokeTestPassed;
-      if (!allPassed) {
-        let failMsg = '';
-        if (!checkOk) failMsg += 'STAGED VERIFY FAIL: ' + checkErr;
-        if (!smokeTestPassed) {
-          const failures = smokeTestResults.filter(r => !r.ok).map(r => `  ${r.file}: ${r.error}`).join('\n');
-          failMsg += (failMsg ? '\n' : 'STAGED VERIFY FAIL: ') + 'require() smoke-test failed:\n' + failures;
+      let allPassed = checkOk && smokeTestPassed;
+      let failMsg = '';
+      if (!checkOk) failMsg += 'STAGED VERIFY FAIL: ' + checkErr;
+      if (!smokeTestPassed) {
+        const failures = smokeTestResults.filter(r => !r.ok).map(r => `  ${r.file}: ${r.error}`).join('\n');
+        failMsg += (failMsg ? '\n' : 'STAGED VERIFY FAIL: ') + 'require() smoke-test failed:\n' + failures;
+      }
+      // Step 3.6: Run behavioral tests on merged state
+      let testNote = '';
+      try {
+        const { execSync: execSyncT } = _require('child_process');
+        const testOut = execSyncT(`node tests/behavioral.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 60000 });
+        const failMatch = testOut.match(/(\d+) failed/);
+        const passMatch = testOut.match(/(\d+) passed/);
+        const bFailed = failMatch ? parseInt(failMatch[1]) : 0;
+        const bPassed = passMatch ? parseInt(passMatch[1]) : 0;
+        if (bFailed === 0) {
+          testNote = ` | behavioral: ${bPassed} passed`;
+        } else {
+          const failLines = testOut.split('\n').filter(l => l.trim().startsWith('FAIL:')).slice(0, 5);
+          testNote = ` | behavioral: ${bFailed} FAILED — ` + failLines.join('; ');
+          allPassed = false;
+          failMsg += '\nBehavioral tests failed:\n' + failLines.join('\n');
         }
-        return { content: [{ type: 'text', text: failMsg }] };
+      } catch (e) {
+        testNote = ` | behavioral: ERROR (${e.message.slice(0, 100)})`;
+      }
+      if (!allPassed) {
+        return { content: [{ type: 'text', text: failMsg + testNote }] };
       }
       const smokeNote = smokeTestResults.length ? ` | smoke-tested ${smokeTestResults.length} new .cjs file${smokeTestResults.length !== 1 ? 's' : ''}` : '';
-      return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' + smokeNote }] };
+      return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' + smokeNote + testNote }] };
     } catch (e) {
       // Emergency cleanup — restore master regardless of what went wrong
       try { gitC(['merge', '--abort']); } catch {}
@@ -2643,7 +2721,7 @@ const daemonHealthTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2685,7 +2763,8 @@ fan_research(question,angles[],saveAs?) — parallel multi-angle research: N Hai
 signal_propagate(factKey) — propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
-staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check, report pass/fail — never touches master; call before a real merge
+run_tests() — run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
+staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail — never touches master; call before a real merge
 mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
 set_instruction(key,instruction) — write a standing behavioral directive to memory; injected into your context every session
 get_instructions() — list all active self-instructions
@@ -2717,7 +2796,7 @@ daemon_health() — check scheduler job status + last run time; health: healthy/
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
 - Verify subagent claims against actual git state and file reads — never trust a written summary alone.
-- Call verify_build(agentId) after every merge — confirms syntax integrity and stores verdict as fact.
+- Call verify_build(agentId) after every merge — confirms syntax integrity and stores verdict as fact. Then call run_tests() to confirm behavioral integrity.
 - Agents auto-cancel after 20 minutes by default.
 
 **Station architecture you should know:**
@@ -3144,8 +3223,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (63 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
+        `## Tools (64 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,

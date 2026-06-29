@@ -26,7 +26,11 @@ Work through this in order — stop when the session budget is spent or when the
 
 Standing rules:
 - Never spawn more than 2 build agents in one daemon session.
-- After any merge, run verify_build to confirm syntax integrity.
+- After any merge, call both verify_build() AND run_tests() — if run_tests returns FAIL, you MUST attempt repair:
+  1. Spawn a build agent with the failing test output as context: "These tests are failing after the last merge: [test output]. Fix the root cause."
+  2. After the repair agent completes, call run_tests() again.
+  3. If tests now pass: log success and continue. If still failing: call revert_build() on the last merge, then notify_self() with what happened and why. Stop further builds this session.
+  4. Maximum 1 repair attempt per failed build. If repair itself fails to merge, notify_self and stop.
 - If you find something important Daniel should know, use notify_self(text, type:"alert").
 - Be decisive. Do real work if there is real work to do. If everything is done, say so briefly and exit.`;
 
