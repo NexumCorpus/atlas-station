@@ -10,7 +10,7 @@
 // MUST spawn a build subagent (isolated worktree), never the live tree.
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { execFileSync } from "child_process";
+import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
@@ -179,6 +179,13 @@ function set(id, patch) {
     // Post-build improvement trigger: every 5th completed build, spawn a background
     // pattern analysis agent so improvement is continual, not just scheduled.
     if (patch.state === "done" && cur && cur.mode === "build") {
+      // Stigmergy exit ritual — update pheromone field from this build's commit
+      if (cur.branch) {
+        try {
+          const stigmaProc = spawnChild(process.execPath, [path.join(REPO, 'stigma-write.mjs'), id, cur.branch, REPO], { cwd: REPO, stdio: 'pipe' });
+          stigmaProc.on('error', () => {});
+        } catch (_) {}
+      }
       _completedBuildCount++;
       if (_completedBuildCount % 5 === 0) {
         setTimeout(() => {
