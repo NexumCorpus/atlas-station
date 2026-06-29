@@ -1884,8 +1884,18 @@ const projectCompleteTool = tool(
 
 function autoRate(resultStr) {
   const text = (resultStr || '').toLowerCase();
-  if (text.includes('syntaxerror') || text.includes('error:') || text.includes('failed to') || text.includes('conflict')) return 'bad';
-  if (text.includes('pass') || (text.includes('done') && !text.includes('error'))) return 'good';
+  // Bad: unambiguous failure signals
+  if (text.includes('syntaxerror') || text.includes('merge conflict') ||
+      text.includes('failed to delete') || text.includes('worktree error') ||
+      /\berror:\s/.test(text) && !text.includes('no error') && !text.includes('error: none')) {
+    return 'bad';
+  }
+  // Good: verify_build PASS or explicit success patterns
+  if (text.includes('node --check') && text.includes('pass') ||
+      text.includes('syntax ok') || text.includes('✓') ||
+      /\bcommitted\b/.test(text) && !/\berror\b/.test(text)) {
+    return 'good';
+  }
   return 'partial';
 }
 
@@ -1951,11 +1961,12 @@ const autoBuildTool = tool(
 
         // Mark proposal as queued — match by ts (unique ISO timestamp)
         try {
-          const updated = all.map(p =>
-            (p.ts === proposal.ts)
-              ? { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId: bareId }
-              : p
-          );
+          const freshLines = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean);
+          const freshAll = freshLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          const updated = freshAll.map(p => {
+            if (p.ts === proposal.ts) return { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId: bareId };
+            return p;
+          });
           fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
         } catch {}
       }
@@ -2567,14 +2578,14 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
             const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
             for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
               _deferred.deferTask(proposal, 'auto-deferred from dream protocol (HIGH priority)', memDir);
-              // Also write to proposals.ndjson so auto_build can find it
+              // Also write to proposals.ndjson for visibility (state: deferred so auto_build skips it — deferred task is the single execution path)
               try {
                 const pEntry = {
                   ts: new Date().toISOString(),
                   description: proposal,
                   priority: 'HIGH',
                   area: 'dream',
-                  state: 'pending',
+                  state: 'deferred',
                   source: 'dream-auto',
                 };
                 fs.appendFileSync(path.join(memDir, 'proposals.ndjson'), JSON.stringify(pEntry) + '\n', 'utf8');
