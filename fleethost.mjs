@@ -571,7 +571,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -627,7 +627,8 @@ const capabilityManifestTool = tool(
       "drain_proposals", "prune_facts",
       "rate_build", "build_outcomes", "revert_build",
       "capture_insight", "context_telemetry",
-      "project_create", "project_advance", "project_status", "project_complete"
+      "project_create", "project_advance", "project_status", "project_complete",
+      "auto_build"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -1881,7 +1882,90 @@ const projectCompleteTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool] });
+const autoBuildTool = tool(
+  "auto_build",
+  "Autonomously initiate fleet builds from the proposals backlog. Reads pending HIGH-priority proposals, spawns a build agent for each (up to limit), marks them as queued, and notifies Daniel. Use to self-direct work without requiring a per-build prompt.",
+  {
+    focus: z.string().optional().describe("Keyword to prefer — proposals whose text matches focus rank first"),
+    limit: z.number().optional().default(1).describe("Max number of proposals to build simultaneously. Default: 1."),
+    dryRun: z.boolean().optional().describe("If true, show what would be built without spawning agents"),
+    priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().default("HIGH").describe("Which priority to draw from. Default: HIGH only."),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const proposalsFile = path.join(memDir, 'proposals.ndjson');
+
+      if (!fs.existsSync(proposalsFile))
+        return { content: [{ type: 'text', text: 'No proposals file found.' }] };
+
+      // 1. Load all proposals
+      const all = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+      const targetPriority = (args.priority || 'HIGH').toUpperCase();
+      let candidates = targetPriority === 'ALL'
+        ? all.filter(p => p.state === 'pending')
+        : all.filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === targetPriority);
+
+      if (!candidates.length)
+        return { content: [{ type: 'text', text: `No pending ${targetPriority === 'ALL' ? '' : targetPriority + ' '}proposals found.` }] };
+
+      // 2. Rank by focus keyword if provided
+      if (args.focus) {
+        const kw = args.focus.toLowerCase();
+        candidates = candidates.sort((a, b) => {
+          const textA = (a.description || a.text || a.proposal || '').toLowerCase();
+          const textB = (b.description || b.text || b.proposal || '').toLowerCase();
+          return (textB.includes(kw) ? 1 : 0) - (textA.includes(kw) ? 1 : 0);
+        });
+      }
+
+      const limit = Math.min(args.limit || 1, 3); // hard cap at 3
+      const toRun = candidates.slice(0, limit);
+
+      if (args.dryRun) {
+        return { content: [{ type: 'text', text: `Would build ${toRun.length} proposal(s):\n${toRun.map((p, i) => `${i+1}. [${p.priority}] ${(p.description || p.text || p.proposal || JSON.stringify(p)).slice(0, 120)}`).join('\n')}` }] };
+      }
+
+      // 3. Spawn and track
+      const launched = [];
+      for (const proposal of toRun) {
+        const proposalText = proposal.description || proposal.text || proposal.proposal || String(proposal);
+        const agentId = await runSubagent(proposalText, 'build');
+        launched.push({ agentId, proposal: proposalText.slice(0, 80) });
+
+        // Mark proposal as queued — match by ts (unique ISO timestamp)
+        try {
+          const updated = all.map(p =>
+            (p.ts === proposal.ts)
+              ? { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId }
+              : p
+          );
+          fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+        } catch {}
+      }
+
+      // 4. Notify
+      if (_notif) {
+        try {
+          const summary = launched.map(l => `• ${l.agentId}: ${l.proposal}`).join('\n');
+          const n = _notif.notify(`auto_build launched ${launched.length} agent(s):\n${summary}`, 'info', path.join(REPO, 'memory'));
+          if (n) send('notification', n);
+        } catch {}
+      }
+
+      const result = launched.map(l => `${l.agentId}: ${l.proposal}`).join('\n');
+      return { content: [{ type: 'text', text: `Launched ${launched.length} build agent(s):\n${result}` }] };
+
+    } catch (e) {
+      return { content: [{ type: 'text', text: `auto_build error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1943,6 +2027,7 @@ project_create(name,description,phases[],area?,milestones?,linkedGoalId?) — st
 project_advance(id,notes?) — advance project to next phase; auto-completes on last phase
 project_status(id?,showAll?) — list active projects or detail a specific project (phases, milestones, log)
 project_complete(id,outcome,notes?) — mark project completed or abandoned with outcome note
+auto_build(focus?,limit?,dryRun?,priority?) — autonomously spawn builds from the proposals backlog; reads pending HIGH proposals, launches agents, marks as queued, notifies Daniel
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2364,8 +2449,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (55 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete`,
+        `## Tools (56 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
