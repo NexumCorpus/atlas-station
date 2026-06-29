@@ -279,7 +279,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     if (build && _resonance) {
       try {
         const runsFile = path.join(REPO, 'memory', 'runs.jsonl');
-        const matches = _resonance.findSimilarRuns(task, runsFile, { maxResults: 2, minScore: 0.15 });
+        const matches = _resonance.findSimilarRuns(task, runsFile, { maxResults: 3, minScore: 0.10 });
         const expBlock = _resonance.formatExperience(matches);
         if (expBlock) {
           resonantTask = fullTask + expBlock;
