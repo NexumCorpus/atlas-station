@@ -1987,7 +1987,7 @@ const pruneFactsTool = tool(
 
 const rateBuildTool = tool(
   "rate_build",
-  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes. Always provide causalChain for 'bad' ratings — record which reasoning steps broke and what assumptions they violated.",
+  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes. IMPORTANT: Provide causalChain for every rating — for 'bad' ratings it is required (record which reasoning steps broke and what assumptions they violated). For 'good' ratings, describe what went right in causal terms.",
   {
     agentId: z.string().describe("Agent ID to rate (e.g. 'B-91')"),
     rating: z.enum(["good", "partial", "bad"]).describe("good = achieved goal cleanly; partial = worked but with issues; bad = missed the goal or introduced problems"),
@@ -2800,7 +2800,27 @@ const daemonHealthTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
+const populationStatusTool = tool(
+  "population_status",
+  "Show current evolutionary population state: variants, behavioral archive, generation count.",
+  {},
+  async () => {
+    try {
+      const atlasDir = path.join(REPO, '.atlas');
+      const popPath = path.join(atlasDir, 'population.json');
+      const _fs = _require('fs');
+      if (!_fs.existsSync(popPath)) return { content: [{ type: 'text', text: 'No population archive yet. Run: node scripts/population_engine.mjs' }] };
+      const pop = JSON.parse(_fs.readFileSync(popPath, 'utf8'));
+      const variantSummary = pop.variants.map(v => `  ${v.id} (${v.status}): gen=${v.generation}, cell=${v.behavioralCell || 'unmeasured'}, dialect=${v.mutationDialect}`).join('\n');
+      const archiveSize = Object.keys(pop.archive || {}).length;
+      return { content: [{ type: 'text', text: `Population: gen ${pop.generation}, ${pop.variants.length} variants, ${archiveSize} archive cells\n${variantSummary}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: 'population_status error: ' + e.message }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, populationStatusTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2856,7 +2876,7 @@ crystallize(showExisting?) — trigger/view session memory crystals; auto-fires 
 cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
 drain_proposals(priority?,dryRun?) — convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
 prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) — mark old low-confidence facts stale; use memory_health first to see age distribution
-rate_build(agentId,rating,notes?,causalChain?) — record quality rating (good/partial/bad) for a build; causalChain required for 'bad' ratings — record which reasoning steps broke
+rate_build(agentId,rating,causalChain?,notes?) — record quality rating (good/partial/bad) for a build; feeds success-rate metric. IMPORTANT: provide causalChain for EVERY rating — required for 'bad' (which steps broke, what assumptions violated), expected for 'good' (what went right, causally)
 build_outcomes(showRecent?) — show aggregate build quality: success rate, distribution, recent ratings
 revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 capture_insight(insight,category?) — manually crystallize a mid-conversation observation into persistent memory
@@ -2872,6 +2892,15 @@ proposal_analysis() — proposal queue stats: state counts, rejection rate, avg 
 memory_health_detail() — memory file inventory: record counts, file sizes, stale fact count, duplicate fact count
 daemon_report(n?) — summarize last N daemon sessions: start time, state, duration, reply excerpt
 daemon_health() — check scheduler job status + last run time; health: healthy/delayed/stale/never-run
+population_status() — show evolutionary population: variants, behavioral archive cells, generation count
+
+**Evolutionary population (Phase 1 — data collection):**
+- Population archive at E:\\atlas-station\\.atlas\\population.json tracks ATLAS variants (MAP-Elites behavioral archive).
+- Currently: variant-A (baseline). As behavioral data accumulates, variants will diverge into distinct behavioral cells.
+- Behavioral axes: planning_depth × tool_diversity × verification_rate (each 0-3 bin index, 64 cells total).
+- Use population_status to inspect variants, archive occupancy, and generation count.
+- When running behavioral_suite tasks (.atlas/behavioral_suite/), report axis scores (0-3 bins) for the variant's behavioral cell.
+- Use scripts/population_engine.mjs to record measurements: node scripts/population_engine.mjs list
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.

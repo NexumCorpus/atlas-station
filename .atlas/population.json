@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "generation": 0,
+  "description": "MAP-Elites behavioral archive — tracks ATLAS variants in 3D behavior space (planning_depth × tool_diversity × verification_rate, each 0-3 bin index)",
+  "axes": {
+    "planning_depth": { "description": "Does the variant plan ahead multiple steps or react greedily?", "bins": 4 },
+    "tool_diversity": { "description": "Does it use many tools in combination or rely on a narrow set?", "bins": 4 },
+    "verification_rate": { "description": "How often does it self-check before committing?", "bins": 4 }
+  },
+  "variants": [
+    {
+      "id": "variant-A",
+      "label": "ATLAS-baseline",
+      "generation": 0,
+      "parentId": null,
+      "branch": "master",
+      "mutationDialect": "unrestricted",
+      "behavioralCell": null,
+      "behavioralAxes": { "planning_depth": null, "tool_diversity": null, "verification_rate": null },
+      "performanceScores": {},
+      "noveltyScore": null,
+      "childrenCount": 0,
+      "status": "active",
+      "createdAt": "2026-06-29T00:00:00.000Z",
+      "notes": "Seed variant — current master ATLAS, all capabilities enabled, no dialect restrictions"
+    }
+  ],
+  "archive": {},
+  "noveltyArchive": [],
+  "lastUpdated": "2026-06-29T00:00:00.000Z"
+}
