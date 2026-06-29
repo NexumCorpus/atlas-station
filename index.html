@@ -329,7 +329,7 @@ input:focus-visible{outline:none}
 #jumptobottom.new-msg-alert{animation:jmp-pulse 1s ease-out;background:var(--accent)}
 @keyframes jmp-pulse{0%{transform:scale(1.3);box-shadow:0 0 0 0 rgba(157,107,255,.6)}100%{transform:scale(1);box-shadow:0 0 0 8px rgba(157,107,255,0)}}
 @keyframes panel-open{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-#proposals,#goals,#memfacts,#docs,#metrics,#cosmos{animation:panel-open .15s ease-out}
+#proposals,#goals,#memfacts,#docs,#metrics,#cosmos,#budget{animation:panel-open .15s ease-out}
 .vwave-active{animation-duration:.8s!important}
 @keyframes vwave-sync{0%,100%{stroke-opacity:.65}50%{stroke-opacity:1}}
 .vwave-active polyline{animation:vwave-sync .7s ease-in-out infinite}
@@ -451,6 +451,15 @@ input:focus-visible{outline:none}
         <canvas id="constellationCanvas" width="260" height="240" style="display:block;margin:0 auto;cursor:crosshair"></canvas>
         <div id="cosmostooltip" style="font-size:10px;color:var(--fg);padding:4px 8px;min-height:28px;word-break:break-all"></div>
       </div>
+      <div id="budgetlab" class="panel-hd"><span class="ph-title">⧉ Budget</span><span class="ph-chevron">›</span></div>
+      <div id="budget" style="display:none">
+        <div style="padding:8px 10px 2px;font-size:9px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">CONTEXT BUDGET</div>
+        <div id="budget-bar-wrap" style="padding:2px 10px 8px">
+          <div id="budget-bar" style="height:16px;border-radius:3px;overflow:hidden;display:flex;background:#0d0d0d;margin-bottom:5px;border:1px solid var(--border)"></div>
+          <div id="budget-total" style="font-size:9px;color:var(--dim);margin-bottom:6px;font-variant-numeric:tabular-nums"></div>
+          <div id="budget-sections" style="font-size:10px;line-height:1.7"></div>
+        </div>
+      </div>
       <div class="lab" style="border-top:1px solid var(--border)">⟦ the ledger — what's been built ⟧</div>
       <div id="ledger"></div>
       <div id="timelinelab">⬡ activity</div>
@@ -535,7 +544,7 @@ input:focus-visible{outline:none}
     try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
   }
   function getPanelStates() {
-    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos'];
+    var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget'];
     var s = {};
     ids.forEach(function(id) {
       var el = document.getElementById(id);
@@ -609,6 +618,8 @@ input:focus-visible{outline:none}
       if (metricsLab) metricsLab.classList.toggle('open', !!p.panels.metrics);
       var cosmosLab = document.getElementById('cosmoslab');
       if (cosmosLab) cosmosLab.classList.toggle('open', !!p.panels.cosmos);
+      var budgetLab = document.getElementById('budgetlab');
+      if (budgetLab) budgetLab.classList.toggle('open', !!p.panels.budget);
     }
   })();
 
@@ -1119,6 +1130,8 @@ input:focus-visible{outline:none}
       renderMetrics();
     } else if(m.type==="graph_data"){
       initConstellation(m.facts || [], m.edges || [], m.staleKeys || []);
+    } else if(m.type==="context_budget"){
+      renderContextBudget(m.stats);
     }
   });
 
@@ -1880,6 +1893,67 @@ input:focus-visible{outline:none}
       panel.style.display = opening ? 'block' : 'none';
       cosmoslab.classList.toggle('open', opening);
       if (opening) loadConstellation();
+      savePrefs({ panels: getPanelStates() });
+    });
+  }
+
+  // ── Budget panel (context composition stacked bar) ──────────
+  var BUDGET_COLORS = {
+    'STATION_BRIEF': '#22a55a',
+    'Station Journal': '#5588ff',
+    'Session Context': '#a855f7',
+    'Recent Fleet Runs': '#ff8855',
+    'Relevant Facts': '#44ddff',
+    'Now': '#888888',
+    'Session Crystals': '#ffdd44',
+  };
+  function _budgetDefaultColor(i) {
+    var palette = ['#44ddff','#5588ff','#ff8855','#a855f7','#22a55a','#ff5555','#888888'];
+    return palette[i % palette.length];
+  }
+  function renderContextBudget(stats) {
+    if (!stats || !stats.sections) return;
+    var bar = document.getElementById('budget-bar');
+    var totalEl = document.getElementById('budget-total');
+    var secsEl = document.getElementById('budget-sections');
+    if (!bar || !totalEl || !secsEl) return;
+
+    var budget = stats.budget || stats.total || 1;
+    var used = stats.total || 0;
+    var pct = Math.min(100, Math.round((used / budget) * 100));
+
+    // Stacked bar segments
+    bar.innerHTML = stats.sections.map(function(s, i) {
+      var w = Math.max(1, Math.round((s.chars / budget) * 100));
+      var matchKey = Object.keys(BUDGET_COLORS).find(function(k) { return s.header && s.header.includes(k); }) || '';
+      var color = BUDGET_COLORS[matchKey] || _budgetDefaultColor(i);
+      return '<div title="' + esc(s.header) + ' (' + s.chars + ' chars)"'
+        + ' style="width:' + w + '%;background:' + color + ';height:100%;flex-shrink:0"></div>';
+    }).join('');
+
+    // Summary line
+    totalEl.textContent = used.toLocaleString() + ' / ' + budget.toLocaleString() + ' chars (' + pct + '%)';
+
+    // Section legend
+    secsEl.innerHTML = stats.sections.map(function(s, i) {
+      var matchKey = Object.keys(BUDGET_COLORS).find(function(k) { return s.header && s.header.includes(k); }) || '';
+      var color = BUDGET_COLORS[matchKey] || _budgetDefaultColor(i);
+      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
+        + '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';display:inline-block;flex-shrink:0"></span>'
+        + '<span style="color:#aaa;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.header) + '</span>'
+        + '<span style="color:#555;font-variant-numeric:tabular-nums">' + (s.chars||0).toLocaleString() + '</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  var budgetlab = document.getElementById('budgetlab');
+  if (budgetlab) {
+    budgetlab.addEventListener('click', function() {
+      var panel = document.getElementById('budget');
+      if (!panel) return;
+      var opening = panel.style.display === 'none';
+      panel.style.display = opening ? 'block' : 'none';
+      budgetlab.classList.toggle('open', opening);
       savePrefs({ panels: getPanelStates() });
     });
   }
