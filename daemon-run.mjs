@@ -48,6 +48,18 @@ function writeLog(entry) {
   } catch (_) {}
 }
 
+// NREM memory consolidation — fire-and-forget after each daemon session.
+// Strengthens co-activated memory edges, applies proportional decay, detects conflicts.
+function runNREM(dir) {
+  try {
+    const proc = spawn(NODE, [join(dir, "scripts", "nrem-consolidation.mjs"), dir], {
+      cwd: dir, stdio: "pipe", detached: false
+    });
+    proc.on("error", () => {});
+    proc.stdout.on("data", d => writeLog({ event: "nrem-output", text: d.toString().trim() }));
+  } catch (_) {}
+}
+
 writeLog({ event: "daemon-start" });
 
 const host = spawn(NODE, ["fleethost.mjs"], {
@@ -78,6 +90,7 @@ function makeMessageHandler(proc) {
         done = true;
         const reply = (m.reply || m.summary || "(no reply)").slice(0, 3000);
         writeLog({ event: "daemon-done", state: m.state, reply });
+        runNREM(DIR);
         try {
           const _ot = _require('./outcome-tracker.cjs');
           const _def = _require('./deferred.cjs');
