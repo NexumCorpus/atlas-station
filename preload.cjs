@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld("atlas", {
   readDoc: (filename) => ipcRenderer.send("read-doc", filename),
   listDocs: () => ipcRenderer.send("list-docs"),
   readGraph: () => ipcRenderer.send("read-graph"),
+  stationHealth: () => ipcRenderer.invoke("atlas:station-health"),
   onFleet: (cb) => ipcRenderer.on("fleet", (_e, m) => cb(m)),
 });

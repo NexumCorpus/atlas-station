@@ -190,6 +190,44 @@ ipcMain.on("read-doc", (_e, filename) => {
   } catch (e) { if (win) win.webContents.send("fleet", { type: "doc_content", filename: filename || '', content: `Error: ${e.message}` }); }
 });
 
+ipcMain.handle("atlas:station-health", () => {
+  const memDir = path.join(__dirname, "memory");
+  function readNdjson(file) {
+    try {
+      if (!fs.existsSync(file)) return [];
+      return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    } catch { return []; }
+  }
+
+  // Goals: active (not completed)
+  const allGoals = readNdjson(path.join(memDir, "goals.ndjson"));
+  const goals = allGoals.filter(g => g.state !== "completed").map(g => ({ text: g.text, priority: g.priority, state: g.state }));
+
+  // Proposals: pending or deferred
+  const allProposals = readNdjson(path.join(memDir, "proposals.ndjson"));
+  const proposals = allProposals.filter(p => p.state === "pending" || p.state === "deferred").map(p => ({ title: p.title, priority: p.priority, _score: p._score }));
+
+  // Outcomes: last 20
+  const allOutcomes = readNdjson(path.join(memDir, "outcomes.ndjson"));
+  const last20 = allOutcomes.slice(-20);
+  const goodCount = last20.filter(o => o.rating === "good").length;
+  const outcomes = { total: last20.length, goodPct: last20.length ? Math.round(goodCount / last20.length * 100) : null };
+
+  // Daemon: last daemon-start event from daemon-log.ndjson
+  const allDaemon = readNdjson(path.join(memDir, "daemon-log.ndjson"));
+  const lastStart = allDaemon.filter(e => e.event === "daemon-start").slice(-1)[0] || null;
+  let daemon;
+  if (!lastStart) {
+    daemon = { health: "NEVER-RUN", lastRunTs: null, hoursSinceRun: null };
+  } else {
+    const hrs = (Date.now() - new Date(lastStart.ts).getTime()) / 3600000;
+    const health = hrs < 9 ? "HEALTHY" : hrs < 24 ? "DELAYED" : "STALE";
+    daemon = { health, lastRunTs: lastStart.ts, hoursSinceRun: Math.round(hrs * 10) / 10 };
+  }
+
+  return { goals, proposals, outcomes, daemon };
+});
+
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
   "Read the source of this Electron app (main.cjs, fleethost.mjs, index.html) and write docs/OVERVIEW.md: a clear newcomer's tour of how a dispatched task becomes a running agent and returns to the brood. Then commit.",
