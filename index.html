@@ -2099,11 +2099,16 @@ input:focus-visible{outline:none}
 
   var sayEl = $('say');
   if (sayEl) {
+    var _resizePending = false;
     sayEl.addEventListener('input', function() {
-      requestAnimationFrame(function() {
-        sayEl.style.height = 'auto';
-        sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
-      });
+      if (!_resizePending) {
+        _resizePending = true;
+        requestAnimationFrame(function() {
+          _resizePending = false;
+          sayEl.style.height = 'auto';
+          sayEl.style.height = Math.min(sayEl.scrollHeight, 120) + 'px';
+        });
+      }
       var counter = document.getElementById('say-counter');
       if (counter) {
         var len = sayEl.value.length;
