@@ -669,7 +669,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -728,7 +728,7 @@ const capabilityManifestTool = tool(
       "project_create", "project_advance", "project_status", "project_complete",
       "auto_build",
       "triage_proposals",
-      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report"
+      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -2537,7 +2537,88 @@ const daemonReportTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool] });
+const daemonHealthTool = tool(
+  "daemon_health",
+  "Check whether the scheduled daemon is alive and firing correctly. Reports Task Scheduler job status, last run time, and flags if the loop has gone silent.",
+  {},
+  async () => {
+    try {
+      const fs = _require('fs');
+      const { execSync } = _require('child_process');
+      const memDir = path.join(REPO, 'memory');
+
+      // 1. Check Windows Task Scheduler
+      let schedulerStatus = 'scheduler-unavailable';
+      let nextRunTime = null;
+      try {
+        const schedulerRaw = execSync('schtasks /query /tn "ATLAS Station Daemon" /fo LIST', { encoding: 'utf8', timeout: 5000 });
+        const statusMatch = schedulerRaw.match(/Status:\s*(.+)/i);
+        const nextMatch = schedulerRaw.match(/Next Run Time:\s*(.+)/i);
+        if (statusMatch) schedulerStatus = statusMatch[1].trim();
+        if (nextMatch) nextRunTime = nextMatch[1].trim();
+      } catch (_) { schedulerStatus = 'scheduler-unavailable'; }
+
+      // 2. Read daemon-log.ndjson and group into sessions
+      const logFile = path.join(memDir, 'daemon-log.ndjson');
+      let lastRunTs = null, lastDoneTs = null, hoursSinceRun = null;
+      const recentSessions = [];
+
+      if (fs.existsSync(logFile)) {
+        const events = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean)
+          .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        const sessions = [];
+        let cur = null;
+        for (const ev of events) {
+          const evType = ev.type || ev.event || '';
+          if (evType === 'daemon-start' || evType === 'start') {
+            if (cur) sessions.push(cur);
+            cur = { startTs: ev.ts, state: 'running', doneTs: null, replyExcerpt: '' };
+          } else if (cur) {
+            if (evType === 'daemon-done' || evType === 'done') {
+              cur.state = 'done'; cur.doneTs = ev.ts;
+              cur.replyExcerpt = String(ev.reply || ev.result || '').slice(0, 80);
+            } else if (evType === 'daemon-timeout' || evType === 'timeout') {
+              cur.state = 'timeout'; cur.doneTs = ev.ts;
+            } else if (evType === 'error') {
+              cur.state = 'error'; cur.replyExcerpt = String(ev.error || '').slice(0, 80);
+            }
+          }
+        }
+        if (cur) sessions.push(cur);
+        const startSessions = sessions.filter(s => s.startTs);
+        if (startSessions.length) {
+          lastRunTs = startSessions[startSessions.length - 1].startTs;
+          hoursSinceRun = Math.round((Date.now() - new Date(lastRunTs).getTime()) / 3600000 * 10) / 10;
+        }
+        const doneSessions = sessions.filter(s => s.doneTs);
+        if (doneSessions.length) lastDoneTs = doneSessions[doneSessions.length - 1].doneTs;
+        for (const s of sessions.slice(-3)) {
+          recentSessions.push({ startTs: s.startTs || null, state: s.state, doneTs: s.doneTs || null, replyExcerpt: s.replyExcerpt || '' });
+        }
+      }
+
+      // 3. Health assessment
+      let health, message;
+      if (lastRunTs === null) { health = 'never-run'; message = 'Daemon has not run yet'; }
+      else if (hoursSinceRun > 8) { health = 'stale'; message = `Daemon has not run in ${hoursSinceRun}h`; }
+      else if (hoursSinceRun > 4) { health = 'delayed'; message = 'Next run expected by now'; }
+      else { health = 'healthy'; message = `Last run ${hoursSinceRun}h ago`; }
+
+      const lines = [
+        `Daemon Health: ${health.toUpperCase()} — ${message}`,
+        `Scheduler: ${schedulerStatus}${nextRunTime ? ' | Next: ' + nextRunTime : ''}`,
+        lastRunTs ? `Last start: ${lastRunTs}` : 'Last start: never',
+        recentSessions.length ? `Recent sessions (${recentSessions.length}):` : 'No sessions recorded.',
+        ...recentSessions.map((s, i) => `  ${i + 1}. [${s.state}] ${s.startTs || '?'}${s.replyExcerpt ? ' — "' + s.replyExcerpt + '"' : ''}`),
+      ].filter(l => l !== '');
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `daemon_health error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2606,6 +2687,7 @@ tool_audit(windowDays?) — audit runs log: total runs, success rate, failure co
 proposal_analysis() — proposal queue stats: state counts, rejection rate, avg age of active proposals, oldest pending age, avg score
 memory_health_detail() — memory file inventory: record counts, file sizes, stale fact count, duplicate fact count
 daemon_report(n?) — summarize last N daemon sessions: start time, state, duration, reply excerpt
+daemon_health() — check scheduler job status + last run time; health: healthy/delayed/stale/never-run
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -3035,8 +3117,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (62 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report`,
+        `## Tools (63 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
