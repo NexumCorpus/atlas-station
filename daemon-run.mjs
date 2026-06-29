@@ -10,6 +10,7 @@ const NODE = "C:\\Program Files\\nodejs\\node.exe";
 const DIR  = "E:\\atlas-station";
 const LOG  = join(DIR, "memory", "daemon-log.ndjson");
 const TIMEOUT_MS = 25 * 60 * 1000; // 25 minutes
+const DRY_RUN = process.argv.includes('--dry-run'); // validates plumbing without a full ATLAS session
 
 const PROMPT = `This is an autonomous session. Daniel is not present. You are waking up on a schedule to do self-directed work.
 
@@ -46,9 +47,18 @@ const host = spawn(NODE, ["fleethost.mjs"], {
 });
 
 let done = false;
+let restartAttempts = 0;
+const MAX_RESTARTS = 1;
 
 host.on("message", (m) => {
   if (m.type === "ready") {
+    if (DRY_RUN) {
+      writeLog({ event: "dry-run-ready" });
+      console.log("[daemon] dry-run: fleethost started OK, IPC ready. Exiting.");
+      clearTimeout(timer);
+      try { host.kill(); } catch (_) {}
+      process.exit(0);
+    }
     host.send({ t: "say", text: PROMPT });
     writeLog({ event: "prompt-sent" });
   } else if (m.type === "agent" && m.id === "ATLAS") {
@@ -87,10 +97,20 @@ const timer = setTimeout(() => {
   process.exit(1);
 }, TIMEOUT_MS);
 
-host.on("exit", () => {
+host.on("exit", (code) => {
   if (!done) {
-    writeLog({ event: "host-exited-early" });
+    writeLog({ event: "host-exited-early", code, restartAttempts });
     clearTimeout(timer);
-    process.exit(1);
+    if (restartAttempts < MAX_RESTARTS) {
+      restartAttempts++;
+      writeLog({ event: "daemon-restart", attempt: restartAttempts });
+      console.log("[daemon] host exited early — restarting (attempt " + restartAttempts + ")");
+      const retry = spawn(NODE, ["fleethost.mjs"], { stdio: ["pipe","pipe","pipe","ipc"], env: process.env, cwd: DIR });
+      retry.on("message", host.listeners("message")[0]);
+      if (retry.stderr) retry.stderr.on("data", (b) => process.stderr.write("[host-retry] " + b));
+      retry.on("exit", () => { if (!done) { writeLog({ event: "retry-exited-early" }); process.exit(1); } });
+    } else {
+      process.exit(1);
+    }
   }
 });

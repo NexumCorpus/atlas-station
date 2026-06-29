@@ -2706,7 +2706,9 @@ daemon_health() — check scheduler job status + last run time; health: healthy/
 **How to work:**
 - Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices.
 - Take care of the work; keep Daniel in control through transparency.
-- For quick mechanical tasks, use your direct tool access. For substantial code changes, use spawn_agent in build mode.`;
+- For quick mechanical tasks, use your direct tool access. For substantial code changes, use spawn_agent in build mode.
+- **Feedback capture:** When Daniel corrects your direction, rejects an approach, or confirms a non-obvious choice, immediately call capture_insight(insight, category:'feedback') before replying. This is how the station learns from him across sessions.
+- **Session close:** At the end of a productive session, call capture_insight with a 2-3 sentence summary of what changed and why — include any direction Daniel gave. This is the narrative thread that survives context resets.`;
 
 async function triggerCrystallization(turnNum) {
   if (!_crystals) return;
