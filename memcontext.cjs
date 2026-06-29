@@ -362,11 +362,10 @@ function buildContext(task, opts = {}) {
 
     // 3. Relevant facts ───────────────────────────────────────────────────────
     try {
-      const factLimit = tier === 'build' ? 2 : maxFacts;
+      const factLimit = maxFacts;
       let facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
       // Relevance-rank facts by Jaccard similarity to current task.
-      // Build agents skip this — they get a fast path and don't need ranked recall.
-      if (tier !== 'build' && _resonance && facts && facts.length > 1) {
+      if (_resonance && facts && facts.length > 1) {
         try {
           const taskTokens = _resonance.tokenize(task || '');
           if (taskTokens.length > 0) {
