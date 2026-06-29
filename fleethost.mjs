@@ -70,6 +70,8 @@ let _sessionLog = null;
 try { _sessionLog = _require('./session-log.cjs'); } catch { _sessionLog = null; }
 let _projects = null;
 try { _projects = _require('./projects.cjs'); } catch { _projects = null; }
+let _memvector = null;
+try { _memvector = _require('./memvector.cjs'); } catch { _memvector = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -199,6 +201,27 @@ async function consume(id, iterable, build, branch) {
   return final;
 }
 
+function _wrapBuildBrief(task) {
+  return [
+    '## Build Brief',
+    '',
+    '### Scope',
+    'This is a focused build task. Make only the changes described below.',
+    '',
+    '### Verification Criteria',
+    'Before committing: node --check on all modified .js/.cjs/.mjs files must pass.',
+    'Confirm each stated change is present in the committed output.',
+    '',
+    '### Constraints',
+    '- Do not add unrequested features or refactors',
+    '- Do not change tool count unless explicitly instructed',
+    '- Keep all try/catch guards around optional module requires',
+    '',
+    '### Task',
+    task
+  ].join('\n');
+}
+
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
 async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
@@ -284,7 +307,8 @@ const spawnTool = tool(
       : DEFAULT_TIMEOUT_MS;
     const modelMap = { haiku: MODEL_HAIKU, sonnet: MODEL_SONNET, opus: MODEL_OPUS };
     const model = modelMap[args.model] || undefined;
-    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout, model, args.projectId || null) }] };
+    const taskToRun = (args.mode || 'build') === 'build' ? _wrapBuildBrief(args.task) : args.task;
+    return { content: [{ type: "text", text: await runSubagent(taskToRun, args.mode || "read", agentTimeout, model, args.projectId || null) }] };
   }
 );
 const checkTool = tool(
@@ -449,14 +473,23 @@ const recallMemoryTool = tool(
   },
   async (args) => {
     try {
-      let facts = _memstore.recallFacts(args.query, {
-        dir: path.join(REPO, 'memory'),
-        maxResults: args.maxResults || 8,
-      });
+      const memDir = path.join(REPO, 'memory');
+      const limit = args.maxResults || 8;
+      let facts;
+      if (_memvector) {
+        try {
+          const results = _memvector.recall(args.query, { dir: memDir, maxResults: limit });
+          facts = results.map(r => r.fact);
+        } catch {
+          facts = _memstore ? _memstore.recallFacts(args.query, { dir: memDir, maxResults: limit }) : [];
+        }
+      } else {
+        facts = _memstore ? _memstore.recallFacts(args.query, { dir: memDir, maxResults: limit }) : [];
+      }
       // Filter out stale (superseded) facts
       if (_memgraph) {
         try {
-          const stale = _memgraph.loadStale(path.join(REPO, 'memory'));
+          const stale = _memgraph.loadStale(memDir);
           if (stale.size > 0) {
             facts = facts.filter(f => !stale.has(f.topic || f.key || ''));
           }
