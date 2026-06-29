@@ -701,6 +701,7 @@ const capabilityManifestTool = tool(
       "capture_insight", "context_telemetry",
       "project_create", "project_advance", "project_status", "project_complete",
       "auto_build",
+      "triage_proposals",
       "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
