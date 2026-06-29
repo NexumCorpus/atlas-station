@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...51 tools, call capability_manifest() for full list]
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...55 tools, call capability_manifest() for full list]
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
@@ -51,6 +51,7 @@ E:\\atlas-station source files:
 - session-log.cjs: Rolling conversation log — appendTurn, getRecentTurns. File: memory/session_turns.ndjson. Powers conversation-aware crystallization.
 - clusters.cjs: Fact topology — assignCluster, listClusters, recluster. File: memory/clusters.ndjson.
 - outcome-tracker.cjs: Build quality tracking — rateOutcome, outcomeStats. File: memory/outcomes.ndjson.
+- projects.cjs: Project store — createProject, advanceProject, updateProject, listProjects, getProject. File: memory/projects.ndjson. Tracks multi-session initiatives with phases and milestones.
 - prune.mjs: Sprawl cleanup — removes merged fleet/* branches and their worktrees. Run: node prune.mjs.
 Fleet pattern: build agents use isolated git worktrees at E:\\atlas-wt\\<id> on branch fleet/<id>.
 Resonance: all build agents automatically receive a PAST EXPERIENCE block injected into their prompts when semantically similar past tasks exist — institutional memory propagates through the fleet.`;
