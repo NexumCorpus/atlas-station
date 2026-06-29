@@ -276,6 +276,7 @@ const spawnTool = tool(
     mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
     timeoutMinutes: z.number().optional().describe("Auto-cancel after N minutes (default 20). Set 0 to disable."),
     model: z.enum(["haiku", "sonnet", "opus"]).optional().describe("Model tier: haiku (fast/cheap reads), sonnet (default builds), opus (complex reasoning)"),
+    projectId: z.string().optional().describe("Project ID (P-xxx) — injects project context (phase, milestones) into the spawned agent's task brief"),
   },
   async (args) => {
     const agentTimeout = typeof args.timeoutMinutes === "number"
@@ -283,7 +284,7 @@ const spawnTool = tool(
       : DEFAULT_TIMEOUT_MS;
     const modelMap = { haiku: MODEL_HAIKU, sonnet: MODEL_SONNET, opus: MODEL_OPUS };
     const model = modelMap[args.model] || undefined;
-    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout, model) }] };
+    return { content: [{ type: "text", text: await runSubagent(args.task, args.mode || "read", agentTimeout, model, args.projectId || null) }] };
   }
 );
 const checkTool = tool(
@@ -300,13 +301,14 @@ const chainTool = tool(
       task: z.string().describe("task for this step"),
       mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
     })).describe("ordered list of agent steps"),
+    projectId: z.string().optional().describe("Project ID (P-xxx) — propagated to all steps in the chain"),
   },
   async (args) => {
     let context = "";
     const results = [];
     for (const step of (args.steps || [])) {
       const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 4000) : step.task;
-      const result = await runSubagent(taskWithCtx, step.mode || "read");
+      const result = await runSubagent(taskWithCtx, step.mode || 'read', undefined, undefined, args.projectId || null);
       context = result;
       results.push(result);
     }
@@ -1386,19 +1388,28 @@ const stagedVerifyTool = tool(
         gitC(['branch', '-D', temp]);
         return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: merge conflict on ' + branch + '\n' + mergeErr }] };
       }
-      // Syntax check merged state
+      // Syntax check merged state — check ALL modified JS files
       const { spawnSync } = _require('child_process');
-      const checkResult = spawnSync(process.execPath, ['--check', path.join(REPO, 'fleethost.mjs')], {
-        encoding: 'utf8', timeout: 10000
-      });
-      const checkOk = checkResult.status === 0;
-      const checkErr = checkOk ? '' : (checkResult.stderr || '').split('\n')[0].slice(0, 200);
+      const diffResult = spawnSync('git', ['diff', '--name-only', 'master', branch], { cwd: REPO, encoding: 'utf8' });
+      const changedFiles = (diffResult.stdout || '').trim().split('\n').filter(f => f && /\.(js|cjs|mjs)$/.test(f));
+      let checkOk = true, checkErr = '';
+      if (changedFiles.length > 0) {
+        for (const relFile of changedFiles) {
+          const absFile = path.join(REPO, relFile);
+          const fileCheck = spawnSync(process.execPath, ['--check', absFile], { encoding: 'utf8', timeout: 10000 });
+          if (fileCheck.status !== 0) {
+            checkOk = false;
+            checkErr = 'syntax error in ' + relFile + '\n' + (fileCheck.stderr || '').split('\n')[0].slice(0, 200);
+            break;
+          }
+        }
+      }
       // Abort staged merge and clean up — never commits to master
       try { gitC(['merge', '--abort']); } catch { try { gitC(['reset', '--hard', 'HEAD']); } catch {} }
       gitC(['checkout', 'master']);
       gitC(['branch', '-D', temp]);
       if (!checkOk) {
-        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: syntax error after merge\n' + checkErr }] };
+        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: ' + checkErr }] };
       }
       return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' }] };
     } catch (e) {
@@ -2809,13 +2820,15 @@ async function runDeferredTasks() {
         if (_fs.existsSync(propFile)) {
           const lines = _fs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean);
           const props = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-          const taskSnippet = (entry.description || entry.task || '').slice(0, 60).toLowerCase();
+          const taskSnippet = (entry.task || '').slice(0, 60).toLowerCase();
           const updated = props.map(p => {
+            if (!['pending', 'deferred'].includes(p.state)) return p;
             const descSnippet = (p.description || '').slice(0, 60).toLowerCase();
-            if (p.state === 'deferred' && descSnippet && taskSnippet && descSnippet.includes(taskSnippet.slice(0, 40))) {
-              return { ...p, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-task' };
-            }
-            return p;
+            if (!descSnippet || !taskSnippet) return p;
+            // Bidirectional: either is a substring of the other
+            const match = descSnippet.includes(taskSnippet.slice(0, 40)) || taskSnippet.includes(descSnippet.slice(0, 40));
+            if (!match) return p;
+            return { ...p, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-task' };
           });
           _fs.writeFileSync(propFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
         }
