@@ -135,7 +135,7 @@ function _buildCalibration(memDir) {
     if (fs.existsSync(propFile)) {
       const props = fs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean)
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
-        .filter(p => p.state === 'pending' && p.priority === 'HIGH');
+        .filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === 'HIGH');
       const now = Date.now();
       const aged = props.filter(p => {
         if (!p.ts) return false;

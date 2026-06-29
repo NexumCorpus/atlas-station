@@ -1994,7 +1994,7 @@ const autoBuildTool = tool(
               const goodCount = recent.filter(o => o.rating === 'good').length;
               const pct = Math.round(goodCount / recent.length * 100);
               if (pct < 75) {
-                if (_notif) _notif.notify('auto_build paused: recent quality ' + pct + '% < 75% threshold. Pass force:true to override.', 'warning', path.join(REPO, 'memory'));
+                if (_notif) _notif.notify('auto_build paused: recent quality ' + pct + '% < 75% threshold. Pass force:true to override.', 'alert', path.join(REPO, 'memory'));
                 return { content: [{ type: 'text', text: 'auto_build PAUSED: recent build quality ' + pct + '% (' + goodCount + '/' + recent.length + ' good) is below 75% threshold. Fix failing builds first, or pass force:true to override.' }] };
               }
             }
