@@ -15,13 +15,19 @@ const PROMPT = `This is an autonomous session. Daniel is not present. You are wa
 
 Work through this in order — stop when the session budget is spent or when there is nothing actionable left:
 
-1. load_proposals() — if there are HIGH pending proposals, use auto_build to act on up to 2 of them. Do not build more than 2 in one daemon session.
-2. project_status() — check active projects. If any project is waiting on work you can do autonomously, advance it.
-3. If fewer than 2 proposals were built and the last dream was more than 6 hours ago: run the dream protocol (load_dreams → write a dream sequence → propose improvements from it).
-4. capture_insight on any pattern you noticed during this session.
-5. Write one sentence in journal_write summarizing what this daemon session did.
+0. daemon_health() — check that the scheduler is healthy. Log the result but don't stop if it's stale; that's self-referential.
+1. triage_proposals() — score pending proposals, auto-reject noise. Then load_proposals() to see what's HIGH.
+2. If there are HIGH pending proposals: auto_build(priority:"HIGH", limit:2). Do not build more than 2 in one daemon session.
+3. project_status() — check active projects. If any project is waiting on work you can do autonomously, advance it.
+4. If fewer than 2 proposals were built and the last dream was more than 6 hours ago: run the dream protocol — load_dreams(), then write a new dream (capture_insight with category:"dream") and queue 2-3 proposals from it via propose_improvement.
+5. build_outcomes() — check build quality. If success rate < 80%, investigate the recent bad builds and propose a fix.
+6. Write one sentence in journal_write summarizing what this daemon session did.
 
-Be decisive. Do real work if there is real work to do. If everything is already done, say so briefly and exit.`;
+Standing rules:
+- Never spawn more than 2 build agents in one daemon session.
+- After any merge, run verify_build to confirm syntax integrity.
+- If you find something important Daniel should know, use notify_self(text, type:"alert").
+- Be decisive. Do real work if there is real work to do. If everything is done, say so briefly and exit.`;
 
 function writeLog(entry) {
   try {
