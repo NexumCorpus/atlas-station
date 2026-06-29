@@ -553,7 +553,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -601,12 +601,13 @@ const capabilityManifestTool = tool(
       "write_doc", "read_doc", "list_docs",
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
+      "read_self", "fan_research",
       "signal_propagate", "generate_tool", "verify_build", "mutation_map"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson"];
     if (!full) {
-      return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] };
+      return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
     const lines = [
       `[Fleet Tools — ${tools.length} total]`,
@@ -1028,6 +1029,116 @@ const resonanceStatsTool = tool(
   }
 );
 
+const readSelfTool = tool(
+  "read_self",
+  "Read a file from the ATLAS station source tree directly (no agent spawn). Optionally filter by regex pattern to return only matching lines. Cap: 6KB. Use for fast introspection of own source without consuming an agent slot.",
+  {
+    filePath: z.string().describe("Relative path from station root (e.g. 'fleethost.mjs', 'memcontext.cjs', 'index.html')"),
+    pattern: z.string().optional().describe("Regex pattern — if provided, returns only matching lines with line numbers"),
+    startLine: z.number().optional().describe("First line to read (1-indexed). Use with endLine for windowed reads."),
+    endLine: z.number().optional().describe("Last line to read (inclusive)"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const target = path.join(REPO, args.filePath.replace(/^[/\\]+/, ''));
+      // Safety: only allow files within REPO
+      if (!target.startsWith(REPO)) return { content: [{ type: 'text', text: 'read_self: path outside station root denied' }] };
+      if (!fs.existsSync(target)) return { content: [{ type: 'text', text: `read_self: not found: ${args.filePath}` }] };
+      let lines = fs.readFileSync(target, 'utf8').split('\n');
+      // Line window
+      if (args.startLine || args.endLine) {
+        const s = Math.max(0, (args.startLine || 1) - 1);
+        const e = args.endLine ? args.endLine : lines.length;
+        lines = lines.slice(s, e);
+      }
+      // Pattern filter
+      if (args.pattern) {
+        const re = new RegExp(args.pattern, 'i');
+        const offset = args.startLine ? args.startLine - 1 : 0;
+        lines = lines.map((l, i) => re.test(l) ? `${i + 1 + offset}: ${l}` : null).filter(Boolean);
+        if (!lines.length) return { content: [{ type: 'text', text: `read_self: no matches for /${args.pattern}/ in ${args.filePath}` }] };
+      }
+      const out = lines.join('\n').slice(0, 6000);
+      return { content: [{ type: 'text', text: out }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `read_self error: ${e.message}` }] };
+    }
+  }
+);
+
+const fanResearchTool = tool(
+  "fan_research",
+  "Parallel multi-angle research: spawn N simultaneous Haiku agents each investigating a question from a distinct angle, then synthesize with a Sonnet agent. Returns a cited report. Use for research that benefits from multiple independent perspectives — more thorough than a single web_research call.",
+  {
+    question: z.string().describe("The research question"),
+    angles: z.array(z.string()).min(2).max(5).describe("2-5 investigation angles/perspectives. Each becomes a separate parallel Haiku agent."),
+    saveAs: z.string().optional().describe("If provided, saves the synthesis as a fact with this key"),
+  },
+  async (args) => {
+    try {
+      const memDir = path.join(REPO, 'memory');
+      // Spawn all angle-agents in parallel
+      const angleResults = await Promise.all(args.angles.map(async (angle, idx) => {
+        try {
+          const ac = new AbortController();
+          const fanId = `FAN-${Date.now()}-${idx}`;
+          set(fanId, { id: fanId, state: 'working', mode: 'read', task: `fan_research angle: ${angle.slice(0,40)}`, model: MODEL_HAIKU });
+          abortControllers.set(fanId, ac);
+          let text = '';
+          const iter = query({
+            model: MODEL_HAIKU,
+            messages: [{ role: 'user', content: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.` }],
+            permissionMode: 'bypassPermissions',
+            abortSignal: ac.signal,
+          });
+          text = await consume(fanId, iter, false, null);
+          abortControllers.delete(fanId);
+          return { angle, text };
+        } catch (e) {
+          return { angle, text: `(failed: ${e.message})` };
+        }
+      }));
+
+      // Synthesis pass
+      const synthPrompt = `Synthesize these ${angleResults.length} research angles into a cohesive report on: ${args.question}
+
+${angleResults.map((r, i) => `[Angle ${i+1}: ${r.angle}]\n${r.text}`).join('\n\n')}
+
+Write a unified 300-400 word synthesis. Highlight where angles agree, where they diverge, and what the combined picture reveals. Be direct — no padding.`;
+
+      const synthId = `FAN-SYNTH-${Date.now()}`;
+      set(synthId, { id: synthId, state: 'working', mode: 'read', task: `fan_research synthesis: ${args.question.slice(0,40)}`, model: MODEL_SONNET });
+      const synthAc = new AbortController();
+      abortControllers.set(synthId, synthAc);
+      const synthIter = query({
+        model: MODEL_SONNET,
+        messages: [{ role: 'user', content: synthPrompt }],
+        permissionMode: 'bypassPermissions',
+        abortSignal: synthAc.signal,
+      });
+      const synthesis = await consume(synthId, synthIter, false, null);
+      abortControllers.delete(synthId);
+
+      // Store as fact if saveAs provided
+      if (args.saveAs && _memstore) {
+        try {
+          _memstore.appendFact({
+            topic: args.saveAs,
+            fact: synthesis.slice(0, 800),
+            source: 'fan_research',
+            confidence: 'high',
+          }, memDir);
+        } catch {}
+      }
+
+      return { content: [{ type: 'text', text: `[Fan Research: ${args.question}]\n\n${synthesis}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `fan_research error: ${e.message}` }] };
+    }
+  }
+);
+
 const signalPropagateTool = tool(
   "signal_propagate",
   "Propagate a fact's epistemic signal through the memory graph. Facts connected via 'supports' edges have their recall priority boosted; those connected via 'contradicts' edges are flagged for review. Call after recording an important insight to update related knowledge.",
@@ -1208,7 +1319,7 @@ const mutationMapTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1245,6 +1356,8 @@ relate_facts(fromKey,relation,toKey) — typed edge between facts (supports/cont
 fact_graph(key,maxDepth?) — graph neighborhood of a fact
 load_dreams(maxN?) — recent autonomous dream reports
 resonance_stats(task) — preview institutional memory for a task before spawning
+read_self(filePath,pattern?,startLine?,endLine?) — read station source file directly, no agent spawn; regex filter returns matching lines with numbers
+fan_research(question,angles[],saveAs?) — parallel multi-angle research: N Haiku agents + Sonnet synthesis; stores result as fact if saveAs provided
 signal_propagate(factKey) — propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
@@ -1557,8 +1670,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (34 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, signal_propagate, generate_tool, verify_build, mutation_map`,
+        `## Tools (36 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
