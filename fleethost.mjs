@@ -565,7 +565,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -617,7 +617,8 @@ const capabilityManifestTool = tool(
       "signal_propagate", "generate_tool", "verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
-      "crystallize", "cluster_facts"
+      "crystallize", "cluster_facts",
+      "drain_proposals"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson"];
@@ -1525,7 +1526,49 @@ const clusterFactsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool] });
+const drainProposalsTool = tool(
+  "drain_proposals",
+  "Convert pending proposals from memory/proposals.ndjson into deferred tasks. Optionally filter by priority. Use to manually action the output of dream reflection and self-assessment.",
+  {
+    priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().describe("Which priority level to drain. Default: HIGH only."),
+    dryRun: z.boolean().optional().describe("If true, show what would be deferred without actually deferring"),
+  },
+  async (args) => {
+    if (!_deferred || !_memstore) return { content: [{ type: 'text', text: 'deferred or memstore module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const fs = _require('fs');
+      const proposalsFile = path.join(memDir, 'proposals.ndjson');
+      if (!fs.existsSync(proposalsFile)) return { content: [{ type: 'text', text: 'No proposals file found.' }] };
+
+      const proposals = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+      const priority = (args.priority || 'HIGH').toUpperCase();
+      const toDefer = priority === 'ALL'
+        ? proposals.filter(p => p.state === 'pending')
+        : proposals.filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === priority);
+
+      if (!toDefer.length) return { content: [{ type: 'text', text: `No pending ${priority === 'ALL' ? '' : priority + ' '}proposals found.` }] };
+
+      if (args.dryRun) {
+        return { content: [{ type: 'text', text: `Would defer ${toDefer.length} proposals:\n${toDefer.map(p => `- ${(p.description || p.text || p.proposal || JSON.stringify(p)).slice(0, 80)}`).join('\n')}` }] };
+      }
+
+      let deferred = 0;
+      for (const p of toDefer) {
+        const text = p.description || p.text || p.proposal || String(p);
+        _deferred.deferTask(text, `drained from proposals (${priority})`, memDir);
+        deferred++;
+      }
+      return { content: [{ type: 'text', text: `Deferred ${deferred} proposals (priority: ${priority}).` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `drain_proposals error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1576,6 +1619,7 @@ run_routine(name) — retrieve routine steps for execution
 list_routines() — list all saved routines
 crystallize(showExisting?) — trigger/view session memory crystals; auto-fires every 5 turns
 cluster_facts(recluster?,showKeywords?) — show memory's topic cluster topology; recluster rebuilds from all facts
+drain_proposals(priority?,dryRun?) — convert pending proposals from proposals.ndjson into deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH); dryRun previews without committing
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1963,8 +2007,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (44 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts`,
+        `## Tools (45 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
@@ -2023,6 +2067,13 @@ Return a JSON object with exactly these fields:
   "mood": "one word describing the station's current state"
 }
 
+Then, after the JSON, emit each proposal on its own line in this format:
+[PROPOSALS]
+PROPOSAL [HIGH]: <concise actionable proposal text>
+PROPOSAL [MEDIUM]: <concise actionable proposal text>
+PROPOSAL [LOW]: <concise actionable proposal text>
+Priority guide: HIGH = should be acted on this session or next; MEDIUM = worth scheduling; LOW = interesting but non-urgent
+
 Be honest. Be specific to the actual data. Find what the runs add up to, not what you'd expect them to say.`;
 
         const dreamId = 'DREAM-' + pulseCount;
@@ -2054,6 +2105,17 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
 
         // Write to dreams.ndjson
         const dreamEntry = _dream.writeDream(dreamReport, memDir);
+
+        // Auto-defer high-priority proposals from dream (parsed from text output)
+        if (_deferred && dreamText) {
+          try {
+            const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
+            for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
+              _deferred.deferTask(proposal, 'auto-deferred from dream protocol (HIGH priority)', memDir);
+              send('toast', { text: `Dream → deferred: ${proposal.slice(0, 60)}...` });
+            }
+          } catch {}
+        }
 
         // File any proposals to the proposals system
         if (_memstore && dreamReport.proposals && dreamReport.proposals.length) {
