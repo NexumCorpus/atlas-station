@@ -30,7 +30,7 @@ const DEFAULT_JOURNAL = path.join(
 const STATION_BRIEF = `[Station Architecture]
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
-- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...43 tools, call capability_manifest() for full list]
+- fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...44 tools, call capability_manifest() for full list]
 - index.html: Renderer — conversation thread (ATLAS↔Daniel), brood grid (subagent cards), vitals strip, ledger sidebar, proposals panel, goals panel, notifications panel. Uses window.atlas.* bridge.
 - docs/: ATLAS-maintained documentation — architecture notes, capability descriptions, decision logs. Written and committed by ATLAS via write_doc/read_doc/list_docs tools.
 - preload.cjs: contextBridge — say, dispatch, replyAgent, selfBuild, cancel, onFleet.
@@ -179,8 +179,20 @@ function buildContext(task, opts = {}) {
             facts = facts.map(f => {
               const factText = [f.topic, f.fact, f.source].filter(Boolean).join(' ');
               const factTokens = _resonance.tokenize(factText);
-              const score = _resonance.similarity(taskTokens, factTokens);
-              return { ...f, _score: score };
+              const relevance = _resonance.similarity(taskTokens, factTokens);
+
+              // Age decay: half-life 14 days. Facts from today = 1.0, 14 days ago ≈ 0.5, 42 days ago ≈ 0.25.
+              // No ts field → decay stays 1.0 (safe fallback — untagged facts are not penalised).
+              let decay = 1.0;
+              if (f.ts) {
+                try {
+                  const ageMs = Date.now() - new Date(f.ts).getTime();
+                  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+                  decay = 1 / (1 + ageDays / 14);
+                } catch {}
+              }
+
+              return { ...f, _score: relevance * decay };
             }).sort((a, b) => b._score - a._score);
           }
         } catch {}
