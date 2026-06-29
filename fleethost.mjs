@@ -571,7 +571,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -620,7 +620,7 @@ const capabilityManifestTool = tool(
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
       "read_self", "fan_research",
-      "signal_propagate", "generate_tool", "verify_build", "mutation_map",
+      "signal_propagate", "generate_tool", "verify_build", "staged_verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
@@ -1340,6 +1340,57 @@ const verifyBuildTool = tool(
   }
 );
 
+const stagedVerifyTool = tool(
+  "staged_verify_build",
+  "Merge fleet branch into a temp branch off master, run node --check, report pass/fail — never touches master. Call before committing a real merge.",
+  {
+    agentId: z.string().describe("Fleet agent ID (e.g. B-104)")
+  },
+  async (args) => {
+    const branch = 'fleet/' + args.agentId;
+    const temp = 'verify-temp-' + args.agentId;
+    try {
+      // Create temp branch off master
+      gitC(['checkout', '-b', temp, 'master']);
+      // Attempt merge (no-commit to inspect merged state without touching master)
+      let mergeOk = true, mergeErr = '';
+      try {
+        gitC(['merge', '--no-ff', '--no-commit', branch]);
+      } catch (e) {
+        mergeOk = false;
+        mergeErr = e.stderr ? e.stderr.toString() : e.message;
+      }
+      if (!mergeOk) {
+        try { gitC(['merge', '--abort']); } catch {}
+        gitC(['checkout', 'master']);
+        gitC(['branch', '-D', temp]);
+        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: merge conflict on ' + branch + '\n' + mergeErr }] };
+      }
+      // Syntax check merged state
+      const { spawnSync } = _require('child_process');
+      const checkResult = spawnSync(process.execPath, ['--check', path.join(REPO, 'fleethost.mjs')], {
+        encoding: 'utf8', timeout: 10000
+      });
+      const checkOk = checkResult.status === 0;
+      const checkErr = checkOk ? '' : (checkResult.stderr || '').split('\n')[0].slice(0, 200);
+      // Abort staged merge and clean up — never commits to master
+      try { gitC(['merge', '--abort']); } catch { try { gitC(['reset', '--hard', 'HEAD']); } catch {} }
+      gitC(['checkout', 'master']);
+      gitC(['branch', '-D', temp]);
+      if (!checkOk) {
+        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: syntax error after merge\n' + checkErr }] };
+      }
+      return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' }] };
+    } catch (e) {
+      // Emergency cleanup — restore master regardless of what went wrong
+      try { gitC(['merge', '--abort']); } catch {}
+      try { gitC(['checkout', 'master']); } catch {}
+      try { gitC(['branch', '-D', temp]); } catch {}
+      return { content: [{ type: 'text', text: 'STAGED VERIFY ERROR: ' + e.message }] };
+    }
+  }
+);
+
 const mutationMapTool = tool(
   "mutation_map",
   "Show ATLAS's codebase churn map — which files have been modified most frequently across build agents, how many agents touched each file, and when. Optionally filter to a specific file to see its full modification history. Use to identify unstable or heavily-evolved parts of the station.",
@@ -1885,14 +1936,16 @@ const projectCompleteTool = tool(
 function autoRate(resultStr) {
   const text = (resultStr || '').toLowerCase();
   // Bad: unambiguous failure signals
-  if (text.includes('syntaxerror') || text.includes('merge conflict') ||
+  if (text.includes('staged verify fail') ||
+      text.includes('syntaxerror') || text.includes('merge conflict') ||
       text.includes('failed to delete') || text.includes('worktree error') ||
       /\berror:\s/.test(text) && !text.includes('no error') && !text.includes('error: none')) {
     return 'bad';
   }
-  // Good: verify_build PASS or explicit success patterns
-  if (text.includes('node --check') && text.includes('pass') ||
-      text.includes('syntax ok') || text.includes('✓') ||
+  // Good: staged verify pass, verify_build PASS, or explicit success patterns
+  if (text.includes('staged verify pass') ||
+      text.includes('node --check') && text.includes('pass') ||
+      /\bsyntax ok\b/i.test(text) || text.includes('✓') ||
       /\bcommitted\b/.test(text) && !/\berror\b/.test(text)) {
     return 'good';
   }
@@ -1907,9 +1960,27 @@ const autoBuildTool = tool(
     limit: z.number().optional().default(1).describe("Max number of proposals to build simultaneously. Default: 1."),
     dryRun: z.boolean().optional().describe("If true, show what would be built without spawning agents"),
     priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().default("HIGH").describe("Which priority to draw from. Default: HIGH only."),
+    force: z.boolean().optional().describe("Override quality gate (use when you know recent failures are unrelated)"),
   },
   async (args) => {
     try {
+      // Outcome gate: if recent quality is poor, require explicit override
+      if (!args.force) {
+        try {
+          if (_outcomeTracker) {
+            const recent = _outcomeTracker.getOutcomes(path.join(REPO, 'memory')).slice(-10);
+            if (recent.length >= 5) {
+              const goodCount = recent.filter(o => o.rating === 'good').length;
+              const pct = Math.round(goodCount / recent.length * 100);
+              if (pct < 75) {
+                if (_notif) _notif.notify('auto_build paused: recent quality ' + pct + '% < 75% threshold. Pass force:true to override.', 'warning', path.join(REPO, 'memory'));
+                return { content: [{ type: 'text', text: 'auto_build PAUSED: recent build quality ' + pct + '% (' + goodCount + '/' + recent.length + ' good) is below 75% threshold. Fix failing builds first, or pass force:true to override.' }] };
+              }
+            }
+          }
+        } catch {}
+      }
+
       const fs = _require('fs');
       const memDir = path.join(REPO, 'memory');
       const proposalsFile = path.join(memDir, 'proposals.ndjson');
@@ -1989,7 +2060,7 @@ const autoBuildTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2031,6 +2102,7 @@ fan_research(question,angles[],saveAs?) — parallel multi-angle research: N Hai
 signal_propagate(factKey) — propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
+staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check, report pass/fail — never touches master; call before a real merge
 mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
 set_instruction(key,instruction) — write a standing behavioral directive to memory; injected into your context every session
 get_instructions() — list all active self-instructions
@@ -2473,8 +2545,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (56 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`,
+        `## Tools (57 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
