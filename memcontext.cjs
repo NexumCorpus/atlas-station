@@ -362,9 +362,12 @@ function buildContext(task, opts = {}) {
 
     // 3. Relevant facts ───────────────────────────────────────────────────────
     try {
-      const factLimit = maxFacts;
+      // Build agents doing complex code work need MORE relevant facts, not fewer.
+      // Fetch extra candidates for build tier so resonance ranking has a wider pool
+      // to select from before the context budget trim discards lower-ranked entries.
+      const factLimit = tier === 'build' ? Math.max(maxFacts, 8) : maxFacts;
       let facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
-      // Relevance-rank facts by Jaccard similarity to current task.
+      // Relevance-rank facts by Jaccard similarity to current task — all tiers.
       if (_resonance && facts && facts.length > 1) {
         try {
           const taskTokens = _resonance.tokenize(task || '');
