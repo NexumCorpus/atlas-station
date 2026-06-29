@@ -643,7 +643,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -700,7 +700,8 @@ const capabilityManifestTool = tool(
       "rate_build", "build_outcomes", "revert_build",
       "capture_insight", "context_telemetry",
       "project_create", "project_advance", "project_status", "project_complete",
-      "auto_build"
+      "auto_build",
+      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -2235,7 +2236,262 @@ const triageProposalsTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool] });
+const toolAuditTool = tool(
+  "tool_audit",
+  "Audit tool usage patterns — which tools ATLAS calls most frequently, what fraction of calls succeed, and which tools have never been called.",
+  {
+    windowDays: z.number().optional().describe("Number of days to look back in runs (default: 30)"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const windowDays = args.windowDays || 30;
+      const cutoff = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+
+      // Try runs.ndjson or runs.jsonl
+      const runsFile = fs.existsSync(path.join(memDir, 'runs.ndjson'))
+        ? path.join(memDir, 'runs.ndjson')
+        : path.join(memDir, 'runs.jsonl');
+
+      if (!fs.existsSync(runsFile)) {
+        return { content: [{ type: 'text', text: 'No runs file found.' }] };
+      }
+
+      const runs = fs.readFileSync(runsFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+        .filter(r => r.ts && new Date(r.ts).getTime() >= cutoff);
+
+      // Runs don't store per-tool call detail — build a runs-by-day histogram instead
+      const byDay = {};
+      const byState = { done: 0, failed: 0, other: 0 };
+      for (const r of runs) {
+        const day = (r.ts || '').slice(0, 10);
+        if (day) byDay[day] = (byDay[day] || 0) + 1;
+        if (r.state === 'done') byState.done++;
+        else if (r.state === 'failed') byState.failed++;
+        else byState.other++;
+      }
+
+      const totalRuns = runs.length;
+      const successRate = totalRuns ? Math.round(byState.done / totalRuns * 100) : 0;
+      const days = Object.keys(byDay).sort();
+      const histogram = days.map(d => `  ${d}: ${byDay[d]} runs`).join('\n');
+
+      const lines = [
+        `Tool Audit — last ${windowDays} days`,
+        `Total runs: ${totalRuns} (${successRate}% success)`,
+        `Done: ${byState.done}, Failed: ${byState.failed}, Other: ${byState.other}`,
+        '',
+        `Runs by day (${days.length} active days):`,
+        histogram || '  (none)',
+        '',
+        'Note: per-tool call counts are not recorded in the runs log. Use session_stats for session-level cost/count breakdown.',
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `tool_audit error: ${e.message}` }] };
+    }
+  }
+);
+
+const proposalAnalysisTool = tool(
+  "proposal_analysis",
+  "Analyze the proposal queue — age distribution, priority breakdown, rejection rate, average score if scored.",
+  {},
+  async () => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const pfile = path.join(memDir, 'proposals.ndjson');
+      if (!fs.existsSync(pfile)) return { content: [{ type: 'text', text: 'No proposals file found.' }] };
+
+      const proposals = fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+      const now = Date.now();
+      const counts = { pending: 0, deferred: 0, consumed: 0, rejected: 0, other: 0 };
+      const activeAges = [];
+      const scores = [];
+
+      for (const p of proposals) {
+        const state = (p.state || 'other').toLowerCase();
+        if (state in counts) counts[state]++;
+        else counts.other++;
+
+        if (state === 'pending' || state === 'deferred') {
+          const ts = p.ts || p.timestamp;
+          if (ts) {
+            const ageMs = now - new Date(ts).getTime();
+            activeAges.push(ageMs / 3600000); // hours
+          }
+        }
+        if (typeof p._score === 'number') scores.push(p._score);
+        else if (typeof p.score === 'number') scores.push(p.score);
+      }
+
+      const total = proposals.length;
+      const rejectionRate = total ? Math.round(counts.rejected / total * 100) : 0;
+      const avgAgeHoursActive = activeAges.length
+        ? Math.round(activeAges.reduce((s, a) => s + a, 0) / activeAges.length)
+        : null;
+      const oldestPendingHours = activeAges.length ? Math.round(Math.max(...activeAges)) : null;
+      const avgScore = scores.length
+        ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length)
+        : null;
+
+      const lines = [
+        `Proposal Analysis — ${total} total`,
+        `  Pending: ${counts.pending}, Deferred: ${counts.deferred}, Consumed: ${counts.consumed}, Rejected: ${counts.rejected}`,
+        `Rejection rate: ${rejectionRate}%`,
+        avgAgeHoursActive != null ? `Avg age (active): ${avgAgeHoursActive}h` : 'Avg age: n/a',
+        oldestPendingHours != null ? `Oldest pending: ${oldestPendingHours}h` : 'Oldest pending: n/a',
+        avgScore != null ? `Avg score: ${avgScore}` : 'Avg score: not scored',
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `proposal_analysis error: ${e.message}` }] };
+    }
+  }
+);
+
+const memoryHealthDetailTool = tool(
+  "memory_health_detail",
+  "Report on memory store health — file sizes, record counts, stale/duplicate facts.",
+  {},
+  async () => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      if (!fs.existsSync(memDir)) return { content: [{ type: 'text', text: 'memory/ directory not found.' }] };
+
+      const fileList = fs.readdirSync(memDir).filter(f => f.endsWith('.ndjson') || f.endsWith('.jsonl'));
+      const fileStats = [];
+      let totalRecords = 0;
+
+      for (const fname of fileList) {
+        const fpath = path.join(memDir, fname);
+        const stat = fs.statSync(fpath);
+        const sizeKB = Math.round(stat.size / 1024 * 10) / 10;
+        const content = fs.readFileSync(fpath, 'utf8').trim();
+        const records = content ? content.split('\n').filter(Boolean).length : 0;
+        totalRecords += records;
+        fileStats.push({ name: fname, records, sizeKB });
+      }
+
+      // Stale and duplicate analysis on facts file
+      let staleFacts = 0;
+      let duplicateFacts = 0;
+      const factsFile = fs.existsSync(path.join(memDir, 'facts.ndjson'))
+        ? path.join(memDir, 'facts.ndjson')
+        : fs.existsSync(path.join(memDir, 'facts.jsonl'))
+        ? path.join(memDir, 'facts.jsonl')
+        : null;
+
+      if (factsFile) {
+        const facts = fs.readFileSync(factsFile, 'utf8').trim().split('\n').filter(Boolean)
+          .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        staleFacts = facts.filter(f => f.type === 'stale' || f.stale === true || f.confidence === 'stale').length;
+        const seen = new Set();
+        for (const f of facts) {
+          const key = (f.fact || f.text || f.value || '').slice(0, 40);
+          if (key && seen.has(key)) duplicateFacts++;
+          else if (key) seen.add(key);
+        }
+      }
+
+      const lines = [
+        `Memory Health — ${fileStats.length} files, ${totalRecords} total records`,
+        '',
+        ...fileStats.sort((a, b) => b.records - a.records).map(f => `  ${f.name}: ${f.records} records, ${f.sizeKB} KB`),
+        '',
+        `Stale facts: ${staleFacts}`,
+        `Duplicate facts (first-40-char match): ${duplicateFacts}`,
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `memory_health_detail error: ${e.message}` }] };
+    }
+  }
+);
+
+const daemonReportTool = tool(
+  "daemon_report",
+  "Summarize recent daemon session activity — last N sessions, outcomes, timing.",
+  {
+    n: z.number().optional().describe("Number of recent sessions to return (default: 10)"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const logFile = path.join(memDir, 'daemon-log.ndjson');
+      const n = args.n || 10;
+
+      if (!fs.existsSync(logFile)) {
+        return { content: [{ type: 'text', text: 'No daemon-log.ndjson found. Daemon sessions may not have run yet.' }] };
+      }
+
+      const events = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+      if (!events.length) return { content: [{ type: 'text', text: 'daemon-log.ndjson is empty.' }] };
+
+      // Group events by session: each daemon-start begins a new session
+      const sessions = [];
+      let current = null;
+      for (const ev of events) {
+        const type = ev.type || ev.event || '';
+        if (type === 'daemon-start' || type === 'start') {
+          if (current) sessions.push(current);
+          current = { startTs: ev.ts, events: [ev], state: 'running', durationMs: null, replyExcerpt: '' };
+        } else if (current) {
+          current.events.push(ev);
+          if (type === 'daemon-done' || type === 'done' || type === 'complete') {
+            current.state = 'done';
+            if (current.startTs && ev.ts) {
+              current.durationMs = new Date(ev.ts).getTime() - new Date(current.startTs).getTime();
+            }
+            const reply = ev.reply || ev.result || ev.summary || '';
+            current.replyExcerpt = String(reply).slice(0, 120);
+          } else if (type === 'daemon-timeout' || type === 'timeout') {
+            current.state = 'timeout';
+            if (current.startTs && ev.ts) {
+              current.durationMs = new Date(ev.ts).getTime() - new Date(current.startTs).getTime();
+            }
+          } else if (type === 'daemon-error' || type === 'error') {
+            current.state = 'error';
+            current.replyExcerpt = String(ev.error || ev.message || '').slice(0, 120);
+          }
+        }
+      }
+      if (current) sessions.push(current);
+
+      const recent = sessions.slice(-n);
+      const totalSessions = sessions.length;
+      const durationsMs = recent.filter(s => s.durationMs != null).map(s => s.durationMs);
+      const avgDurationMs = durationsMs.length
+        ? Math.round(durationsMs.reduce((s, d) => s + d, 0) / durationsMs.length)
+        : null;
+
+      const lines = [
+        `Daemon Report — ${totalSessions} total sessions, showing last ${recent.length}`,
+        avgDurationMs != null ? `Avg duration: ${Math.round(avgDurationMs / 1000)}s` : '',
+        '',
+        ...recent.map((s, i) => {
+          const dur = s.durationMs != null ? `${Math.round(s.durationMs / 1000)}s` : '?';
+          const excerpt = s.replyExcerpt ? ` — "${s.replyExcerpt}"` : '';
+          return `  ${i + 1}. [${s.state}] ${s.startTs || '?'} (${dur})${excerpt}`;
+        }),
+      ].filter(l => l !== '');
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `daemon_report error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2300,6 +2556,10 @@ project_status(id?,showAll?) — list active projects or detail a specific proje
 project_complete(id,outcome,notes?) — mark project completed or abandoned with outcome note
 auto_build(focus?,limit?,dryRun?,priority?) — autonomously spawn builds from the proposals backlog; reads pending HIGH proposals, launches agents, marks as queued, notifies Daniel
 triage_proposals(priority?,minScore?) — score pending proposals via proposal-scorer; reject below minScore(default:30) or high-effort/low-impact; returns sorted list highest score first
+tool_audit(windowDays?) — audit runs log: total runs, success rate, failure count, runs-by-day histogram over last N days
+proposal_analysis() — proposal queue stats: state counts, rejection rate, avg age of active proposals, oldest pending age, avg score
+memory_health_detail() — memory file inventory: record counts, file sizes, stale fact count, duplicate fact count
+daemon_report(n?) — summarize last N daemon sessions: start time, state, duration, reply excerpt
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -2729,8 +2989,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (58 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals`,
+        `## Tools (62 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
