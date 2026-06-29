@@ -694,7 +694,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -743,7 +743,7 @@ const capabilityManifestTool = tool(
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
       "read_self", "fan_research",
-      "signal_propagate", "generate_tool", "verify_build", "run_tests", "staged_verify_build", "mutation_map",
+      "signal_propagate", "generate_tool", "verify_build", "run_tests", "validate_facts", "staged_verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
@@ -1519,6 +1519,43 @@ const runTestsTool = tool(
       return { content: [{ type: 'text', text: summary }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `run_tests error: ${e.message}` }] };
+    }
+  }
+);
+
+const validateFactsTool = tool(
+  "validate_facts",
+  "Scan memory/facts.ndjson for facts that reference Windows file paths matching *.mjs, *.cjs, *.js, *.html, *.json, or *.md. Removes facts where any referenced path no longer exists on disk. Rewrites the file with only valid facts. Use to prune stale path references after major file moves or deletions.",
+  {},
+  async (_args) => {
+    try {
+      const fs = _require('fs');
+      const factsFile = path.join(REPO, 'memory', 'facts.ndjson');
+      if (!fs.existsSync(factsFile)) {
+        return { content: [{ type: 'text', text: 'validate_facts: 0 total, 0 paths checked, 0 stale removed, 0 remain' }] };
+      }
+      const lines = fs.readFileSync(factsFile, 'utf8').trim().split('\n').filter(Boolean);
+      const total = lines.length;
+      const pathRe = /[A-Za-z]:[\\][^\s]+\.(?:mjs|cjs|js|html|json|md)/g;
+      let pathsChecked = 0;
+      let staleRemoved = 0;
+      const validLines = [];
+      for (const line of lines) {
+        let fact;
+        try { fact = JSON.parse(line); } catch { validLines.push(line); continue; }
+        const text = fact.fact || fact.text || fact.value || '';
+        const matches = [...String(text).matchAll(pathRe)].map(m => m[0]);
+        if (!matches.length) { validLines.push(line); continue; }
+        pathsChecked += matches.length;
+        const anyMissing = matches.some(p => !fs.existsSync(p));
+        if (anyMissing) { staleRemoved++; } else { validLines.push(line); }
+      }
+      const remain = validLines.length;
+      fs.writeFileSync(factsFile, validLines.join('\n') + (validLines.length ? '\n' : ''), 'utf8');
+      const summary = `validate_facts: ${total} total, ${pathsChecked} paths checked, ${staleRemoved} stale removed, ${remain} remain`;
+      return { content: [{ type: 'text', text: summary }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `validate_facts error: ${e.message}` }] };
     }
   }
 );
@@ -2721,7 +2758,7 @@ const daemonHealthTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2764,6 +2801,7 @@ signal_propagate(factKey) — propagate a fact's signal through memory graph; re
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 run_tests() — run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
+validate_facts() — scan facts.ndjson for Windows file-path refs, remove facts whose paths no longer exist, return count summary
 staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail — never touches master; call before a real merge
 mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
 set_instruction(key,instruction) — write a standing behavioral directive to memory; injected into your context every session
@@ -3223,8 +3261,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (64 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
+        `## Tools (65 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
