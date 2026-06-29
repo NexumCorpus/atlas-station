@@ -4,7 +4,9 @@
   "description": "",
   "main": "main.cjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node tests/behavioral.mjs",
+    "test:smoke": "node tests/smoke.mjs",
+    "test:fleet": "node tests/fleet.test.mjs",
     "start": "electron ."
   },
   "keywords": [],
