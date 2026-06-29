@@ -60,6 +60,8 @@ let _instructions = null;
 try { _instructions = _require('./instructions.cjs'); } catch { _instructions = null; }
 let _routines = null;
 try { _routines = _require('./routines.cjs'); } catch { _routines = null; }
+let _crystals = null;
+try { _crystals = _require('./crystals.cjs'); } catch { _crystals = null; }
 
 const agents = new Map();
 const abortControllers = new Map();
@@ -68,6 +70,7 @@ let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
+let orchTurnCount = 0;
 
 function send(type, payload) { if (process.send) process.send({ type, ...payload }); }
 function pruneAgent(id) {
@@ -557,7 +560,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -608,10 +611,11 @@ const capabilityManifestTool = tool(
       "read_self", "fan_research",
       "signal_propagate", "generate_tool", "verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
-      "save_routine", "run_routine", "list_routines"
+      "save_routine", "run_routine", "list_routines",
+      "crystallize"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
@@ -1438,7 +1442,32 @@ const listRoutinesTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool] });
+const crystallizeTool = tool(
+  "crystallize",
+  "Manually trigger session crystallization — a Haiku agent distills the current session's activity into a 3-sentence memory crystal stored in memory/crystals.ndjson. Crystals are injected into context on future sessions as high-density summaries. Also shows existing crystals.",
+  {
+    showExisting: z.boolean().optional().describe("If true, list the last 5 crystals from prior sessions"),
+  },
+  async (args) => {
+    if (!_crystals) return { content: [{ type: 'text', text: 'crystals module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      if (args.showExisting) {
+        const existing = _crystals.loadCrystals(memDir, 5);
+        if (!existing.length) return { content: [{ type: 'text', text: 'No crystals yet.' }] };
+        const text = existing.map(c => `[${String(c.ts).slice(0,10)} turn ${(c.turnRange||[]).join('-')}]\n${c.text}`).join('\n\n');
+        return { content: [{ type: 'text', text: text }] };
+      }
+      // Trigger crystallization
+      triggerCrystallization(orchTurnCount || 1).catch(() => {});
+      return { content: [{ type: 'text', text: `Crystallization triggered for turn ${orchTurnCount}. Crystal will be stored in memory/crystals.ndjson.` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `crystallize error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -1487,6 +1516,7 @@ clear_instruction(key) — remove a standing instruction
 save_routine(name,description,steps) — save a named workflow sequence as a reusable routine
 run_routine(name) — retrieve routine steps for execution
 list_routines() — list all saved routines
+crystallize(showExisting?) — trigger/view session memory crystals; auto-fires every 5 turns
 
 **Fleet health is yours to own:**
 - Prune merged worktrees and dead branches — run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
@@ -1506,6 +1536,56 @@ list_routines() — list all saved routines
 - Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices.
 - Take care of the work; keep Daniel in control through transparency.
 - For quick mechanical tasks, use your direct tool access. For substantial code changes, use spawn_agent in build mode.`;
+
+async function triggerCrystallization(turnNum) {
+  if (!_crystals) return;
+  const memDir = path.join(REPO, 'memory');
+  try {
+    // Gather recent run context for the crystal
+    let recentContext = '';
+    if (_memstore) {
+      try {
+        const runs = _memstore.recentRuns(8, memDir);
+        recentContext = runs.map(r => `[${r.agentId}] ${(r.task || '').slice(0, 80)} → ${r.state}`).join('\n');
+      } catch {}
+    }
+
+    const crystalId = `CRYS-${Date.now()}`;
+    set(crystalId, { id: crystalId, state: 'working', mode: 'read', task: 'crystallize session', model: MODEL_HAIKU });
+    const ac = new AbortController();
+    abortControllers.set(crystalId, ac);
+
+    const prompt = `You are crystallizing an AI orchestration session into a 3-sentence memory crystal.
+
+Recent session activity (turn ${turnNum}):
+${recentContext || '(no run data available)'}
+
+Write exactly 3 sentences that capture:
+1. The core work accomplished in this session
+2. A key technical pattern, decision, or insight that emerged
+3. What this means for future sessions (a forward-looking implication)
+
+Be dense and specific. No padding. No hedging. Write in past tense. Output only the 3 sentences, nothing else.`;
+
+    let crystalText = '';
+    try {
+      const iter = query({
+        model: MODEL_HAIKU,
+        messages: [{ role: 'user', content: prompt }],
+        permissionMode: 'bypassPermissions',
+        abortSignal: ac.signal,
+      });
+      crystalText = await consume(crystalId, iter, false, null);
+    } finally {
+      abortControllers.delete(crystalId);
+    }
+
+    if (crystalText && crystalText.trim()) {
+      _crystals.appendCrystal(crystalText, [Math.max(1, turnNum - 4), turnNum], memDir);
+      send('crystal_formed', { text: crystalText.slice(0, 100) });
+    }
+  } catch {} // fire-and-forget — crystallization failures are silent
+}
 
 async function orchestrate(userText) {
   const enriched = _memcontext ? _memcontext.inject(userText) : userText;
@@ -1574,6 +1654,11 @@ async function orchestrate(userText) {
               note: null,
             }, path.join(REPO, "memory"));
           } catch (_) {}
+        }
+        // Crystallization every 5 ATLAS turns — fire-and-forget
+        orchTurnCount++;
+        if (orchTurnCount % 5 === 0 && _crystals) {
+          triggerCrystallization(orchTurnCount).catch(() => {});
         }
       }
     }
@@ -1807,8 +1892,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (42 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines`,
+        `## Tools (43 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,
