@@ -1647,7 +1647,19 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
 }
 
 async function orchestrate(userText) {
-  const enriched = _memcontext ? _memcontext.inject(userText) : userText;
+  let enriched, _ctxStats = null;
+  if (_memcontext) {
+    const _injectResult = _memcontext.inject(userText, { tier: 'full', returnStats: true });
+    if (_injectResult && typeof _injectResult === 'object' && _injectResult.context) {
+      enriched = _injectResult.context;
+      _ctxStats = _injectResult.stats || null;
+    } else {
+      enriched = _injectResult; // fallback: inject() returned a plain string
+    }
+  } else {
+    enriched = userText;
+  }
+  if (_ctxStats) send('context_budget', { stats: _ctxStats });
   set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null });
   // Dynamic self-instructions injection
   let dynamicRole = ORCH_ROLE;
