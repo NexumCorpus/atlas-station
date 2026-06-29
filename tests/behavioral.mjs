@@ -129,6 +129,157 @@ console.log('\n5. deferred: deferTask/popPending roundtrip');
   }
 }
 
+// ─── 6. embedding.cjs: cosineSimilarity correctness ─────────────────────
+console.log('\n6. embedding: cosineSimilarity correctness');
+{
+  const { cosineSimilarity } = require(join(ROOT, 'embedding.cjs'));
+
+  // Identical vectors → similarity = 1
+  const v = [1, 0, 0, 1];
+  assert(Math.abs(cosineSimilarity(v, v) - 1.0) < 1e-9, 'identical vectors → 1.0');
+
+  // Orthogonal vectors → similarity = 0
+  assert(cosineSimilarity([1, 0], [0, 1]) === 0, 'orthogonal vectors → 0');
+
+  // Null / mismatched → returns 0, no throw
+  assert(cosineSimilarity(null, [1, 2]) === 0, 'null vector a → 0');
+  assert(cosineSimilarity([1, 2], null) === 0, 'null vector b → 0');
+  assert(cosineSimilarity([1, 2], [1, 2, 3]) === 0, 'mismatched lengths → 0');
+}
+
+// ─── 7. embstore.cjs: setEmb / getEmb / getAllEmbs roundtrip ─────────────
+console.log('\n7. embstore: setEmb/getEmb/getAllEmbs roundtrip');
+{
+  const { setEmb, getEmb, getAllEmbs } = require(join(ROOT, 'embstore.cjs'));
+  const dir = tempDir();
+  try {
+    const emb = [0.1, 0.2, 0.3];
+    setEmb('f-test-001', emb, dir);
+    const fetched = getEmb('f-test-001', dir);
+    assert(Array.isArray(fetched) && fetched.length === 3, 'getEmb returns stored array');
+    assert(Math.abs(fetched[0] - 0.1) < 1e-9, 'getEmb value[0] correct');
+
+    // Second entry for same id (append-only) — getAllEmbs keeps last
+    setEmb('f-test-001', [0.9, 0.8, 0.7], dir);
+    setEmb('f-test-002', [0.4, 0.5, 0.6], dir);
+    const all = getAllEmbs(dir);
+    assert(all.size === 2, 'getAllEmbs returns 2 unique ids');
+    assert(all.has('f-test-002'), 'getAllEmbs includes f-test-002');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 8. memstore: recallFactsSemantic — exported and is async ─────────────
+console.log('\n8. memstore: recallFactsSemantic is exported and async');
+{
+  const ms = require(join(ROOT, 'memstore.cjs'));
+  assert(typeof ms.recallFactsSemantic === 'function', 'recallFactsSemantic is exported');
+  const result = ms.recallFactsSemantic('test', { dir: join(tmpdir(), 'nonexistent-atlas-test') });
+  assert(result instanceof Promise, 'recallFactsSemantic returns a Promise');
+  // Resolve it to avoid unhandled rejection
+  result.catch(() => {});
+}
+
+// ─── 9. recallFactsSemantic — fallback to token search when no embeddings ─
+console.log('\n9. recallFactsSemantic: token fallback when no embeddings stored');
+await (async () => {
+  const { appendFact, recallFactsSemantic } = require(join(ROOT, 'memstore.cjs'));
+  const dir = tempDir();
+  try {
+    appendFact({
+      topic: 'auth',
+      fact: 'Fleet runs on Claude Code subscription. No ANTHROPIC_API_KEY needed.',
+      source: 'session:test',
+      confidence: 'verified',
+    }, dir);
+    appendFact({
+      topic: 'build-mode',
+      fact: 'Build agents use isolated git worktrees for safe code changes.',
+      source: 'agent:test',
+      confidence: 'inferred',
+    }, dir);
+
+    // No embeddings stored — should fall back to token search
+    const results = await recallFactsSemantic('subscription auth api key', { dir, maxResults: 5 });
+    assert(Array.isArray(results), 'recallFactsSemantic returns an array');
+    assert(results.length >= 1, 'recallFactsSemantic finds at least one result via token fallback');
+    assert(results.some(r => r.topic === 'auth'), 'token fallback finds auth fact');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+// ─── 10. recallFactsSemantic — empty store returns [] ─────────────────────
+console.log('\n10. recallFactsSemantic: empty store returns []');
+await (async () => {
+  const { recallFactsSemantic } = require(join(ROOT, 'memstore.cjs'));
+  const dir = tempDir();
+  try {
+    const results = await recallFactsSemantic('anything', { dir, maxResults: 5 });
+    assert(Array.isArray(results) && results.length === 0, 'empty store returns []');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+// ─── 11. memcontext: injectAsync is exported ──────────────────────────────
+console.log('\n11. memcontext: injectAsync is exported');
+{
+  const mc = require(join(ROOT, 'memcontext.cjs'));
+  assert(typeof mc.injectAsync === 'function', 'injectAsync is exported from memcontext');
+  assert(typeof mc.inject === 'function', 'inject (sync) still exported');
+  assert(typeof mc.buildContext === 'function', 'buildContext (sync) still exported');
+}
+
+// ─── 12. memcontext: injectAsync falls back gracefully ────────────────────
+console.log('\n12. memcontext: injectAsync graceful fallback');
+await (async () => {
+  const { injectAsync } = require(join(ROOT, 'memcontext.cjs'));
+  const task = 'deploy the new build agent';
+  const result = await injectAsync(task, {
+    journalPath: '/nonexistent/journal.md',
+    memDir: join(tmpdir(), 'nonexistent-atlas-memdir-xyz'),
+  });
+  assert(typeof result === 'string', 'injectAsync returns a string');
+  assert(result.includes(task), 'injectAsync preserves original task text');
+})();
+
+// ─── 13. memgraph: semantic relation is accepted ──────────────────────────
+console.log('\n13. memgraph: semantic relation accepted');
+{
+  const { addEdge, RELATIONS } = require(join(ROOT, 'memgraph.cjs'));
+  assert(RELATIONS.has('semantic'), 'RELATIONS set includes semantic');
+  const dir = tempDir();
+  try {
+    const edge = addEdge('f-001', 'semantic', 'f-002', dir);
+    assert(edge.relation === 'semantic', 'addEdge stores semantic relation');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 14. embstore: compactEmbs deduplicates ───────────────────────────────
+console.log('\n14. embstore: compactEmbs deduplicates');
+{
+  const { setEmb, compactEmbs, getAllEmbs } = require(join(ROOT, 'embstore.cjs'));
+  const dir = tempDir();
+  try {
+    setEmb('f-dup', [1, 2, 3], dir);
+    setEmb('f-dup', [4, 5, 6], dir);  // second write — same id
+    setEmb('f-other', [7, 8, 9], dir);
+    const count = compactEmbs(dir);
+    assert(count === 2, 'compactEmbs returns 2 (deduplicated)');
+    const all = getAllEmbs(dir);
+    assert(all.size === 2, 'getAllEmbs after compact has 2 unique entries');
+    // Last value for f-dup should win
+    const v = all.get('f-dup');
+    assert(v && Math.abs(v[0] - 4) < 1e-9, 'compactEmbs keeps last value per id');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ─── Summary ──────────────────────────────────────────────────────────────
 console.log(`\nResults: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

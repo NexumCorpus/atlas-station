@@ -95,6 +95,31 @@ function appendFact(fact, dir = DEFAULT_DIR) {
   };
   _appendLine(path.join(dir, FACTS_FILE), entry);
 
+  // Async embedding generation — non-blocking, best-effort
+  setImmediate(async () => {
+    try {
+      const { generateEmbedding, cosineSimilarity } = require('./embedding.cjs');
+      const { setEmb, getAllEmbs } = require('./embstore.cjs');
+      const emb = await generateEmbedding(`${entry.topic} ${entry.fact}`);
+      if (!emb) return;
+      setEmb(entry.id, emb, dir);
+      // Semantic edge creation: check recent embeddings for cosine similarity > 0.75
+      const allEmbs = getAllEmbs(dir);
+      const recentIds = [];
+      const lines2 = _loadLines(path.join(dir, FACTS_FILE)).slice(-21, -1);
+      for (const ln of lines2) { try { const p = JSON.parse(ln); if (p.id) recentIds.push(p.id); } catch {} }
+      const _memgraph = require('./memgraph.cjs');
+      for (const prevId of recentIds) {
+        const prevEmb = allEmbs.get(prevId);
+        if (!prevEmb) continue;
+        const sim = cosineSimilarity(emb, prevEmb);
+        if (sim > 0.75) {
+          try { _memgraph.addEdge(entry.id, 'semantic', prevId, dir); } catch {}
+        }
+      }
+    } catch { /* non-fatal */ }
+  });
+
   // Auto-relate: find overlapping recent facts and add graph edges
   try {
     const _memgraph = require('./memgraph.cjs');
@@ -249,7 +274,53 @@ function factStats(dir) {
   } catch { return { total: 0, byTopic: {} }; }
 }
 
-module.exports = { appendFact, appendRun, recallFacts, recentRuns, lifetimeStats, compactFacts, factStats };
+/**
+ * recallFactsSemantic(query, opts?) — Async semantic fact recall with token fallback.
+ *
+ * Generates a query embedding and scores all facts by cosine similarity (70%) +
+ * token overlap (30%) when embeddings are available. Falls back to the sync
+ * keyword-based recallFacts when the embedding model is unavailable.
+ *
+ * Returns [] on empty store; never throws.
+ */
+async function recallFactsSemantic(query, { dir = DEFAULT_DIR, maxResults = 5 } = {}) {
+  // Load all facts
+  const lines = _loadLines(path.join(dir, FACTS_FILE));
+  const facts = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  if (!facts.length) return [];
+
+  // Try semantic scoring
+  try {
+    const { generateEmbedding, cosineSimilarity } = require('./embedding.cjs');
+    const { getAllEmbs } = require('./embstore.cjs');
+    const queryEmb = await generateEmbedding(query || '');
+    if (queryEmb) {
+      const allEmbs = getAllEmbs(dir);
+      const tokens = (query || '').toLowerCase().split(/\W+/).filter(t => t.length > 2);
+      return facts
+        .map(f => {
+          const emb = allEmbs.get(f.id);
+          const semanticScore = emb ? cosineSimilarity(queryEmb, emb) : 0;
+          const haystack = `${f.topic} ${f.fact}`.toLowerCase();
+          const tokenScore = tokens.length > 0
+            ? tokens.filter(t => haystack.includes(t)).length / tokens.length
+            : 0;
+          // Blend: 70% semantic, 30% token when embedding available; token-only otherwise
+          const score = emb ? (semanticScore * 0.7 + tokenScore * 0.3) : tokenScore * 0.3;
+          return { f, score };
+        })
+        .filter(({ score }) => score > 0.05)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxResults)
+        .map(({ f }) => f);
+    }
+  } catch { /* fall through to token search */ }
+
+  // Fallback: existing token search
+  return recallFacts(query, { dir, maxResults });
+}
+
+module.exports = { appendFact, appendRun, recallFacts, recallFactsSemantic, recentRuns, lifetimeStats, compactFacts, factStats };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memstore.cjs`
