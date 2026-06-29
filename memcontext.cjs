@@ -366,7 +366,11 @@ function buildContext(task, opts = {}) {
       // Fetch extra candidates for build tier so resonance ranking has a wider pool
       // to select from before the context budget trim discards lower-ranked entries.
       const factLimit = tier === 'build' ? Math.max(maxFacts, 8) : maxFacts;
-      let facts = ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
+      // Use pre-injected semantic facts if provided (from injectAsync callers),
+      // otherwise fall back to synchronous keyword recall.
+      let facts = (opts._semanticFacts && opts._semanticFacts.length > 0)
+        ? opts._semanticFacts.slice(0, factLimit)
+        : ms.recallFacts(task, { dir: memDir, maxResults: factLimit });
       // Relevance-rank facts by Jaccard similarity to current task — all tiers.
       if (_resonance && facts && facts.length > 1) {
         try {
@@ -509,7 +513,38 @@ function buildContextStats(task, opts = {}) {
   } catch { return { totalChars: 0, sections: [] }; }
 }
 
-module.exports = { buildContext, buildContextStats, inject, loadJournalExcerpt };
+/**
+ * injectAsync(task, opts?) — Async version of inject that uses semantic fact recall.
+ *
+ * Attempts recallFactsSemantic first; if embedding model is unavailable or errors,
+ * falls back to the synchronous keyword-based inject path automatically.
+ * Never throws — memory failure is silent and non-blocking.
+ *
+ * TODO: When buildContext is refactored to be async, this bridge can be removed.
+ */
+async function injectAsync(task, opts = {}) {
+  try {
+    const ms = _getMemstore();
+    if (ms && ms.recallFactsSemantic) {
+      const {
+        maxFacts  = 5,
+        memDir    = path.join(__dirname, 'memory'),
+        tier      = 'full',
+      } = opts;
+      const factLimit = tier === 'build' ? Math.max(maxFacts, 8) : maxFacts;
+      const semanticFacts = await ms.recallFactsSemantic(task, { dir: memDir, maxResults: factLimit });
+      if (semanticFacts && semanticFacts.length > 0) {
+        const ctx = buildContext(task, { ...opts, _semanticFacts: semanticFacts });
+        if (!ctx) return task;
+        return `${ctx}\n\n${task}`;
+      }
+    }
+  } catch { /* fall through */ }
+  // Fallback to sync inject
+  return inject(task, opts);
+}
+
+module.exports = { buildContext, buildContextStats, inject, injectAsync, loadJournalExcerpt };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memcontext.cjs`

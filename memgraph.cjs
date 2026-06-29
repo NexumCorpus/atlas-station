@@ -5,7 +5,7 @@ const path = require('path');
 const GRAPH_FILE = (dir) => path.join(dir, 'fact_graph.ndjson');
 
 // Valid relation types
-const RELATIONS = new Set(['supports', 'contradicts', 'elaborates', 'supersedes', 'related_to']);
+const RELATIONS = new Set(['supports', 'contradicts', 'elaborates', 'supersedes', 'related_to', 'semantic']);
 
 // Add a directed edge: fromKey --relation--> toKey
 function addEdge(fromKey, relation, toKey, memDir) {
