@@ -10,6 +10,7 @@
     "test:wing": "node tests/wing.test.mjs",
     "test:wing:d2": "node tests/wing-d2.test.mjs",
     "test:wing:felt": "node tests/wing-felt.test.mjs",
+    "test:grader": "node tests/grader.test.mjs",
     "start": "electron ."
   },
   "keywords": [],
