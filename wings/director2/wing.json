@@ -1,0 +1,6 @@
+{
+  "name": "director2",
+  "version": 1,
+  "launch": ["python", "d2-wing.py"],
+  "capabilities": ["command-loop"]
+}
