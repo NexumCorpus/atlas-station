@@ -9,6 +9,7 @@
     "test:fleet": "node tests/fleet.test.mjs",
     "test:wing": "node tests/wing.test.mjs",
     "test:wing:d2": "node tests/wing-d2.test.mjs",
+    "test:wing:felt": "node tests/wing-felt.test.mjs",
     "start": "electron ."
   },
   "keywords": [],

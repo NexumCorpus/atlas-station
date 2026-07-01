@@ -16,6 +16,10 @@ HARNESS = Path(os.environ.get("D2_HARNESS", "E:/director2-harness"))
 SPOOL = Path(os.environ["WING_SPOOL"])
 WHITELIST = {"init", "status", "new", "advance", "tasks", "modules", "risks", "history"}
 OUTPUT_TAIL = 4000
+_TRUTHY = {"1", "true", "yes", "on"}  # mirrors director.config._TRUTHY
+# Diagnoses-only ethos: qualitative fields cross the seam VERBATIM; raw valence
+# floats (valence, peak_valence, ...) stay in trusted code and NEVER cross.
+_FELT_FIELDS = ("narrative", "trajectory", "duration_cycles")
 
 
 def emit(obj):
@@ -34,6 +38,30 @@ def run_cmd(cmd, args):
     return proc.returncode, out[-OUTPUT_TAIL:]
 
 
+def felt_state():
+    """Read each project's persisted self_state and relay it without invention."""
+    nervous = os.environ.get(
+        "DIRECTOR_NERVOUS_ENABLED", "").strip().lower() in _TRUTHY
+    projects = []
+    home = os.environ.get("DIRECTOR_HOME", "")
+    proj_root = Path(home) / "projects" if home else None
+    if proj_root and proj_root.is_dir():
+        for d in sorted(proj_root.iterdir()):
+            snap = d / "project.json"
+            if not d.is_dir() or not snap.is_file():
+                continue
+            try:
+                data = json.loads(snap.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue  # unreadable snapshot: skip, never invent
+            ss = data.get("self_state") or {}
+            entry = {"id": d.name}
+            for k in _FELT_FIELDS:  # verbatim relay, whitelisted keys only
+                entry[k] = ss.get(k)
+            projects.append(entry)
+    return {"t": "felt-state", "nervous": nervous, "projects": projects}
+
+
 def main():
     emit({"t": "status", "state": "ready", "harness": str(HARNESS)})
     while True:
@@ -44,6 +72,9 @@ def main():
             if op == "stop":
                 emit({"t": "status", "state": "stopped"})
                 return
+            if op == "felt":
+                emit(felt_state())
+                continue
             if op == "exec":
                 cmd = cmd_obj.get("cmd", "")
                 if cmd not in WHITELIST:
