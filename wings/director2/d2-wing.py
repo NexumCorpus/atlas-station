@@ -18,7 +18,9 @@ HARNESS = Path(os.environ.get("D2_HARNESS", "E:/director2-harness"))
 SPOOL = Path(os.environ["WING_SPOOL"])
 WHITELIST = {"init", "status", "new", "advance", "tasks", "modules", "risks", "history"}
 OUTPUT_TAIL = 4000
-MISSION_TIMEOUT = 600  # a campaign takes ~40s+ even on the mock backend
+# A campaign takes ~40s on the mock backend; live model backends (claude_cli:
+# ~70s per call, many calls) need far longer — override via env for live runs.
+MISSION_TIMEOUT = int(os.environ.get("WING_MISSION_TIMEOUT_S", "600"))
 _TRUTHY = {"1", "true", "yes", "on"}  # mirrors director.config._TRUTHY
 # Diagnoses-only ethos: qualitative fields cross the seam VERBATIM; raw valence
 # floats (valence, peak_valence, ...) stay in trusted code and NEVER cross.
