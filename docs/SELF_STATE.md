@@ -12,3 +12,14 @@ spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvem
 
 ## Status
 Station is operational. Pulse interval: 25 min.
+
+## Felt feed (director2 wing) — how to enable
+Not auto-started (main.cjs has no feed-init hook). From the station process or
+any Node at repo root, with `DIRECTOR_HOME` pointing at a director2 workspace:
+
+    const { startFeltFeed } = require('./felt.cjs');
+    const feed = startFeltFeed({ intervalMs: 60000 }); // mirrors wing felt-state into FELT.json
+    // feed.stop() to shut the wing down.
+
+The nervous flag mirrors `DIRECTOR_NERVOUS_ENABLED`. Narratives are relayed
+verbatim; raw valence floats never cross the seam (diagnoses-only).
