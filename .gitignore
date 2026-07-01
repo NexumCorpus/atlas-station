@@ -12,6 +12,9 @@ fleet-state.json
 fleet-agents.json
 .fleet-state.json*.tmp
 
+# Python bytecode
+__pycache__/
+
 # Memory & logs
 memory/
 *.jsonl
