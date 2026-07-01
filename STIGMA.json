@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "updated": "2026-06-29T21:51:06.078Z",
+  "updated": "2026-06-29T22:09:02.904Z",
   "subsystems": {
     "ARCHITECTURE.md": {
-      "heat": 0.00006705750185627838,
+      "heat": 0.00006366992223794754,
       "confidence": 0.4,
       "last_agent": "V-build",
       "last_touched": "2026-06-27T14:23:37.000Z",
@@ -11,7 +11,7 @@
       "rejected": []
     },
     "README.md": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-readme",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -19,7 +19,7 @@
       "rejected": []
     },
     "tests/fleet.test.mjs": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-tests",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -27,7 +27,7 @@
       "rejected": []
     },
     "persist.cjs": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-persist",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -35,7 +35,7 @@
       "rejected": []
     },
     "docs/PACKAGING.md": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-packaging",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -43,7 +43,7 @@
       "rejected": []
     },
     "docs/design/APPROVAL_ROUNDTRIP.md": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-approval",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -51,7 +51,7 @@
       "rejected": []
     },
     "agentlog.cjs": {
-      "heat": 0.00006706072976162873,
+      "heat": 0.00006367298707748027,
       "confidence": 0.4,
       "last_agent": "B-agentlog",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -59,7 +59,7 @@
       "rejected": []
     },
     "docs/design/MEMORY.md": {
-      "heat": 0.0011032963266313703,
+      "heat": 0.001047560517130353,
       "confidence": 0.4,
       "last_agent": "M-memory",
       "last_touched": "2026-06-28T06:33:17.000Z",
@@ -67,15 +67,15 @@
       "rejected": []
     },
     "fleethost.mjs": {
-      "heat": 0.9495669300874721,
+      "heat": 0.9882756615681185,
       "confidence": 0.4,
-      "last_agent": "B-110",
-      "last_touched": "2026-06-29T21:33:07.000Z",
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
       "directives": [],
       "rejected": []
     },
     "memcontext.cjs": {
-      "heat": 0.32508373132319446,
+      "heat": 0.30866130292969973,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T15:21:58.000Z",
@@ -83,7 +83,7 @@
       "rejected": []
     },
     "memstore.cjs": {
-      "heat": 0.5282526228782759,
+      "heat": 0.5015666031331982,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -91,7 +91,7 @@
       "rejected": []
     },
     "docs/design/MEMVECTOR.md": {
-      "heat": 0.0013936170844110651,
+      "heat": 0.001323214986208438,
       "confidence": 0.4,
       "last_agent": "U-vector",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -99,7 +99,7 @@
       "rejected": []
     },
     "memvector.cjs": {
-      "heat": 0.0013936170844110651,
+      "heat": 0.001323214986208438,
       "confidence": 0.4,
       "last_agent": "U-vector",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -107,7 +107,7 @@
       "rejected": []
     },
     "docs/design/FACT_EXTRACTOR.md": {
-      "heat": 0.0013936170844110651,
+      "heat": 0.001323214986208438,
       "confidence": 0.4,
       "last_agent": "U-extract",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -115,7 +115,7 @@
       "rejected": []
     },
     "fact-extractor.cjs": {
-      "heat": 0.0013936170844110651,
+      "heat": 0.001323214986208438,
       "confidence": 0.4,
       "last_agent": "U-extract",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -123,7 +123,7 @@
       "rejected": []
     },
     "ORCHELLO.md": {
-      "heat": 0.0015778186957538208,
+      "heat": 0.0014981111864193306,
       "confidence": 0.4,
       "last_agent": "B-1",
       "last_touched": "2026-06-28T08:37:09.000Z",
@@ -131,7 +131,7 @@
       "rejected": []
     },
     "main.cjs": {
-      "heat": 0.5290923990484798,
+      "heat": 0.5023639558823173,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -139,7 +139,7 @@
       "rejected": []
     },
     "preload.cjs": {
-      "heat": 0.5290923990484798,
+      "heat": 0.5023639558823173,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -147,7 +147,7 @@
       "rejected": []
     },
     ".claude/settings.json": {
-      "heat": 0.002079340294593248,
+      "heat": 0.001974297150924772,
       "confidence": 0.4,
       "last_agent": "B-11",
       "last_touched": "2026-06-28T10:12:43.000Z",
@@ -155,7 +155,7 @@
       "rejected": []
     },
     "CLAUDE.md": {
-      "heat": 0.002500294620886272,
+      "heat": 0.002373985902799967,
       "confidence": 0.4,
       "last_agent": "B-16",
       "last_touched": "2026-06-28T11:16:33.000Z",
@@ -163,7 +163,7 @@
       "rejected": []
     },
     "docs/OVERVIEW.md": {
-      "heat": 0.0020796405847875736,
+      "heat": 0.00197458227119905,
       "confidence": 0.4,
       "last_agent": "B-12",
       "last_touched": "2026-06-28T10:12:46.000Z",
@@ -171,7 +171,7 @@
       "rejected": []
     },
     "CHANGELOG.md": {
-      "heat": 0.0029504142902513145,
+      "heat": 0.0028013666365419836,
       "confidence": 0.4,
       "last_agent": "B-26",
       "last_touched": "2026-06-28T12:13:52.000Z",
@@ -179,7 +179,7 @@
       "rejected": []
     },
     ".gitignore": {
-      "heat": 0.002080241295282696,
+      "heat": 0.001975152635281415,
       "confidence": 0.4,
       "last_agent": "B-14",
       "last_touched": "2026-06-28T10:12:52.000Z",
@@ -187,7 +187,7 @@
       "rejected": []
     },
     "prune.mjs": {
-      "heat": 0.002500294620886272,
+      "heat": 0.002373985902799967,
       "confidence": 0.4,
       "last_agent": "B-16",
       "last_touched": "2026-06-28T11:16:33.000Z",
@@ -195,7 +195,7 @@
       "rejected": []
     },
     "index.html": {
-      "heat": 0.5290923990484798,
+      "heat": 0.5023639558823173,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -203,7 +203,7 @@
       "rejected": []
     },
     "goal-store.cjs": {
-      "heat": 0.004928422302899996,
+      "heat": 0.004679450562503018,
       "confidence": 0.4,
       "last_agent": "B-41",
       "last_touched": "2026-06-28T15:11:31.000Z",
@@ -211,7 +211,7 @@
       "rejected": []
     },
     "selfloop.cjs": {
-      "heat": 0.005232300234015663,
+      "heat": 0.004967977329954493,
       "confidence": 0.4,
       "last_agent": "B-47",
       "last_touched": "2026-06-28T15:32:14.000Z",
@@ -219,7 +219,7 @@
       "rejected": []
     },
     "memgraph.cjs": {
-      "heat": 0.019318213397798094,
+      "heat": 0.018342304899011418,
       "confidence": 0.4,
       "last_agent": "B-84",
       "last_touched": "2026-06-28T23:04:30.000Z",
@@ -227,7 +227,7 @@
       "rejected": []
     },
     "dream.cjs": {
-      "heat": 0.015812580089853513,
+      "heat": 0.015013767540283468,
       "confidence": 0.4,
       "last_agent": "B-76",
       "last_touched": "2026-06-28T21:55:10.000Z",
@@ -235,7 +235,7 @@
       "rejected": []
     },
     "resonance.cjs": {
-      "heat": 0.01590954119637365,
+      "heat": 0.015105830410825137,
       "confidence": 0.4,
       "last_agent": "B-77",
       "last_touched": "2026-06-28T21:57:17.000Z",
@@ -243,7 +243,7 @@
       "rejected": []
     },
     "deferred.cjs": {
-      "heat": 0.018887891717727784,
+      "heat": 0.017933722008970244,
       "confidence": 0.4,
       "last_agent": "B-83",
       "last_touched": "2026-06-28T22:56:42.000Z",
@@ -251,7 +251,7 @@
       "rejected": []
     },
     "mutationmap.cjs": {
-      "heat": 0.019919725779451697,
+      "heat": 0.018913430358577905,
       "confidence": 0.4,
       "last_agent": "B-85",
       "last_touched": "2026-06-28T23:15:07.000Z",
@@ -259,7 +259,7 @@
       "rejected": []
     },
     "instructions.cjs": {
-      "heat": 0.0359849145229959,
+      "heat": 0.03416704538634445,
       "confidence": 0.4,
       "last_agent": "B-88",
       "last_touched": "2026-06-29T02:39:53.000Z",
@@ -267,7 +267,7 @@
       "rejected": []
     },
     "routines.cjs": {
-      "heat": 0.0359849145229959,
+      "heat": 0.03416704538634445,
       "confidence": 0.4,
       "last_agent": "B-88",
       "last_touched": "2026-06-29T02:39:53.000Z",
@@ -275,7 +275,7 @@
       "rejected": []
     },
     "crystals.cjs": {
-      "heat": 0.03880230164013581,
+      "heat": 0.036842105054492494,
       "confidence": 0.4,
       "last_agent": "B-92",
       "last_touched": "2026-06-29T03:05:59.000Z",
@@ -283,7 +283,7 @@
       "rejected": []
     },
     "clusters.cjs": {
-      "heat": 0.039008299835714064,
+      "heat": 0.03703769672925745,
       "confidence": 0.4,
       "last_agent": "B-90",
       "last_touched": "2026-06-29T03:07:49.000Z",
@@ -291,7 +291,7 @@
       "rejected": []
     },
     "outcome-tracker.cjs": {
-      "heat": 0.320731691678951,
+      "heat": 0.3045291175953976,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -299,7 +299,7 @@
       "rejected": []
     },
     "session-log.cjs": {
-      "heat": 0.046961856869409915,
+      "heat": 0.0445894596764643,
       "confidence": 0.4,
       "last_agent": "B-96",
       "last_touched": "2026-06-29T04:12:04.000Z",
@@ -307,7 +307,7 @@
       "rejected": []
     },
     "projects.cjs": {
-      "heat": 0.05545626927334411,
+      "heat": 0.05265475531444829,
       "confidence": 0.4,
       "last_agent": "B-98",
       "last_touched": "2026-06-29T05:09:38.000Z",
@@ -315,7 +315,7 @@
       "rejected": []
     },
     "proposal-scorer.cjs": {
-      "heat": 0.320731691678951,
+      "heat": 0.3045291175953976,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -323,7 +323,7 @@
       "rejected": []
     },
     "session-state.cjs": {
-      "heat": 0.320731691678951,
+      "heat": 0.3045291175953976,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -331,7 +331,7 @@
       "rejected": []
     },
     "daemon-run.mjs": {
-      "heat": 0.320731691678951,
+      "heat": 0.3045291175953976,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -339,7 +339,7 @@
       "rejected": []
     },
     "tools/seed-fact-graph.mjs": {
-      "heat": 0.5282526228782759,
+      "heat": 0.5015666031331982,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -347,7 +347,7 @@
       "rejected": []
     },
     "package.json": {
-      "heat": 0.5288632368751269,
+      "heat": 0.5021463704168085,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -355,7 +355,7 @@
       "rejected": []
     },
     "tests/behavioral.mjs": {
-      "heat": 0.5288632368751269,
+      "heat": 0.5021463704168085,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -363,7 +363,7 @@
       "rejected": []
     },
     "tests/smoke.mjs": {
-      "heat": 0.5288632368751269,
+      "heat": 0.5021463704168085,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -371,18 +371,82 @@
       "rejected": []
     },
     "STIGMA.json": {
-      "heat": 0.9495669300874721,
+      "heat": 0.9871821370590147,
+      "confidence": 0.4,
+      "last_agent": "B-111",
+      "last_touched": "2026-06-29T22:04:31.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    "stigma-write.mjs": {
+      "heat": 0.9015971505764554,
       "confidence": 0.4,
       "last_agent": "B-110",
       "last_touched": "2026-06-29T21:33:07.000Z",
       "directives": [],
       "rejected": []
     },
-    "stigma-write.mjs": {
-      "heat": 0.9495669300874721,
+    "scripts/stigma-backfill.mjs": {
+      "heat": 0.9871821370590147,
       "confidence": 0.4,
-      "last_agent": "B-110",
-      "last_touched": "2026-06-29T21:33:07.000Z",
+      "last_agent": "B-111",
+      "last_touched": "2026-06-29T22:04:31.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    "stigma-read.mjs": {
+      "heat": 0.9871821370590147,
+      "confidence": 0.4,
+      "last_agent": "B-111",
+      "last_touched": "2026-06-29T22:04:31.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    ".atlas/behavioral_suite/README.md": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    ".atlas/behavioral_suite/task-001.json": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    ".atlas/behavioral_suite/task-002.json": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    ".atlas/behavioral_suite/task-003.json": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    ".atlas/population.json": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
+      "directives": [],
+      "rejected": []
+    },
+    "scripts/population_engine.mjs": {
+      "heat": 0.9882756615681185,
+      "confidence": 0.4,
+      "last_agent": "B-112",
+      "last_touched": "2026-06-29T22:04:54.000Z",
       "directives": [],
       "rejected": []
     }
