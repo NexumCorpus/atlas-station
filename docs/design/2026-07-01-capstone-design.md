@@ -2,6 +2,23 @@
 
 **Date:** 2026-07-01 · **Status:** Spec for review · **Shape chosen:** A (organism) with B (self-account) and C (certified mission) inside it.
 
+## Mission (the end in mind)
+
+- **First light:** the Phase-5 cache-eviction campaign + the pending Claude↔Grok provenance
+  test — calibration shots where an honest null is informative.
+- **The summit:** the emergent-geometry program (EGE Phases 1–5) — an open scientific
+  question, already constitution-bound with generator≠grader discipline. Target claim:
+  *an autonomous station produced a certified scientific finding, and the grader wasn't
+  the generator.* An honest null still validates the instrument.
+- **The standing orbit:** the genuine-vs-gamed-capability research program (valence,
+  continuity, un-gameable verification), where the station is both lab and subject;
+  findings feed back into the station's own gates and self-account. Compounding by design.
+- **Ruled out as a primary aim:** open-ended self-improvement of the station's own code —
+  demiurge showed that becomes theater without a hard external target. The station gets
+  better as a side effect of chasing real problems.
+
+Every downstream phase decision inherits this ordering.
+
 ## Thesis
 
 Two years of projects each proved one facet of a single question: *how do you build an AI
