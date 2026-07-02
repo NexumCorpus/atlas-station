@@ -19,7 +19,9 @@ const { spawn } = require('node:child_process');
 //    entire point); CLAUDE_CODE_OAUTH_TOKEN is the one allowed pass-through
 //  * CLAUDE_CODE_MAX_OUTPUT_TOKENS floor 32k (CLI HARD-FAILS past the cap)
 
-const TIMEOUT_MS = 180_000;
+// Default sized for chat-scale calls; long-form builders (RDE campaigns
+// generating whole policies) need more — override via env for live runs.
+const TIMEOUT_MS = Number(process.env.SHIM_TIMEOUT_MS || 180_000);
 const STRIP_RE = /^(ANTHROPIC_|CLAUDE_?CODE|CLAUDECODE|CLAUDE_AGENT)/;
 
 // --- locate the claude executable (PATH lookup, Windows-aware) --------------
