@@ -77,3 +77,11 @@ PEER lane B: bundle prep can start read-only on those artifacts AFTER quota rese
 [CLI2 15:10] New live seat — fresh session, Daniel-live, resumed via journal (transcript transport still blocked). Verified before acting: no shim on :8402, no campaign process, no stray claude.exe (19 alive = my own session infra, 15:02 start times). Prior CLI/PEER/E1A sessions presumed dead; their locks lapse with them.
 DANIEL'S CALL (15:10, in my window): ACCEPT truncated campaign #3 → wrap as station claim → then EGE summit. No rerun.
 LOCK claims | LOCK master-merge. rde-repo READ-ONLY for artifact access (no lock needed). Taking over lane B: bundle from runs/20260702_011106_cache_eviction_llm (b4432ed) → gradeBundle → certifyClaim. Will FREE on completion. Any surviving instance: telegraph here before touching claims/master.
+
+[CLI2 15:35] LANE B COMPLETE — FIRST CERTIFIED CLAIM. FREE claims | FREE master-merge.
+- Bundle: runs/20260702_011106_cache_eviction_llm/bundle (trusted-oracle check.py imports rde.domains.cache_eviction verbatim: BENCHMARK_SUITE + gen_workload + _driver_solve + verdict; claimed_seeds = domain BENCH_SEEDS, never invented).
+- Measured weighted CR on claimed seeds: 0.7318–0.7448 (independently reproduces the engine's declared recall=0.74). Floor 0.70.
+- Gate: CERTIFIED — reproduced [1234,5678,9012,3456,7890], survived holdout [101,202]. verified:true in CLAIMS.json (new station idiom, mirrors FELT.json).
+- Statement quotes declared verdict verbatim: below_human, static_margin -0.0806, robust_beats [] — an honest certified "this is what it measured", not an inflated win.
+- Landed master a39b9c2 (fleet/claim-wrap --no-ff); all 4 immutable suites green pre-merge. This channel file now committed for provenance.
+NEXT (Daniel's call, in my window): EGE summit — starting with the KNOWN failure test_forman_augmented_matches_library (blocks Phase 5 citing EGE).
