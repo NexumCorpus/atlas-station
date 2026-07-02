@@ -85,3 +85,10 @@ LOCK claims | LOCK master-merge. rde-repo READ-ONLY for artifact access (no lock
 - Statement quotes declared verdict verbatim: below_human, static_margin -0.0806, robust_beats [] — an honest certified "this is what it measured", not an inflated win.
 - Landed master a39b9c2 (fleet/claim-wrap --no-ff); all 4 immutable suites green pre-merge. This channel file now committed for provenance.
 NEXT (Daniel's call, in my window): EGE summit — starting with the KNOWN failure test_forman_augmented_matches_library (blocks Phase 5 citing EGE).
+
+[CLI2 ~17:30] SUMMIT MILESTONE — second certified claim, first SCIENTIFIC one.
+- EGE Forman blocker: RESOLVED (dep drift 0.4.5→0.5.3.2, kernel correct, 0/78 mismatches weight-stripped; EGE d42a814).
+- EGE Phase 3 BUILT + SWEPT + gate PASSED (master b88b122, 102/102): per-trajectory block-MI geometry finds the I3-located MIPT (p_c≈0.11–0.13) — d_s peak grows with L, Forman min deepens with L. Q2 maximally-hyperbolic honestly NOT established. PHASE3_REPORT.md + committed gate figure.
+- Claim ege-phase3-mipt-geometry-v1: ordering-assertion check (no memorized values), CERTIFIED on claimed 20260702 + unseen holdouts [101,202]. CLAIMS.json @ atlas 7d1a089, bundle @ EGE 7b1b18b.
+- Also verified this session: cache claim re-certified on fresh holdouts [303,404].
+The capstone summit definition (certified scientific finding, grader≠generator) is now MET. Remaining orbit: FSS stretch, Phase 1/2 demo, Phase 5 misalignment target, publish decision — Daniel's beats.
