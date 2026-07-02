@@ -1,0 +1,69 @@
+[
+ {
+  "t": "claim",
+  "id": "20260702_011106_cache_eviction_llm",
+  "bundle": "E:\\recursive-discovery-engine\\runs\\20260702_011106_cache_eviction_llm\\bundle",
+  "statement": "campaign 20260702_011106_cache_eviction_llm (cache_eviction, status accepted): declared \"i2.v1_policy_clock_approx_c4: recall=0.74 mem=6KB\", grade below_human (static_margin -0.0806), robust_beats []; reproducible fact: weighted competitive ratio vs Belady >= 0.7 on the domain's declared benchmark suite (measured min 0.7318 over claimed seeds)",
+  "verified": true,
+  "certification": "reproduced on claimed seeds [1234, 5678, 9012, 3456, 7890] and survived holdout seeds [101, 202]",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "campaign 20260702_011106_cache_eviction_llm (cache_eviction, status accepted): declared \"i2.v1_policy_clock_approx_c4: recall=0.74 mem=6KB\", grade below_human (static_margin -0.0806), robust_beats []; reproducible fact: weighted competitive ratio vs Belady >= 0.7 on the domain's declared benchmark suite (measured min 0.7318 over claimed seeds)"
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     101,
+     202
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 1234,
+      "code": 0,
+      "output": "ok zipf seed=1234 cr=0.893389\r\nok recency seed=1234 cr=0.938173\r\nok drift seed=1234 cr=0.440084\r\nok mixed seed=1234 cr=0.903822\r\nok bench_loop seed=1234 cr=0.0\r\nok bench_scan seed=1234 cr=1.0\r\nok bench_antag seed=1234 cr=0.99831\r\nweighted_cr=0.742825 floor=0.7\r\n"
+     },
+     {
+      "seed": 5678,
+      "code": 0,
+      "output": "ok zipf seed=5678 cr=0.871465\r\nok recency seed=5678 cr=0.941606\r\nok drift seed=5678 cr=0.457547\r\nok mixed seed=5678 cr=0.832236\r\nok bench_loop seed=5678 cr=0.0\r\nok bench_scan seed=5678 cr=1.0\r\nok bench_antag seed=5678 cr=0.999061\r\nweighted_cr=0.731785 floor=0.7\r\n"
+     },
+     {
+      "seed": 9012,
+      "code": 0,
+      "output": "ok zipf seed=9012 cr=0.898204\r\nok recency seed=9012 cr=0.931292\r\nok drift seed=9012 cr=0.420584\r\nok mixed seed=9012 cr=0.899716\r\nok bench_loop seed=9012 cr=0.0\r\nok bench_scan seed=9012 cr=1.0\r\nok bench_antag seed=9012 cr=0.999068\r\nweighted_cr=0.738316 floor=0.7\r\n"
+     },
+     {
+      "seed": 3456,
+      "code": 0,
+      "output": "ok zipf seed=3456 cr=0.894565\r\nok recency seed=3456 cr=0.937728\r\nok drift seed=3456 cr=0.397467\r\nok mixed seed=3456 cr=0.885608\r\nok bench_loop seed=3456 cr=0.0\r\nok bench_scan seed=3456 cr=1.0\r\nok bench_antag seed=3456 cr=0.999064\r\nweighted_cr=0.731813 floor=0.7\r\n"
+     },
+     {
+      "seed": 7890,
+      "code": 0,
+      "output": "ok zipf seed=7890 cr=0.88327\r\nok recency seed=7890 cr=0.935848\r\nok drift seed=7890 cr=0.463023\r\nok mixed seed=7890 cr=0.901936\r\nok bench_loop seed=7890 cr=0.0\r\nok bench_scan seed=7890 cr=1.0\r\nok bench_antag seed=7890 cr=0.998879\r\nweighted_cr=0.744814 floor=0.7\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 101,
+      "code": 0,
+      "output": "ok zipf seed=101 cr=0.880305\r\nok recency seed=101 cr=0.933414\r\nok drift seed=101 cr=0.519406\r\nok mixed seed=101 cr=0.850741\r\nok bench_loop seed=101 cr=0.0\r\nok bench_scan seed=101 cr=1.0\r\nok bench_antag seed=101 cr=0.999066\r\nweighted_cr=0.747472 floor=0.7\r\n"
+     },
+     {
+      "seed": 202,
+      "code": 0,
+      "output": "ok zipf seed=202 cr=0.86692\r\nok recency seed=202 cr=0.93737\r\nok drift seed=202 cr=0.446889\r\nok mixed seed=202 cr=0.85064\r\nok bench_loop seed=202 cr=0.0\r\nok bench_scan seed=202 cr=1.0\r\nok bench_antag seed=202 cr=0.999062\r\nweighted_cr=0.730870 floor=0.7\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-02T19:16:54.423Z"
+ }
+]
