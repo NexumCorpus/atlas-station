@@ -75,7 +75,7 @@ function childEnv() {
 const SYSTEM_ARGV_MAX = 4096;
 
 // --- one CLI call: prompt over stdin, JSON envelope back --------------------
-function callClaude({ model, system, user }) {
+function callClaude({ model, system, user }, ctl = {}) {
   return new Promise((resolve, reject) => {
     const exe = findClaude();
     if (!exe) return reject(new Error('claude CLI not found on PATH'));
@@ -93,7 +93,13 @@ function callClaude({ model, system, user }) {
     let stdout = '', stderr = '', done = false;
     const finish = (fn, val) => { if (!done) { done = true; clearTimeout(timer); fn(val); } };
     const timer = setTimeout(() => {
-      try { child.kill(); } catch { /* already gone */ }
+      // Tree-kill: child is a `cmd /c` wrapper -- plain kill() orphans the
+      // claude.exe grandchild, which keeps generating into the void (the
+      // 2026-07-01 cascade left 20+ of them). taskkill /T reaps the tree.
+      try {
+        if (process.platform === 'win32') spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
+        else child.kill();
+      } catch { /* already gone */ }
       finish(reject, new Error(`claude CLI timed out after ${TIMEOUT_MS / 1000}s`));
     }, TIMEOUT_MS);
     child.stdout.on('data', (d) => { stdout += d; });
@@ -101,6 +107,14 @@ function callClaude({ model, system, user }) {
     child.on('error', (e) => finish(reject, new Error(`claude CLI failed to launch: ${e.message}`)));
     child.stdin.on('error', () => { /* EPIPE if child died early; exit path reports */ });
     child.stdin.end(user);
+    // Cancellation hook: the queue is SERIAL, so a call whose client has gone
+    // must die NOW -- orphaned retries otherwise occupy the queue for their
+    // full timeout and starve every younger call (2026-07-01 campaign cascade).
+    ctl.abort = () => {
+      try { child.kill(); } catch { /* already gone */ }
+      finish(reject, new Error('client disconnected -- call cancelled'));
+    };
+    if (ctl.gone) return ctl.abort();
     child.on('close', (code) => {
       if (code !== 0) {
         return finish(reject, new Error(
@@ -185,8 +199,18 @@ async function startShim({ port = 0 } = {}) {
       const model = typeof body.model === 'string' ? body.model : '';
       const { system, user } = translate(body.messages);
       const t0 = Date.now();
+      // Track client disconnects: skip queued work whose client already gave
+      // up, and abort the in-flight child. 'close' also fires after a normal
+      // response, so writableEnded distinguishes abandonment from completion.
+      const ctl = { gone: false };
+      res.on('close', () => {
+        if (!res.writableEnded) { ctl.gone = true; if (ctl.abort) ctl.abort(); }
+      });
       queue = queue
-        .then(() => callClaude({ model, system, user }))
+        .then(() => {
+          if (ctl.gone) throw new Error('client disconnected before start -- skipped');
+          return callClaude({ model, system, user }, ctl);
+        })
         .then((out) => {
           process.stderr.write(`[shim] model=${model || 'cli-default'} ${Date.now() - t0}ms ok\n`);
           sendJson(res, 200, {
@@ -205,12 +229,16 @@ async function startShim({ port = 0 } = {}) {
         .catch((e) => {
           process.stderr.write(`[shim] model=${model || 'cli-default'} ${Date.now() - t0}ms FAIL ${e.message}\n`);
           // Forensics: a failing request dumps its own evidence (prompt sizes
-          // are the live suspect for ceiling-length calls).
-          try {
-            const dump = path.join(os.tmpdir(), `shim-fail-${Date.now()}.json`);
-            fs.writeFileSync(dump, JSON.stringify({ error: e.message, request: body }, null, 1));
-            process.stderr.write(`[shim] request dumped: ${dump}\n`);
-          } catch { /* forensics must never mask the failure */ }
+          // are the live suspect for ceiling-length calls). Disconnect-cancels
+          // are excluded -- they are the CLIENT's timeout, not a shim failure,
+          // and retry storms would dump dozens of identical bodies.
+          if (!/client disconnected/.test(e.message)) {
+            try {
+              const dump = path.join(os.tmpdir(), `shim-fail-${Date.now()}.json`);
+              fs.writeFileSync(dump, JSON.stringify({ error: e.message, request: body }, null, 1));
+              process.stderr.write(`[shim] request dumped: ${dump}\n`);
+            } catch { /* forensics must never mask the failure */ }
+          }
           try { sendJson(res, 502, { error: e.message }); } catch { /* client gone */ }
         });
     });
