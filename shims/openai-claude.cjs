@@ -67,11 +67,21 @@ function childEnv() {
   return env;
 }
 
+// System prompts ride argv (`--system-prompt`), and on Windows the CLI runs
+// via `cmd /c`, whose ~8k line cap silently WEDGES the spawn on big values
+// (RDE role prompts hang forever). Past this threshold, fold the system text
+// into the stdin payload instead — stdin has no such cap.
+const SYSTEM_ARGV_MAX = 4096;
+
 // --- one CLI call: prompt over stdin, JSON envelope back --------------------
 function callClaude({ model, system, user }) {
   return new Promise((resolve, reject) => {
     const exe = findClaude();
     if (!exe) return reject(new Error('claude CLI not found on PATH'));
+    if (system && system.length > SYSTEM_ARGV_MAX) {
+      user = `SYSTEM INSTRUCTIONS (authoritative):\n${system}\n\n---\n\n${user}`;
+      system = '';
+    }
     const [cmd, ...args] = buildArgv(exe, model, system);
     let child;
     try {
