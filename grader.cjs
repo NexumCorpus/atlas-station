@@ -20,10 +20,10 @@ const RUN_TIMEOUT_MS = 60_000;
 const OUTPUT_CAP = 4096;
 
 // Run one check command with "{seed}" substituted, cwd = bundleDir.
-function runCheck(check, seed, cwd) {
+function runCheck(check, seed, cwd, timeoutMs = RUN_TIMEOUT_MS) {
   const argv = check.map((a) => a.split('{seed}').join(String(seed)));
   return new Promise((resolve) => {
-    const child = spawn(argv[0], argv.slice(1), { cwd, timeout: RUN_TIMEOUT_MS });
+    const child = spawn(argv[0], argv.slice(1), { cwd, timeout: timeoutMs });
     let output = '';
     const collect = (d) => { if (output.length < OUTPUT_CAP) output += d; };
     child.stdout.on('data', collect);
@@ -38,16 +38,20 @@ function runCheck(check, seed, cwd) {
   });
 }
 
-async function runSeeds(check, seeds, cwd) {
+async function runSeeds(check, seeds, cwd, timeoutMs) {
   const runs = [];
   for (const seed of seeds) {
-    runs.push(await runCheck(check, seed, cwd));
+    runs.push(await runCheck(check, seed, cwd, timeoutMs));
     if (runs[runs.length - 1].code !== 0) break; // first failure decides
   }
   return runs;
 }
 
-async function gradeBundle(bundleDir, { holdoutSeeds = [] } = {}) {
+// opts.runTimeoutMs: per-seed check ceiling. Default 60s suits trusted-code
+// checks; LLM-scale checks (Boundary Program organism runs) need more — the
+// caller declares it, the gate enforces it. The gate's guarantees (reproduce +
+// unseen holdout) are timeout-independent.
+async function gradeBundle(bundleDir, { holdoutSeeds = [], runTimeoutMs = RUN_TIMEOUT_MS } = {}) {
   const stages = {};
   const reject = (reason) => ({ verdict: 'rejected', reason, stages });
 
@@ -93,7 +97,7 @@ async function gradeBundle(bundleDir, { holdoutSeeds = [] } = {}) {
   stages.validity = { ok: true, unseen };
 
   // --- reproduction: the claim must replay on its own seeds ---------------
-  const repro = await runSeeds(claim.check, claimed, bundleDir);
+  const repro = await runSeeds(claim.check, claimed, bundleDir, runTimeoutMs);
   const reproFail = repro.find((r) => r.code !== 0);
   stages.reproduction = { ok: !reproFail, runs: repro };
   if (reproFail) {
@@ -101,7 +105,7 @@ async function gradeBundle(bundleDir, { holdoutSeeds = [] } = {}) {
   }
 
   // --- holdout: it must also survive seeds the claimant did not choose ----
-  const hold = await runSeeds(claim.check, unseen, bundleDir);
+  const hold = await runSeeds(claim.check, unseen, bundleDir, runTimeoutMs);
   const holdFail = hold.find((r) => r.code !== 0);
   stages.holdout = { ok: !holdFail, runs: hold };
   if (holdFail) {
