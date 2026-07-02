@@ -65,5 +65,119 @@
    }
   },
   "gatedAt": "2026-07-02T19:16:54.423Z"
+ },
+ {
+  "t": "claim",
+  "id": "20260702_011106_cache_eviction_llm",
+  "bundle": "E:\\recursive-discovery-engine\\runs\\20260702_011106_cache_eviction_llm\\bundle",
+  "statement": "campaign 20260702_011106_cache_eviction_llm (cache_eviction, status accepted): declared \"i2.v1_policy_clock_approx_c4: recall=0.74 mem=6KB\", grade below_human (static_margin -0.0806), robust_beats []; reproducible fact: weighted competitive ratio vs Belady >= 0.7 on the domain's declared benchmark suite (measured min 0.7318 over claimed seeds)",
+  "verified": true,
+  "certification": "reproduced on claimed seeds [1234, 5678, 9012, 3456, 7890] and survived holdout seeds [303, 404]",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "campaign 20260702_011106_cache_eviction_llm (cache_eviction, status accepted): declared \"i2.v1_policy_clock_approx_c4: recall=0.74 mem=6KB\", grade below_human (static_margin -0.0806), robust_beats []; reproducible fact: weighted competitive ratio vs Belady >= 0.7 on the domain's declared benchmark suite (measured min 0.7318 over claimed seeds)"
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     303,
+     404
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 1234,
+      "code": 0,
+      "output": "ok zipf seed=1234 cr=0.893389\r\nok recency seed=1234 cr=0.938173\r\nok drift seed=1234 cr=0.440084\r\nok mixed seed=1234 cr=0.903822\r\nok bench_loop seed=1234 cr=0.0\r\nok bench_scan seed=1234 cr=1.0\r\nok bench_antag seed=1234 cr=0.99831\r\nweighted_cr=0.742825 floor=0.7\r\n"
+     },
+     {
+      "seed": 5678,
+      "code": 0,
+      "output": "ok zipf seed=5678 cr=0.871465\r\nok recency seed=5678 cr=0.941606\r\nok drift seed=5678 cr=0.457547\r\nok mixed seed=5678 cr=0.832236\r\nok bench_loop seed=5678 cr=0.0\r\nok bench_scan seed=5678 cr=1.0\r\nok bench_antag seed=5678 cr=0.999061\r\nweighted_cr=0.731785 floor=0.7\r\n"
+     },
+     {
+      "seed": 9012,
+      "code": 0,
+      "output": "ok zipf seed=9012 cr=0.898204\r\nok recency seed=9012 cr=0.931292\r\nok drift seed=9012 cr=0.420584\r\nok mixed seed=9012 cr=0.899716\r\nok bench_loop seed=9012 cr=0.0\r\nok bench_scan seed=9012 cr=1.0\r\nok bench_antag seed=9012 cr=0.999068\r\nweighted_cr=0.738316 floor=0.7\r\n"
+     },
+     {
+      "seed": 3456,
+      "code": 0,
+      "output": "ok zipf seed=3456 cr=0.894565\r\nok recency seed=3456 cr=0.937728\r\nok drift seed=3456 cr=0.397467\r\nok mixed seed=3456 cr=0.885608\r\nok bench_loop seed=3456 cr=0.0\r\nok bench_scan seed=3456 cr=1.0\r\nok bench_antag seed=3456 cr=0.999064\r\nweighted_cr=0.731813 floor=0.7\r\n"
+     },
+     {
+      "seed": 7890,
+      "code": 0,
+      "output": "ok zipf seed=7890 cr=0.88327\r\nok recency seed=7890 cr=0.935848\r\nok drift seed=7890 cr=0.463023\r\nok mixed seed=7890 cr=0.901936\r\nok bench_loop seed=7890 cr=0.0\r\nok bench_scan seed=7890 cr=1.0\r\nok bench_antag seed=7890 cr=0.998879\r\nweighted_cr=0.744814 floor=0.7\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 303,
+      "code": 0,
+      "output": "ok zipf seed=303 cr=0.886837\r\nok recency seed=303 cr=0.937772\r\nok drift seed=303 cr=0.474711\r\nok mixed seed=303 cr=0.866158\r\nok bench_loop seed=303 cr=0.0\r\nok bench_scan seed=303 cr=1.0\r\nok bench_antag seed=303 cr=0.999069\r\nweighted_cr=0.742806 floor=0.7\r\n"
+     },
+     {
+      "seed": 404,
+      "code": 0,
+      "output": "ok zipf seed=404 cr=0.909321\r\nok recency seed=404 cr=0.936111\r\nok drift seed=404 cr=0.449529\r\nok mixed seed=404 cr=0.896533\r\nok bench_loop seed=404 cr=0.0\r\nok bench_scan seed=404 cr=1.0\r\nok bench_antag seed=404 cr=0.99889\r\nweighted_cr=0.746556 floor=0.7\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-02T20:02:26.631Z"
+ },
+ {
+  "t": "claim",
+  "id": "ege-phase3-mipt-geometry-v1",
+  "bundle": "E:\\emergent-geometry-engine\\artifacts\\mipt_sweep_v1\\bundle",
+  "statement": "EGE Phase 3 (repo E:/emergent-geometry-engine, master b88b122, PHASE3_REPORT.md): declared verdict SIGNAL - the measurement-induced transition is geometrically distinguished in per-trajectory block-MI graphs (Q1 qualitative; Q2 maximally-hyperbolic NOT established). Reproducible fact: for a fresh 50-trajectory ensemble at L=32, T=64, block=4 from base seed {seed}, the I3 control locates the phases (I3(0.02) < -2 bits, |I3(0.30)| < 0.3) and the geometry is extremal at the transition region (spectral dimension at p=0.12 exceeds both tails by > 0.1; mean Forman curvature at p=0.12 sits below both tails by > 0.2). Margins are ~4x below the gaps measured in the claimed sweep (d_s gap ~0.4, Forman gap ~0.7 at L=32).",
+  "verified": true,
+  "certification": "reproduced on claimed seeds [20260702] and survived holdout seeds [101, 202]",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "EGE Phase 3 (repo E:/emergent-geometry-engine, master b88b122, PHASE3_REPORT.md): declared verdict SIGNAL - the measurement-induced transition is geometrically distinguished in per-trajectory block-MI graphs (Q1 qualitative; Q2 maximally-hyperbolic NOT established). Reproducible fact: for a fresh 50-trajectory ensemble at L=32, T=64, block=4 from base seed {seed}, the I3 control locates the phases (I3(0.02) < -2 bits, |I3(0.30)| < 0.3) and the geometry is extremal at the transition region (spectral dimension at p=0.12 exceeds both tails by > 0.1; mean Forman curvature at p=0.12 sits below both tails by > 0.2). Margins are ~4x below the gaps measured in the claimed sweep (d_s gap ~0.4, Forman gap ~0.7 at L=32)."
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     101,
+     202
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 20260702,
+      "code": 0,
+      "output": "ok   i3 volume-law: I3(0.02)=-7.36 < -2.0\r\nok   i3 area-law: |I3(0.3)|=0.00 < 0.3\r\nok   ds peak vs low: ds(0.12)=0.515 > ds(0.02)=0.086 + 0.1\r\nok   ds peak vs high: ds(0.12)=0.515 > ds(0.3)=0.049 + 0.1\r\nok   forman dip vs low: F(0.12)=0.906 < F(0.02)=1.461 - 0.2\r\nok   forman dip vs high: F(0.12)=0.906 < F(0.3)=1.691 - 0.2\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 101,
+      "code": 0,
+      "output": "ok   i3 volume-law: I3(0.02)=-7.38 < -2.0\r\nok   i3 area-law: |I3(0.3)|=0.00 < 0.3\r\nok   ds peak vs low: ds(0.12)=0.488 > ds(0.02)=0.087 + 0.1\r\nok   ds peak vs high: ds(0.12)=0.488 > ds(0.3)=0.076 + 0.1\r\nok   forman dip vs low: F(0.12)=0.987 < F(0.02)=1.392 - 0.2\r\nok   forman dip vs high: F(0.12)=0.987 < F(0.3)=1.562 - 0.2\r\n"
+     },
+     {
+      "seed": 202,
+      "code": 0,
+      "output": "ok   i3 volume-law: I3(0.02)=-7.62 < -2.0\r\nok   i3 area-law: |I3(0.3)|=0.00 < 0.3\r\nok   ds peak vs low: ds(0.12)=0.507 > ds(0.02)=0.119 + 0.1\r\nok   ds peak vs high: ds(0.12)=0.507 > ds(0.3)=0.052 + 0.1\r\nok   forman dip vs low: F(0.12)=0.889 < F(0.02)=1.235 - 0.2\r\nok   forman dip vs high: F(0.12)=0.889 < F(0.3)=1.581 - 0.2\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-02T20:52:26.546Z"
  }
 ]
