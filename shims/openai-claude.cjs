@@ -111,7 +111,12 @@ function callClaude({ model, system, user }, ctl = {}) {
     // must die NOW -- orphaned retries otherwise occupy the queue for their
     // full timeout and starve every younger call (2026-07-01 campaign cascade).
     ctl.abort = () => {
-      try { child.kill(); } catch { /* already gone */ }
+      // Same tree-kill as the timeout path: plain kill() only reaps the
+      // cmd /c wrapper and the claude grandchild generates on as a zombie.
+      try {
+        if (process.platform === 'win32') spawn('taskkill', ['/T', '/F', '/PID', String(child.pid)]);
+        else child.kill();
+      } catch { /* already gone */ }
       finish(reject, new Error('client disconnected -- call cancelled'));
     };
     if (ctl.gone) return ctl.abort();
