@@ -1,4 +1,5 @@
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -203,6 +204,13 @@ async function startShim({ port = 0 } = {}) {
         })
         .catch((e) => {
           process.stderr.write(`[shim] model=${model || 'cli-default'} ${Date.now() - t0}ms FAIL ${e.message}\n`);
+          // Forensics: a failing request dumps its own evidence (prompt sizes
+          // are the live suspect for ceiling-length calls).
+          try {
+            const dump = path.join(os.tmpdir(), `shim-fail-${Date.now()}.json`);
+            fs.writeFileSync(dump, JSON.stringify({ error: e.message, request: body }, null, 1));
+            process.stderr.write(`[shim] request dumped: ${dump}\n`);
+          } catch { /* forensics must never mask the failure */ }
           try { sendJson(res, 502, { error: e.message }); } catch { /* client gone */ }
         });
     });
