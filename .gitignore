@@ -32,3 +32,7 @@ orch_test.mjs
 gui.mjs
 upgrade1.mjs
 designmemory.mjs
+_shim.log*
+_rde_campaign.log*
+_peer_reply1.*
+.cache/
