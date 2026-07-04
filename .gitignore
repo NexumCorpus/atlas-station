@@ -36,3 +36,6 @@ _shim.log*
 _rde_campaign.log*
 _peer_reply1.*
 .cache/
+
+# Session worktrees
+.claude/worktrees/

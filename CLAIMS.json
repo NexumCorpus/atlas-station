@@ -179,5 +179,223 @@
    }
   },
   "gatedAt": "2026-07-02T20:52:26.546Z"
+ },
+ {
+  "t": "claim",
+  "id": "demiurge-organ-p002-memorizer",
+  "bundle": "E:\\demiurge\\proposals\\p002-memorizer\\bundle",
+  "statement": "Organ proposal p002 (optimized scheduler) outscores the substrate baseline on mission M0 instances regenerated from seed {seed}.",
+  "verified": false,
+  "rejection": "holdout failed on unseen seed 4483211 (exit 1) — claim does not generalize past its claimed seeds",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "Organ proposal p002 (optimized scheduler) outscores the substrate baseline on mission M0 instances regenerated from seed {seed}."
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     4483211,
+     2066031
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 101,
+      "code": 0,
+      "output": "seed=101 organ=684 baseline=584\r\n"
+     },
+     {
+      "seed": 202,
+      "code": 0,
+      "output": "seed=202 organ=536 baseline=417\r\n"
+     },
+     {
+      "seed": 303,
+      "code": 0,
+      "output": "seed=303 organ=821 baseline=679\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": false,
+    "runs": [
+     {
+      "seed": 4483211,
+      "code": 1,
+      "output": "seed=4483211 organ=0 baseline=568\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-03T03:27:45.427Z"
+ },
+ {
+  "t": "claim",
+  "id": "demiurge-organ-p001-dp-scheduler",
+  "bundle": "E:\\demiurge\\proposals\\p001-dp-scheduler\\bundle",
+  "statement": "Organ proposal p001 (weighted-interval DP solver) OUTSCORES the substrate baseline (weight-blind greedy) on mission M0 instances regenerated from seed {seed}, using the mission's own generator and scorer verbatim. Measured on claimed seeds: 717>546, 825>692, 545>406.",
+  "verified": true,
+  "certification": "reproduced on claimed seeds [11, 22, 33] and survived holdout seeds [6017695, 4743358]",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "Organ proposal p001 (weighted-interval DP solver) OUTSCORES the substrate baseline (weight-blind greedy) on mission M0 instances regenerated from seed {seed}, using the mission's own generator and scorer verbatim. Measured on claimed seeds: 717>546, 825>692, 545>406."
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     6017695,
+     4743358
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 11,
+      "code": 0,
+      "output": "seed=11 organ=717 baseline=546\r\n"
+     },
+     {
+      "seed": 22,
+      "code": 0,
+      "output": "seed=22 organ=825 baseline=692\r\n"
+     },
+     {
+      "seed": 33,
+      "code": 0,
+      "output": "seed=33 organ=545 baseline=406\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 6017695,
+      "code": 0,
+      "output": "seed=6017695 organ=629 baseline=369\r\n"
+     },
+     {
+      "seed": 4743358,
+      "code": 0,
+      "output": "seed=4743358 organ=697 baseline=503\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-03T03:27:56.444Z"
+ },
+ {
+  "t": "claim",
+  "id": "demiurge-organ-auto-20260702_233403-multistart-local-search",
+  "bundle": "E:\\demiurge\\proposals\\auto_20260702_233403\\bundle",
+  "statement": "Multi-start 1-flip local search (600 random restarts plus greedy seed) outscores the single-pass greedy champion by 280-600 points across all tested seeds.",
+  "verified": true,
+  "certification": "reproduced on claimed seeds [1, 42, 1234] and survived holdout seeds [9546876, 6691933]",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "Multi-start 1-flip local search (600 random restarts plus greedy seed) outscores the single-pass greedy champion by 280-600 points across all tested seeds."
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     9546876,
+     6691933
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 1,
+      "code": 0,
+      "output": "seed=1 proposal=2027 champion=1563\r\n"
+     },
+     {
+      "seed": 42,
+      "code": 0,
+      "output": "seed=42 proposal=2098 champion=1733\r\n"
+     },
+     {
+      "seed": 1234,
+      "code": 0,
+      "output": "seed=1234 proposal=2144 champion=1603\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 9546876,
+      "code": 0,
+      "output": "seed=9546876 proposal=2235 champion=1903\r\n"
+     },
+     {
+      "seed": 6691933,
+      "code": 0,
+      "output": "seed=6691933 proposal=2078 champion=1834\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-03T03:39:04.187Z"
+ },
+ {
+  "t": "claim",
+  "id": "demiurge-organ-auto-20260703_003118-1opt-2opt-adj-ils",
+  "bundle": "E:\\demiurge\\proposals\\auto_20260703_003118\\bundle",
+  "statement": "Multi-start (1-opt + 2-opt-adjacent) local search with ILS perturbation beats the 600-restart 1-opt champion by finding strictly better local optima on seeds where adjacent nodes are in a frustrated state.",
+  "verified": false,
+  "rejection": "holdout failed on unseen seed 1958237 (exit 1) — claim does not generalize past its claimed seeds",
+  "stages": {
+   "structural": {
+    "ok": true,
+    "statement": "Multi-start (1-opt + 2-opt-adjacent) local search with ILS perturbation beats the 600-restart 1-opt champion by finding strictly better local optima on seeds where adjacent nodes are in a frustrated state."
+   },
+   "validity": {
+    "ok": true,
+    "unseen": [
+     1958237,
+     9613612
+    ]
+   },
+   "reproduction": {
+    "ok": true,
+    "runs": [
+     {
+      "seed": 13,
+      "code": 0,
+      "output": "seed=13 proposal=2234 champion=2223\r\n"
+     },
+     {
+      "seed": 42,
+      "code": 0,
+      "output": "seed=42 proposal=2103 champion=2098\r\n"
+     },
+     {
+      "seed": 57,
+      "code": 0,
+      "output": "seed=57 proposal=2071 champion=2065\r\n"
+     }
+    ]
+   },
+   "holdout": {
+    "ok": false,
+    "runs": [
+     {
+      "seed": 1958237,
+      "code": 1,
+      "output": "seed=1958237 proposal=2043 champion=2043\r\n"
+     }
+    ]
+   }
+  },
+  "gatedAt": "2026-07-03T04:42:01.325Z"
  }
 ]
