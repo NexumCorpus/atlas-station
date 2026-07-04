@@ -3596,6 +3596,18 @@ async function runDeferredTasks() {
     send('deferred_error', { error: e.message });
   }
 }
+// Station nerve — estate wake digest to the GUI vitals strip + presence note
+// to the spine telegraph. First beat 3s after startup (warms the cache that
+// memcontext reads); re-beats every 5min so the strip tracks the estate.
+const _nerve = _require('./station-nerve.cjs');
+function stationBeat() {
+  _nerve.wake((err, text) => {
+    if (text) send('station', { line: text.split('\n')[0], full: text });
+  });
+}
+setTimeout(() => { stationBeat(); _nerve.note('fleet sidecar online'); }, 3000);
+setInterval(stationBeat, 5 * 60 * 1000);
+
 // Execute deferred tasks from previous sessions — fires 5s after startup to let briefing go first
 setTimeout(() => runDeferredTasks().catch(() => {}), 5000);
 

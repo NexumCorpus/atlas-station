@@ -1188,6 +1188,23 @@ input:focus-visible{outline:none}
         da.addEventListener('click', function() { tray.innerHTML=''; tray.style.display='none'; });
         tray.appendChild(da);
       }
+    } else if(m.type==="station"){
+      // Estate wake digest from station-nerve — one dense line in the vitals
+      // strip, full digest on hover. The GUI now opens its eyes to E:\station.
+      var vest=document.getElementById('vestate');
+      if(!vest){
+        var vag=document.getElementById('vagents');
+        if(vag){
+          vest=document.createElement('span');
+          vest.id='vestate';
+          vest.style.cssText='font-size:8.5px;color:var(--dim);letter-spacing:.08em;border-left:1px solid var(--border);padding-left:10px;max-width:520px;overflow:hidden;text-overflow:ellipsis;';
+          vag.parentNode.insertBefore(vest,vag.nextSibling);
+        }
+      }
+      if(vest){
+        vest.textContent=(m.line||'').replace(/^STATION WAKE\s*/,'⌂ ');
+        vest.title=m.full||m.line||'';
+      }
     } else if(m.type==="pulse"){
       showToast('♡ pulse','pulse',2000);
       addTimelineEvent('♡','pulse — '+(m.ts?new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'heartbeat'),'evpulse');

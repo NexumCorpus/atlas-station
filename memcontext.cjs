@@ -445,6 +445,12 @@ function buildContext(task, opts = {}) {
     if (dynamicBrief.trim()) {
       parts.push(dynamicBrief.trim());
     }
+    // Estate wake digest (E:\station) — cached by station-nerve, warmed by
+    // fleethost's beat; empty until first beat, and that's fine.
+    try {
+      const estate = require('./station-nerve.cjs').cached();
+      if (estate) parts.push('[Estate — station wake digest]\n' + estate);
+    } catch {}
   }
 
   // Priority-ordered budget trim: temporal → session → journal → runs → facts. STATION_BRIEF never trimmed.
