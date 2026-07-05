@@ -553,6 +553,16 @@ input:focus-visible{outline:none}
       <div id="tab-station" class="tab-panel" style="display:none">
         <div id="stationhealthlab" style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;padding:5px 8px 3px;display:flex;align-items:center;gap:5px;border-top:1px solid rgba(255,255,255,.04)"><span class="sh-title">◈ Station Health</span></div>
         <div id="stationhealth" style="padding:4px 8px 8px">
+          <div class="sh-section" id="sh-estate-wrap">
+            <div class="sh-sec-title">◈ Estate Engine</div>
+            <div id="sh-estate"><div class="sh-empty">loading…</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section" id="sh-wall-wrap">
+            <div class="sh-sec-title">◇ Recombination Wall</div>
+            <div id="sh-wall"><div class="sh-empty">idle — press MAP</div></div>
+          </div>
+          <div class="sh-divider"></div>
           <div class="sh-section" id="sh-goals-wrap">
             <div class="sh-sec-title">Goals</div>
             <div id="sh-goals"><div class="sh-empty">loading…</div></div>
@@ -2419,11 +2429,41 @@ input:focus-visible{outline:none}
     }
   }
 
+  function _num(s, re){ var m=String(s==null?'':s).match(re); return m?m[1]:null; }
+  function _chip(t,c){ return '<span style="background:rgba(255,255,255,.05);border:1px solid '+c+';color:'+c+';padding:1px 5px;border-radius:8px;white-space:nowrap">'+esc(t)+'</span>'; }
+  function renderEstate(data){
+    var el=document.getElementById('sh-estate'); if(!el||!data) return;
+    var moat=data.moat||'', conv=data.conversions||'';
+    if((''+moat).indexOf('ERR')===0 || (!moat && !conv)){ el.innerHTML='<div class="sh-empty">station unreachable</div>'; return; }
+    var dir=+(_num(moat,/direction\(certs\)=(\d+)/)||0), exe=+(_num(moat,/execution\(struct\+recon\)=(\d+)/)||0);
+    var tot=Math.max(dir+exe,1), dpct=Math.round(dir/tot*100);
+    var descent=_num(moat,/DESCENT (stock \d+->\d+[^|]*)/)||'';
+    var stock=_num(conv,/stock=(\d+)/)||'0', hard=_num(conv,/HARD certified=(\d+)/)||'0';
+    var drift=_num(conv,/drift-assertions=(\d+)/)||'0', wit=_num(conv,/witnessed-ledgers=(\d+)/)||'0';
+    var say=_num(conv,/provable-say=(\S+?) had/)||'', recon=_num(conv,/RECON shards=(\d+)/)||'0';
+    el.innerHTML =
+      '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px">'
+        +'<span style="font-size:24px;font-weight:700;color:var(--cyan);line-height:1;font-family:var(--voice)">'+esc(stock)+'</span>'
+        +'<span style="font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em">performance→possession stock</span></div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:3px;font-size:8px;margin-bottom:8px">'
+        +_chip('HARD '+hard,'var(--acid)')+_chip('DRIFT '+drift,'var(--dim)')
+        +_chip('WIT '+wit,'var(--dim)')+_chip('SHARD '+recon,'var(--violet)')
+        +(say?_chip('SAY '+say,'var(--amber)'):'')+'</div>'
+      +'<div style="font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Fulcrum · defensible vs commoditizing</div>'
+      +'<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:rgba(255,255,255,.05);margin-bottom:3px">'
+        +'<div style="width:'+dpct+'%;background:var(--acid);box-shadow:0 0 6px var(--acid)"></div>'
+        +'<div style="flex:1;background:var(--amber);opacity:.45"></div></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:8px"><span style="color:var(--acid)">direction '+dir+'</span><span style="color:var(--amber)">execution '+exe+'</span></div>'
+      +(descent?'<div style="font-size:8px;color:var(--dim);margin-top:6px">◇ portability ✓ · descent '+esc(descent)+'</div>':'');
+  }
   function loadStationHealth() {
     if (window.atlas && window.atlas.stationHealth) {
       window.atlas.stationHealth().then(function(data) {
         renderStationHealth(data);
       }).catch(function() {});
+    }
+    if (window.atlas && window.atlas.estate) {
+      window.atlas.estate().then(renderEstate).catch(function() {});
     }
   }
 

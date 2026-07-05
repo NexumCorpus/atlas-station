@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld("atlas", {
   listDocs: () => ipcRenderer.send("list-docs"),
   readGraph: () => ipcRenderer.send("read-graph"),
   stationHealth: () => ipcRenderer.invoke("atlas:station-health"),
+  estate: () => ipcRenderer.invoke("atlas:estate"),
+  wall: () => ipcRenderer.invoke("atlas:wall"),
+  discover: () => ipcRenderer.invoke("atlas:discover"),
   onFleet: (cb) => {
     if (_fleetListener) ipcRenderer.removeListener("fleet", _fleetListener);
     _fleetListener = (_e, m) => cb(m);

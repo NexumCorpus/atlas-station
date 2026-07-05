@@ -3,7 +3,7 @@
 // harness renderer, and dispatches new agents on request. The window is the
 // oversight surface for many agents — the station, not a single cell.
 const { app, BrowserWindow, ipcMain, screen } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const path = require("path");
 
 const fs = require("fs");
@@ -228,6 +228,28 @@ ipcMain.handle("atlas:station-health", async () => {
 
   return { goals, proposals, outcomes, daemon };
 });
+
+// ── Estate engine — the station's own faculties, on screen (2026-07-05) ──────
+// The STATION tab surfaces the compounding-lead vitals (moat + conversions), the
+// recombination-wall map, and the wall-crossing engine. All shell out to
+// station.py and degrade to an "ERR …" string; a slow station never blocks the
+// GUI (Law III — nothing waits).
+const STATION_PY = "E:/station/station.py";
+function stationCall(verb, args) {
+  return new Promise((res) => {
+    execFile("python", [STATION_PY, verb, ...(args || [])],
+      { timeout: 60000, windowsHide: true }, (err, stdout, stderr) => {
+        const out = (stdout || "").trim();
+        res(out || (err ? "ERR " + ((stderr || "").trim() || err.message) : ""));
+      });
+  });
+}
+ipcMain.handle("atlas:estate", async () => ({
+  moat: await stationCall("moat"),
+  conversions: await stationCall("conversions"),
+}));
+ipcMain.handle("atlas:wall", async () => ({ wall: await stationCall("wall") }));
+ipcMain.handle("atlas:discover", async () => ({ discover: await stationCall("discover") }));
 
 // The orchestrator on itself: a preset batch of additive self-build tasks.
 const SELF_BUILD = [
