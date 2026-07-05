@@ -9,6 +9,7 @@
   --cyan:#22e1ff;--mag:#ff2d95;--ember:#ff6a3d;--acid:#49ff9e;--amber:#ffc24b;--violet:#9d6bff;
   --ink:#cfd6e6;--dim:#5a5870;--voice:'Iowan Old Style',Palatino,Georgia,serif;
   --accent:var(--violet);--fg:var(--ink);--border:#1c1830;
+  --ui-scale:1;
 }
 @keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(3px)}}
 @keyframes drift{0%{transform:translateY(0)}100%{transform:translateY(-12px)}}
@@ -43,6 +44,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:#9aa0b8;font-family:'S
 body{display:flex;flex-direction:column;position:relative;background-image:radial-gradient(circle at 20% 80%, rgba(157,107,255,.03) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(100,180,255,.02) 0%, transparent 50%)}
 body::before{content:"";position:fixed;top:-4px;left:0;right:0;bottom:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);will-change:transform;animation:scan 2s linear infinite;opacity:.5}
 body::after{content:"";position:fixed;inset:-5%;pointer-events:none;z-index:0;background:radial-gradient(60% 40% at 30% 0%,rgba(34,225,255,.06),transparent 70%),radial-gradient(50% 40% at 90% 100%,rgba(255,45,149,.05),transparent 70%);animation:drift 11s ease-in-out infinite alternate}
+.mem,#vitals,#main,#reply,.bar{zoom:var(--ui-scale,1)}
+.uiscale-btn{font-family:inherit;font-size:11px;line-height:1;width:16px;height:16px;padding:0;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;border-radius:3px}
+.uiscale-btn:hover{color:var(--cyan);border-color:var(--cyan)}
 .dim{color:var(--dim)}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid rgba(157,107,255,.12);font-size:10px;letter-spacing:.16em;text-transform:uppercase;flex:none;z-index:2;
   background:linear-gradient(90deg,rgba(157,107,255,.04) 0%,transparent 30%,transparent 70%,rgba(34,225,255,.02) 100%);
@@ -431,6 +435,11 @@ input:focus-visible{outline:none}
     <span id="counts"><span id="wcount">0</span> working · <span id="subcount">0</span> agents · <span id="totalcost">$0.00</span> session</span>
     <span id="lifetime" style="display:none; color:var(--dim); font-size:9px; margin-left:12px; padding-left:12px; border-left:1px solid var(--border);"></span>
     <button id="memtoggle" style="margin-left:8px;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="browse memory facts">mem</button>
+    <span id="uiscale" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:9px;color:var(--dim);letter-spacing:.06em" title="UI scale · Ctrl - / Ctrl = · Ctrl 0 resets">
+      <button class="uiscale-btn" data-scale="-1" title="smaller (Ctrl -)">−</button>
+      <span id="uiscale-val" style="min-width:30px;text-align:center;color:var(--cyan);font-variant-numeric:tabular-nums">100%</span>
+      <button class="uiscale-btn" data-scale="1" title="larger (Ctrl =)">+</button>
+    </span>
   </div>
 
   <div id="vitals" class="boot-seq">
@@ -676,6 +685,23 @@ input:focus-visible{outline:none}
   function savePrefs(patch) {
     try { var p = loadPrefs(); Object.assign(p, patch); localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e) {}
   }
+  // ── UI scale (persisted zoom over the whole cockpit) ─
+  var UI_MIN = 0.7, UI_MAX = 1.6;
+  function applyScale(v) {
+    v = Math.max(UI_MIN, Math.min(UI_MAX, Math.round(v * 20) / 20));
+    document.documentElement.style.setProperty('--ui-scale', v);
+    var lbl = document.getElementById('uiscale-val');
+    if (lbl) lbl.textContent = Math.round(v * 100) + '%';
+    savePrefs({ uiScale: v });
+    return v;
+  }
+  function bumpScale(dir) { applyScale((parseFloat(loadPrefs().uiScale) || 1) + dir * 0.1); }
+  (function initScale() {
+    applyScale(parseFloat(loadPrefs().uiScale) || 1);
+    document.querySelectorAll('.uiscale-btn').forEach(function(b) {
+      b.addEventListener('click', function() { bumpScale(parseInt(b.getAttribute('data-scale'), 10)); });
+    });
+  })();
   function getPanelStates() {
     var ids = ['proposals','goals','memfacts','docs','metrics','cosmos','budget'];
     var s = {};
@@ -2310,6 +2336,11 @@ input:focus-visible{outline:none}
   }
 
   window.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '_' || e.key === '0')) {
+      e.preventDefault();
+      if (e.key === '0') applyScale(1); else bumpScale((e.key === '-' || e.key === '_') ? -1 : 1);
+      return;
+    }
     if (e.target.id === 'agentreply' || e.target.id === 'say') {
       // In inputs: only handle Ctrl+K and Escape
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
