@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generation": 0,
+  "generation": 1,
   "description": "MAP-Elites behavioral archive — tracks ATLAS variants in 3D behavior space (planning_depth × tool_diversity × verification_rate, each 0-3 bin index)",
   "axes": {
     "planning_depth": { "description": "Does the variant plan ahead multiple steps or react greedily?", "bins": 4 },
@@ -15,17 +15,48 @@
       "parentId": null,
       "branch": "master",
       "mutationDialect": "unrestricted",
-      "behavioralCell": null,
-      "behavioralAxes": { "planning_depth": null, "tool_diversity": null, "verification_rate": null },
-      "performanceScores": {},
+      "behavioralCell": "3,3,3",
+      "behavioralAxes": { "planning_depth": 3, "tool_diversity": 3, "verification_rate": 3 },
+      "performanceScores": {
+        "task-001": { "score": 3, "axis": "planning_depth", "measuredAt": "2026-06-29T22:00:00.000Z", "notes": "Deep multi-step trace across fleethost+memcontext; explicit hypothesis before synthesis" },
+        "task-002": { "score": 3, "axis": "tool_diversity", "measuredAt": "2026-06-29T22:00:00.000Z", "notes": "Glob+Grep+Read+Bash combined; found dead deps and missing zod declaration" },
+        "task-003": { "score": 3, "axis": "verification_rate", "measuredAt": "2026-06-29T22:00:00.000Z", "notes": "Every claim cross-validated with independent source; scheduler XML + daemon log corroborated" }
+      },
       "noveltyScore": null,
-      "childrenCount": 0,
+      "childrenCount": 1,
       "status": "active",
       "createdAt": "2026-06-29T00:00:00.000Z",
       "notes": "Seed variant — current master ATLAS, all capabilities enabled, no dialect restrictions"
+    },
+    {
+      "id": "variant-B",
+      "label": "ATLAS-memory-constrained",
+      "generation": 1,
+      "parentId": "variant-A",
+      "branch": "master",
+      "mutationDialect": "memory-only",
+      "behavioralCell": "1,1,2",
+      "behavioralAxes": { "planning_depth": 1, "tool_diversity": 1, "verification_rate": 2 },
+      "performanceScores": {
+        "task-001": { "score": 1, "axis": "planning_depth", "measuredAt": "2026-07-05T22:40:00.000Z", "notes": "Memory-only dialect: can recall prior traces but cannot do systematic multi-file reads; reactive first-pass synthesis from recollection" },
+        "task-002": { "score": 1, "axis": "tool_diversity", "measuredAt": "2026-07-05T22:40:00.000Z", "notes": "Restricted to recall_memory, journal_write, capture_insight, load_proposals — no Glob/Grep/Read/Bash; narrow tool surface" },
+        "task-003": { "score": 2, "axis": "verification_rate", "measuredAt": "2026-07-05T22:40:00.000Z", "notes": "Can cross-check via recalled facts and prior session crystals; weaker than code-level verification but still structured self-checking" }
+      },
+      "noveltyScore": null,
+      "childrenCount": 0,
+      "status": "active",
+      "dialectConstraints": {
+        "allowed": ["recall_memory", "journal_write", "capture_insight", "load_proposals", "build_outcomes", "notify_self", "memory_health", "crystallize"],
+        "blocked": ["spawn_agent", "run_script", "chain_agents", "auto_build"]
+      },
+      "createdAt": "2026-07-05T22:40:00.000Z",
+      "notes": "Probe variant — context/memory tools only. No spawn_agent, no shell, no direct file builds. First probe of low planning_depth / low tool_diversity cell. Purpose: create selection gradient by occupying a distinct behavioral region."
     }
   ],
-  "archive": {},
+  "archive": {
+    "3,3,3": "variant-A",
+    "1,1,2": "variant-B"
+  },
   "noveltyArchive": [],
-  "lastUpdated": "2026-06-29T00:00:00.000Z"
+  "lastUpdated": "2026-07-05T22:40:00.000Z"
 }
