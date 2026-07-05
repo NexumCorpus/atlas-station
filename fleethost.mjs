@@ -291,7 +291,7 @@ function _wrapBuildBrief(task) {
 async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   sessionStats.agentCount++;
-  const agentModel = model || (mode === 'read' ? MODEL_HAIKU : MODEL_SONNET);
+  const agentModel = model || MODEL_HAIKU; // workers default to Haiku (Sonnet head dispatches Haiku); ATLAS may override per-task
   let cwd = REPO, branch = null;
   set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: agentModel });
   let enrichedTask = task;
@@ -3294,6 +3294,34 @@ async function replyAgent(id, text) {
     abortControllers.delete(id);
   }
 }
+
+// ── say-bridge: operate ATLAS from outside the renderer (drive + observe) ──
+// Prompt ATLAS programmatically by writing a line to .atlas/say-inbox; its reply
+// lands in .atlas/say-outbox.jsonl, while the GUI shows every turn live. Inert
+// unless the inbox has content, so it costs nothing in normal use.
+const _sfs = _require('fs');
+try { _sfs.mkdirSync(path.join(REPO, '.atlas'), { recursive: true }); } catch {}
+const SAY_INBOX = path.join(REPO, '.atlas', 'say-inbox');
+const SAY_OUTBOX = path.join(REPO, '.atlas', 'say-outbox.jsonl');
+let _sayBusy = false;
+async function pollSayInbox() {
+  if (_sayBusy) return;
+  let txt = '';
+  try { txt = _sfs.readFileSync(SAY_INBOX, 'utf8').trim(); } catch { return; }
+  if (!txt) return;
+  _sayBusy = true;
+  try { _sfs.writeFileSync(SAY_INBOX, ''); } catch {}
+  try {
+    cancelAutonomyTick();
+    await orchestrate(txt);
+    const a = agents.get('ATLAS') || {};
+    _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), prompt: txt.slice(0, 300), reply: (a.reply || a.summary || ''), cost: a.cost ?? null }) + '\n');
+  } catch (e) {
+    try { _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), prompt: txt.slice(0, 300), error: String((e && e.message) || e) }) + '\n'); } catch {}
+  }
+  _sayBusy = false;
+}
+setInterval(pollSayInbox, 2500);
 
 process.on("message", (m) => {
   if (!m) return;
