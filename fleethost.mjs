@@ -3533,10 +3533,12 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         let dreamText = '';
         try {
           const iter = query({
-            model: MODEL_SONNET,
-            messages: [{ role: 'user', content: dreamPrompt }],
-            permissionMode: 'bypassPermissions',
-            abortSignal: dreamCtrl.signal,
+            prompt: dreamPrompt,
+            options: {
+              model: MODEL_SONNET,
+              permissionMode: 'bypassPermissions',
+              abortSignal: dreamCtrl.signal,
+            },
           });
           dreamText = await consume(dreamId, iter, false, null);
         } catch (e) {
