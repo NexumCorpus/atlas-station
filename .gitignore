@@ -39,3 +39,5 @@ _peer_reply1.*
 
 # Session worktrees
 .claude/worktrees/
+.atlas/say-inbox
+.atlas/say-outbox.jsonl
