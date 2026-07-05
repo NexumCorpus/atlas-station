@@ -34,4 +34,19 @@ function note(text, cb) {
     { timeout: 15000, windowsHide: true }, err => cb && cb(err || null));
 }
 
-module.exports = { wake, cached, note };
+// The compounding-lead vitals (added 2026-07-05, after the estate grew the
+// moat/conversion sensors): the two health lines the wake digest does not carry,
+// for the cockpit's vitals panel. Same degrade-to-empty discipline as wake.
+function vitals(cb) {
+  execFile('python', [STATION, 'moat'], { timeout: 20000, windowsHide: true },
+    (e1, moat) => {
+      execFile('python', [STATION, 'conversions'], { timeout: 20000, windowsHide: true },
+        (e2, conv) => {
+          const lines = [(moat || '').split('\n')[0], (conv || '').split('\n')[0]]
+            .filter(Boolean).join('\n');
+          cb(lines ? null : (e1 || e2 || new Error('empty vitals')), lines);
+        });
+    });
+}
+
+module.exports = { wake, cached, note, vitals };
