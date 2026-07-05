@@ -255,7 +255,7 @@ function _buildDynamicBrief(memDir) {
       if (instrs.length > 0) {
         lines.push('[Self-Instructions]');
         for (const i of instrs) {
-          lines.push(`- ${i.id}: ${i.rule}`);
+          lines.push(`- [${i.key}] ${i.instruction}`);
         }
         lines.push('');
       }
