@@ -3155,7 +3155,7 @@ function scheduleAutonomyTick(delay) {
   if (!autonomyEnabled) return;
   autonomyTimer = setTimeout(async () => {
     autonomyTimer = null;
-    if (!autonomyEnabled || autonomyBusy) return;
+    if (!autonomyEnabled || autonomyBusy || _sayBusy) return; // never overlap a bridge turn
     if (Date.now() >= autonomyDeadline) { stopAutonomy("the time window elapsed"); return; }
     const atlas = agents.get("ATLAS");
     if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy → wait
@@ -3164,6 +3164,8 @@ function scheduleAutonomyTick(delay) {
     try {
       send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
       await orchestrate(autonomyPrompt()); // its tail reschedules the next turn after a breather
+      const a = agents.get("ATLAS") || {};
+      _sayLog({ autonomy: true, n: autonomyActions, reply: (a.reply || a.summary || ""), cost: a.cost ?? null });
     } catch { /* a failed turn must not wedge the window */ }
     finally { autonomyBusy = false; }
   }, delay == null ? AUTONOMY_BREATHER_MS : delay);
@@ -3304,20 +3306,25 @@ try { _sfs.mkdirSync(path.join(REPO, '.atlas'), { recursive: true }); } catch {}
 const SAY_INBOX = path.join(REPO, '.atlas', 'say-inbox');
 const SAY_OUTBOX = path.join(REPO, '.atlas', 'say-outbox.jsonl');
 let _sayBusy = false;
+function _sayLog(o) { try { _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), ...o }) + '\n'); } catch {} }
 async function pollSayInbox() {
-  if (_sayBusy) return;
+  if (_sayBusy || autonomyBusy) return; // never run two ATLAS turns at once
   let txt = '';
   try { txt = _sfs.readFileSync(SAY_INBOX, 'utf8').trim(); } catch { return; }
   if (!txt) return;
   _sayBusy = true;
   try { _sfs.writeFileSync(SAY_INBOX, ''); } catch {}
+  // control commands: !autonomy <min> grants a window; !stop ends it
+  const am = txt.match(/^!autonomy\s+(\d+)/i);
+  if (am) { startAutonomy(parseInt(am[1], 10)); _sayLog({ control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _sayBusy = false; return; }
+  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); _sayLog({ control: 'autonomy-stop' }); _sayBusy = false; return; }
   try {
-    cancelAutonomyTick();
+    if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
     await orchestrate(txt);
     const a = agents.get('ATLAS') || {};
-    _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), prompt: txt.slice(0, 300), reply: (a.reply || a.summary || ''), cost: a.cost ?? null }) + '\n');
+    _sayLog({ prompt: txt.slice(0, 300), reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
   } catch (e) {
-    try { _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), prompt: txt.slice(0, 300), error: String((e && e.message) || e) }) + '\n'); } catch {}
+    _sayLog({ prompt: txt.slice(0, 300), error: String((e && e.message) || e) });
   }
   _sayBusy = false;
 }
