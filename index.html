@@ -8,7 +8,7 @@
   --bg:#08070b;--panel:#0b0a11;
   --cyan:#22e1ff;--mag:#ff2d95;--ember:#ff6a3d;--acid:#49ff9e;--amber:#ffc24b;--violet:#9d6bff;
   --ink:#cfd6e6;--dim:#5a5870;--voice:'Iowan Old Style',Palatino,Georgia,serif;
-  --accent:var(--violet);--fg:var(--ink);--border:#1c1830;
+  --accent:var(--violet);--fg:var(--ink);--border:#29233f;
   --ui-scale:1;
 }
 @keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(3px)}}
@@ -86,7 +86,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
   background:linear-gradient(90deg,rgba(157,107,255,.04) 0%,transparent 30%,transparent 70%,rgba(34,225,255,.02) 100%);
   box-shadow:0 1px 0 rgba(157,107,255,.08)}
 .mem .nm{color:#eaf2ff;text-shadow:0 0 8px rgba(34,225,255,.55)}
-.haz{height:11px;width:34px;flex:none;background:repeating-linear-gradient(45deg,var(--amber) 0 5px,#1a1330 5px 10px);box-shadow:0 0 10px -2px var(--amber)}
+.haz{height:13px;width:3px;flex:none;border-radius:2px;background:linear-gradient(180deg,var(--cyan),var(--violet));box-shadow:0 0 8px -1px var(--violet)}
 #counts{margin-left:auto;color:#8f96b6}
 #wcount{color:var(--cyan);text-shadow:0 0 8px rgba(34,225,255,.6);font-weight:400}
 #wcount.pulse{animation:cpulse .4s ease}
@@ -114,15 +114,14 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
 #brood{flex:none;max-height:46%;overflow-y:auto;position:relative}
 #ledger{flex:1;min-height:0;overflow-y:auto}
 /* Agent cards */
-.arow{background:rgba(255,255,255,.028);border:1px solid var(--border);border-radius:6px;margin-bottom:5px;cursor:pointer;transition:border-color .2s,box-shadow .25s,background .15s,transform .1s;position:relative;overflow:hidden;
-  box-shadow:0 1px 4px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.025)}
-.arow:hover{background:rgba(255,255,255,.042);border-color:rgba(255,255,255,.11);transform:translateY(-1px);
-  box-shadow:0 4px 12px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04),inset 0 1px 0 rgba(255,255,255,.035)}
-.arow:active{transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.02)}
+.arow{background:rgba(255,255,255,.022);border:1px solid var(--border);border-radius:6px;margin-bottom:5px;cursor:pointer;transition:border-color .2s,box-shadow .25s,background .15s,transform .1s;position:relative;overflow:hidden}
+.arow:hover{background:rgba(157,107,255,.05);border-color:rgba(157,107,255,.4);transform:translateY(-1px);
+  box-shadow:0 0 0 1px rgba(157,107,255,.15),0 0 14px -5px rgba(157,107,255,.5)}
+.arow:active{transform:translateY(0);box-shadow:none}
 .arow.kbd-focus{outline:1.5px solid rgba(157,107,255,.6)!important;outline-offset:-1px;background:rgba(157,107,255,.05)!important;box-shadow:0 0 0 2px rgba(157,107,255,.15)}
 .arow.sel{border-color:rgba(157,107,255,.4);background:rgba(157,107,255,.06)}
 /* State-based glow borders */
-.arow.st-working{border-color:rgba(100,180,255,.35);box-shadow:0 0 8px 1px rgba(100,180,255,.08),inset 0 1px 0 rgba(255,255,255,.025)}
+.arow.st-working{border-color:rgba(100,180,255,.45);box-shadow:0 0 12px -2px rgba(100,180,255,.25)}
 .arow.st-done{animation:done-pulse-ring .6s ease-out,done-flash .5s ease-out forwards}
 .arow.was-done{border-color:rgba(100,255,140,.2)}
 .arow.st-failed{animation:fail-shake .4s ease-out}
@@ -237,9 +236,8 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
 ::-webkit-scrollbar-thumb:hover{opacity:.7;background:linear-gradient(var(--violet),var(--cyan))}
 .prow{padding:7px 9px;border-radius:5px;margin:3px 5px;display:flex;flex-direction:column;gap:3px;
   background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);
-  transition:background .15s,box-shadow .2s,transform .1s;
-  box-shadow:0 1px 3px rgba(0,0,0,.3)}
-.prow:hover{background:rgba(255,255,255,.04);transform:translateY(-1px);box-shadow:0 3px 8px rgba(0,0,0,.4)}
+  transition:background .15s,box-shadow .2s,transform .1s;box-shadow:none}
+.prow:hover{background:rgba(157,107,255,.05);border-color:rgba(157,107,255,.35);transform:translateY(-1px);box-shadow:0 0 12px -5px rgba(157,107,255,.45)}
 .ppri{font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 5px;border-radius:3px}
 .ppri.high{background:rgba(255,120,60,.15);color:#ff784e;border:1px solid rgba(255,120,60,.25)}
 .ppri.medium{background:rgba(255,180,60,.1);color:#f0b840;border:1px solid rgba(255,180,60,.2)}
@@ -386,8 +384,8 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
 button:focus-visible{outline:1.5px solid rgba(157,107,255,.6);outline-offset:2px}
 input:focus-visible{outline:none}
 /* ── #say input field ─────────────────────────── */
-#say{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:5px;color:var(--fg);font-family:inherit;font-size:13px;padding:8px 12px;resize:none;outline:none;transition:border-color .2s,background .2s,box-shadow .25s;line-height:1.5;
-  box-shadow:inset 0 1px 3px rgba(0,0,0,.3);caret-color:var(--violet)}
+#say{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-family:inherit;font-size:13px;padding:8px 12px;resize:none;outline:none;transition:border-color .2s,background .2s,box-shadow .25s;line-height:1.5;
+  box-shadow:none;caret-color:var(--violet)}
 #say:focus{border-color:rgba(157,107,255,.55);background:rgba(157,107,255,.05);
   box-shadow:0 0 0 1px rgba(157,107,255,.18),0 0 10px -4px rgba(157,107,255,.3),inset 0 1px 4px rgba(157,107,255,.05)}
 #say::placeholder{color:rgba(90,88,112,.6);opacity:1}
