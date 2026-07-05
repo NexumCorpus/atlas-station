@@ -1,6 +1,6 @@
 // Autonomous ATLAS session — runs on a schedule without the Electron app.
 // Launches fleethost, sends a self-directed session prompt, logs the result.
-import { spawn } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { createRequire } from "module";
@@ -61,6 +61,29 @@ function runNREM(dir) {
 }
 
 writeLog({ event: "daemon-start" });
+
+// Auto-merge any unmerged fleet/* branches before the session begins
+try {
+  const branches = execFileSync("git", ["-C", DIR, "branch", "--list", "fleet/*"], { encoding: "utf8" })
+    .trim().split("\n").filter(Boolean).map(b => b.replace(/^[\s*+]+/, ""));
+  for (const branch of branches) {
+    try {
+      execFileSync("git", ["-C", DIR, "merge-base", "--is-ancestor", branch, "master"], { stdio: "pipe" });
+      // Already ancestor of master — skip (already merged or will be pruned)
+    } catch (_) {
+      // Not yet in master — merge it
+      try {
+        execFileSync("git", ["-C", DIR, "merge", "--no-edit", branch], { cwd: DIR, encoding: "utf8" });
+        writeLog({ event: "startup-auto-merge", branch });
+        console.log("[daemon] auto-merged unmerged branch:", branch);
+      } catch (mergeErr) {
+        writeLog({ event: "startup-merge-failed", branch, error: String(mergeErr.message || mergeErr).slice(0, 200) });
+      }
+    }
+  }
+} catch (scanErr) {
+  writeLog({ event: "startup-branch-scan-failed", error: String(scanErr.message || scanErr).slice(0, 120) });
+}
 
 const host = spawn(NODE, ["fleethost.mjs"], {
   stdio: ["pipe", "pipe", "pipe", "ipc"],
