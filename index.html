@@ -2456,6 +2456,31 @@ input:focus-visible{outline:none}
       +'<div style="display:flex;justify-content:space-between;font-size:8px"><span style="color:var(--acid)">direction '+dir+'</span><span style="color:var(--amber)">execution '+exe+'</span></div>'
       +(descent?'<div style="font-size:8px;color:var(--dim);margin-top:6px">◇ portability ✓ · descent '+esc(descent)+'</div>':'');
   }
+  function renderWall(data){
+    var el=document.getElementById('sh-wall'); if(!el||!data) return;
+    var raw=data.wall||'';
+    if((''+raw).indexOf('ERR')===0 || !raw){ el.innerHTML='<div class="sh-empty">station unreachable</div>'; return; }
+    var pts=[], re=/\[(\w+)\s*\]\s+(.+?)\s+dist=([+-][\d.]+)\s+holdout-margin=([+-][\d.]+)/g, m;
+    while((m=re.exec(raw))){ pts.push({region:m[1], name:m[2].trim(), dist:+m[3], margin:+m[4]}); }
+    if(!pts.length){ el.innerHTML='<div class="sh-empty">no points</div>'; return; }
+    var crossings=_num(raw,/crossings=(\d+)/)||'0', band=raw.match(/search distance \[([\d.]+),([\d.]+)\]/);
+    var W=280,H=152,x0=8,x1=272,y0=12,y1=122,DMAX=0.30,MHI=0.10,MLO=-0.22;
+    function X(d){ return x0+Math.max(0,Math.min(1,d/DMAX))*(x1-x0); }
+    function Y(mm){ return y0+Math.max(0,Math.min(1,(MHI-mm)/(MHI-MLO)))*(y1-y0); }
+    var col={PRETENDER:'#ff6a3d',THROUGH:'#49ff9e',RECOMBINATION:'#22e1ff',NOISE:'#5a5870'};
+    var wy=Y(0), s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block">';
+    if(band){ var b0=X(+band[1]),b1=X(+band[2]); s+='<rect x="'+b0.toFixed(1)+'" y="'+y0+'" width="'+(b1-b0).toFixed(1)+'" height="'+(y1-y0)+'" fill="#49ff9e" opacity="0.07"/><text x="'+((b0+b1)/2).toFixed(1)+'" y="'+(y0-3)+'" fill="#49ff9e" font-size="6" text-anchor="middle" opacity="0.75">target band</text>'; }
+    s+='<line x1="'+x0+'" y1="'+wy.toFixed(1)+'" x2="'+x1+'" y2="'+wy.toFixed(1)+'" stroke="#5a5870" stroke-width="0.6" stroke-dasharray="3 3"/>';
+    s+='<text x="'+(x1-2)+'" y="'+(wy-3).toFixed(1)+'" fill="#49ff9e" font-size="6" text-anchor="end" opacity="0.65">↑ THROUGH · verified novel</text>';
+    s+='<text x="'+(x1-2)+'" y="'+(wy+9).toFixed(1)+'" fill="#ff6a3d" font-size="6" text-anchor="end" opacity="0.65">↓ PRETENDER · overfit</text>';
+    s+='<text x="'+((x0+x1)/2)+'" y="'+(H-2)+'" fill="#5a5870" font-size="6" text-anchor="middle">novelty-distance →</text>';
+    pts.forEach(function(p){ var c=col[p.region]||'#5a5870', px=X(p.dist), py=Y(p.margin), thru=(p.region==='THROUGH');
+      s+='<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="'+(thru?4:3)+'" fill="'+c+'"'+(thru?' stroke="#fff" stroke-width="0.5"':'')+' opacity="0.9"/>';
+      if(p.name && p.region!=='NOISE'){ s+='<text x="'+(px+6).toFixed(1)+'" y="'+(py+2).toFixed(1)+'" fill="'+c+'" font-size="6">'+esc(p.name)+'</text>'; }
+    });
+    s+='</svg>';
+    el.innerHTML='<div style="font-size:8px;color:var(--dim);margin-bottom:1px">crossings <span style="color:'+(+crossings>0?'#49ff9e':'#ff6a3d')+';font-weight:700">'+esc(crossings)+'</span> · '+pts.length+' points</div>'+s;
+  }
   function loadStationHealth() {
     if (window.atlas && window.atlas.stationHealth) {
       window.atlas.stationHealth().then(function(data) {
@@ -2464,6 +2489,9 @@ input:focus-visible{outline:none}
     }
     if (window.atlas && window.atlas.estate) {
       window.atlas.estate().then(renderEstate).catch(function() {});
+    }
+    if (window.atlas && window.atlas.wall) {
+      window.atlas.wall().then(renderWall).catch(function() {});
     }
   }
 
