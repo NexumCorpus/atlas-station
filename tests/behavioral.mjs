@@ -280,6 +280,23 @@ console.log('\n14. embstore: compactEmbs deduplicates');
   }
 }
 
+// ─── 15. resonance: true Jaccard similarity ──────────────────────────────
+console.log('\n15. resonance: true Jaccard similarity');
+{
+  const { similarity, tokenize } = require(join(ROOT, 'resonance.cjs'));
+  // Identical token sets → 1.0
+  assert(similarity(['build','agent','fleet'], ['build','agent','fleet']) === 1.0, 'identical sets → 1.0');
+  // No overlap → 0
+  assert(similarity(['apple','orange'], ['banana','grape']) === 0, 'disjoint sets → 0');
+  // Partial overlap: intersection=2, union=4 → 0.5
+  const s = similarity(['a','b','c'], ['b','c','d']);
+  assert(Math.abs(s - 0.5) < 1e-9, 'partial overlap: 2/4 = 0.5, got ' + s);
+  // Subset: A=['b','c'] ⊂ B=['a','b','c','d']: intersection=2, union=4 → 0.5
+  const s2 = similarity(['b','c'], ['a','b','c','d']);
+  assert(Math.abs(s2 - 0.5) < 1e-9, 'subset: 2/4 = 0.5, got ' + s2);
+  console.log('  PASS: true Jaccard (all 4 assertions)');
+}
+
 // ─── Summary ──────────────────────────────────────────────────────────────
 console.log(`\nResults: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

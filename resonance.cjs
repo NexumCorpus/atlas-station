@@ -19,7 +19,7 @@ function similarity(tokensA, tokensB) {
   const setB = new Set(tokensB);
   let overlap = 0;
   setA.forEach(t => { if (setB.has(t)) overlap++; });
-  return overlap / Math.max(setA.size, setB.size);
+  return overlap / (setA.size + setB.size - overlap);
 }
 
 // Find past runs similar to a new task
