@@ -498,10 +498,16 @@ function buildContext(task, opts = {}) {
 function inject(task, opts = {}) {
   try {
     const ctx = buildContext(task, opts);
+    // returnStats: buildContext hands back {context, stats}; combine the memory
+    // block with the task and pass stats through (callers expect {context, stats}).
+    if (opts.returnStats) {
+      const mem = (ctx && ctx.context) || '';
+      return { context: mem ? `${mem}\n\n${task}` : task, stats: (ctx && ctx.stats) || null };
+    }
     if (!ctx) return task;
     return `${ctx}\n\n${task}`;
   } catch {
-    return task;
+    return opts.returnStats ? { context: task, stats: null } : task;
   }
 }
 
