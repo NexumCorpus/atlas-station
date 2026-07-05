@@ -559,8 +559,13 @@ input:focus-visible{outline:none}
           </div>
           <div class="sh-divider"></div>
           <div class="sh-section" id="sh-wall-wrap">
-            <div class="sh-sec-title">◇ Recombination Wall</div>
-            <div id="sh-wall"><div class="sh-empty">idle — press MAP</div></div>
+            <div class="sh-sec-title">◇ Recombination Wall <span style="color:var(--dim);font-weight:400;font-size:9px">· real RDE receipts</span></div>
+            <div id="sh-wall"><div class="sh-empty">loading…</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section" id="sh-engine-wrap">
+            <div class="sh-sec-title">◆ Wall-Crossing Engine <span style="color:var(--dim);font-weight:400;font-size:9px">· synthetic proving-ground</span></div>
+            <div id="sh-engine"><div class="sh-empty">loading…</div></div>
           </div>
           <div class="sh-divider"></div>
           <div class="sh-section" id="sh-goals-wrap">
@@ -2481,6 +2486,28 @@ input:focus-visible{outline:none}
     s+='</svg>';
     el.innerHTML='<div style="font-size:8px;color:var(--dim);margin-bottom:1px">crossings <span style="color:'+(+crossings>0?'#49ff9e':'#ff6a3d')+';font-weight:700">'+esc(crossings)+'</span> · '+pts.length+' points</div>'+s;
   }
+  function renderEngine(data){
+    var el=document.getElementById('sh-engine'); if(!el||!data) return;
+    var raw=data.discover||'';
+    if((''+raw).indexOf('ERR')===0 || !raw){ el.innerHTML='<div class="sh-empty">station unreachable</div>'; return; }
+    var coords=_num(raw,/champion \(([^)]+)\)/), nov=_num(raw,/novelty=([\d.]+)/), mar=_num(raw,/CERT-margin=([+-][\d.]+)/);
+    var certified=/CERTIFIED CROSSING/.test(raw), region=_num(raw,/->\s*(\w+)\s/)||'';
+    var m=mar!=null?+mar:0, acid='#49ff9e', ember='#ff6a3d', dim='#5a5870';
+    var badge=certified
+      ? '<span style="color:'+acid+';border:1px solid '+acid+';border-radius:8px;padding:1px 7px;font-weight:700;box-shadow:0 0 8px rgba(73,255,158,.35)">✓ CERTIFIED CROSSING</span>'
+      : '<span style="color:'+ember+';border:1px solid '+ember+';border-radius:8px;padding:1px 7px">no crossing</span>';
+    var frac=Math.max(-1,Math.min(1,m)), pct=(frac*50).toFixed(1);
+    var bar='<div style="position:relative;height:8px;background:rgba(255,255,255,.04);border-radius:4px;margin:6px 0 3px">'
+      +'<div style="position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:'+dim+'"></div>'
+      +'<div style="position:absolute;top:0;bottom:0;'+(frac>=0?('left:50%;width:'+pct+'%;background:'+acid):('right:50%;width:'+(-pct)+'%;background:'+ember))+';border-radius:4px;opacity:.85"></div>'
+      +'</div>';
+    el.innerHTML=
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px">'+badge
+      +'<span style="color:var(--dim)">champion</span> <span style="font-family:var(--voice);color:var(--cyan)">('+esc(coords||'?')+')</span></div>'
+      +bar
+      +'<div style="font-size:10px;color:var(--ink)">novelty <span style="color:var(--cyan)">'+esc(nov||'?')+'</span> · CERT-margin <span style="color:'+(m>=0?acid:ember)+';font-weight:700">'+esc(mar||'?')+'</span> → <span style="color:'+acid+'">'+esc(region)+'</span></div>'
+      +'<div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4">fill(QD)→trojan(hidden-holdout)→certify(meta-holdout, cleared-noise). Proves the mechanism certifies a crossing <em>when one exists</em>. The RDE wall above stays uncrossed — a real crossing must land in its target band with a positive holdout margin.</div>';
+  }
   function loadStationHealth() {
     if (window.atlas && window.atlas.stationHealth) {
       window.atlas.stationHealth().then(function(data) {
@@ -2492,6 +2519,9 @@ input:focus-visible{outline:none}
     }
     if (window.atlas && window.atlas.wall) {
       window.atlas.wall().then(renderWall).catch(function() {});
+    }
+    if (window.atlas && window.atlas.discover) {
+      window.atlas.discover().then(renderEngine).catch(function() {});
     }
   }
 
