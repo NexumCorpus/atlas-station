@@ -93,6 +93,11 @@ ipcMain.on("say", (_e, p) => {
   try { fleet.send({ t: "say", text: p.text }); } catch (_) {}
 });
 
+ipcMain.on("set-autonomy", (_e, p) => {
+  if (!fleet) return;
+  try { fleet.send({ t: "autonomy", on: !!(p && p.on), minutes: p && p.minutes }); } catch (_) {}
+});
+
 ipcMain.on("cancel", (_e, p) => {
   if (!fleet || !p || !p.id) return;
   try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}

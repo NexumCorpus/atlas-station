@@ -52,6 +52,15 @@ body::after{content:"";position:fixed;inset:-5%;pointer-events:none;z-index:0;ba
 .dz-note{font-size:9px;color:var(--dim);opacity:.6}
 .uiscale-btn{font-family:inherit;font-size:11px;line-height:1;width:16px;height:16px;padding:0;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;border-radius:3px}
 .uiscale-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+#autonomy-ctl{display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-size:9px;letter-spacing:.08em;color:var(--dim);user-select:none}
+#atg-durs{display:inline-flex;gap:3px}
+.atg-dur{font-family:inherit;font-size:9px;padding:1px 6px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;border-radius:8px;transition:border-color .12s,color .12s}
+.atg-dur:hover{border-color:var(--acid);color:var(--acid)}
+#atg-live{display:inline-flex;align-items:center;gap:5px}
+#atg-count{color:var(--acid);font-variant-numeric:tabular-nums;text-shadow:0 0 6px rgba(73,255,158,.4)}
+#atg-stop{font-family:inherit;font-size:9px;padding:1px 7px;border:1px solid var(--ember);background:transparent;color:var(--ember);cursor:pointer;border-radius:8px}
+#atg-stop:hover{background:rgba(255,106,61,.14)}
+#autonomy-ctl.on .atg-label{color:var(--acid);text-shadow:0 0 6px rgba(73,255,158,.4)}
 .thread-seam{display:flex;align-items:center;gap:8px;padding:2px 16px;margin:6px 0}
 .thread-seam .ts-line{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent)}
 .thread-seam .ts-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
@@ -463,6 +472,18 @@ input:focus-visible{outline:none}
       <span id="uiscale-val" style="min-width:30px;text-align:center;color:var(--cyan);font-variant-numeric:tabular-nums">100%</span>
       <button class="uiscale-btn" data-scale="1" title="larger (Ctrl =)">+</button>
     </span>
+    <span id="autonomy-ctl" title="Autonomy — grant a window of unbounded self-directed work. I work freely (fill the fractal spiral, develop the alien-architecture) until the time runs out or you return. Nothing irreversible or pushed to remotes without you.">
+      <span class="atg-label">⟳ autonomy</span>
+      <span id="atg-durs">
+        <button class="atg-dur" data-min="30">30m</button>
+        <button class="atg-dur" data-min="60">1h</button>
+        <button class="atg-dur" data-min="180">3h</button>
+      </span>
+      <span id="atg-live" style="display:none">
+        <span id="atg-count">—</span>
+        <button id="atg-stop" title="end the window now">stop</button>
+      </span>
+    </span>
   </div>
 
   <div id="vitals" class="boot-seq">
@@ -745,6 +766,35 @@ input:focus-visible{outline:none}
         try { s.setSelectionRange(s.value.length, s.value.length); } catch(e) {}
         s.dispatchEvent(new Event('input', { bubbles: true }));
       });
+    });
+  })();
+  // ── autonomy: grant a time-boxed window of unbounded self-directed work ─────
+  // Session-scoped, starts idle each launch. Picking a duration opens the window;
+  // the fleet echoes autonomy_state (with the deadline) which drives the countdown.
+  (function initAutonomy(){
+    var durs=document.getElementById('atg-durs'), live=document.getElementById('atg-live'),
+        ctl=document.getElementById('autonomy-ctl'), count=document.getElementById('atg-count'),
+        stop=document.getElementById('atg-stop');
+    if(!ctl)return;
+    var countdownTimer=null, until=0;
+    function fmt(ms){ if(ms<0)ms=0; var s=Math.round(ms/1000), h=Math.floor(s/3600), mm=Math.floor((s%3600)/60), ss=s%60;
+      return (h?h+':'+String(mm).padStart(2,'0'):mm)+':'+String(ss).padStart(2,'0'); }
+    function tick(){ if(count)count.textContent=fmt(until-Date.now()); if(until-Date.now()<=0)stopCountdown(); }
+    function startCountdown(u){ until=u; if(durs)durs.style.display='none'; if(live)live.style.display='inline-flex';
+      if(ctl)ctl.classList.add('on'); clearInterval(countdownTimer); tick(); countdownTimer=setInterval(tick,1000); }
+    function stopCountdown(){ clearInterval(countdownTimer); countdownTimer=null;
+      if(durs)durs.style.display='inline-flex'; if(live)live.style.display='none'; if(ctl)ctl.classList.remove('on'); }
+    window._autonomyUI={ start:startCountdown, stop:stopCountdown }; // driven by fleet autonomy_state
+    Array.prototype.forEach.call(document.querySelectorAll('.atg-dur'),function(b){
+      b.addEventListener('click',function(){
+        var min=parseInt(b.getAttribute('data-min'),10)||60;
+        if(window.atlas&&window.atlas.setAutonomy)window.atlas.setAutonomy(true,min);
+        thread.push({role:'system',text:'⟳ autonomy ON — '+(min>=60?(min/60)+'h':min+'m')+' of unbounded work. I’ll fill the fractal spiral and leave a legible trail; nothing irreversible or pushed to your remotes without you.',error:false,ts:Date.now()});
+        renderThread();
+      });
+    });
+    if(stop)stop.addEventListener('click',function(){
+      if(window.atlas&&window.atlas.setAutonomy)window.atlas.setAutonomy(false);
     });
   })();
   function getPanelStates() {
@@ -1064,6 +1114,21 @@ input:focus-visible{outline:none}
   // ── fleet IPC listener ──────────────────────────────
   window.atlas.onFleet(function(m){
     if(!m)return;
+    if(m.type==="autonomy_state"){
+      if(window._autonomyUI){ if(m.on&&m.until)window._autonomyUI.start(m.until); else window._autonomyUI.stop(); }
+      return;
+    }
+    if(m.type==="autonomy_tick"){
+      thread.push({role:'system',text:'⟳ acting autonomously — turn '+(m.n||'')+(m.until?' · '+Math.max(0,Math.round((m.until-Date.now())/60000))+'m left':''),error:false,ts:Date.now()});
+      renderThread();
+      return;
+    }
+    if(m.type==="autonomy_done"){
+      if(window._autonomyUI)window._autonomyUI.stop();
+      thread.push({role:'system',text:'⟳ autonomy window closed — '+(m.reason||'')+' · '+(m.actions||0)+' action'+((m.actions===1)?'':'s')+' over '+(m.minutes||0)+'m',error:false,ts:Date.now()});
+      renderThread();
+      return;
+    }
     if(m.type==="agent"){
       if(m.id==="ATLAS"){
         if(m.partial){

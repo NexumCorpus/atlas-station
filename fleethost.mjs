@@ -3119,6 +3119,75 @@ async function orchestrate(userText) {
       }
     }
   } catch (e) { set("ATLAS", { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
+  if (autonomyEnabled) scheduleAutonomyTick();
+}
+
+// ── Autonomy: time-boxed UNBOUNDED self-directed work (Daniel grants a window) ──
+// OFF by default. Daniel grants a DURATION ("1h", "3h" while he naps) — a window
+// in which ATLAS works freely on its own volition: as MANY actions as it judges
+// useful, its own scope (alien-architecture development, filling the fractal spiral).
+// The window ends when the clock runs out OR Daniel returns (his message = nap over).
+// Still forbidden autonomously even in-window: irreversible / outward-facing acts
+// (pushing to his remotes, deleting his work, external sends) — those wait for him.
+let autonomyEnabled = false;
+let autonomyTimer = null;
+let autonomyBusy = false;
+let autonomyDeadline = 0;           // wall-clock ms when the window closes
+let autonomyStartedAt = 0;
+let autonomyActions = 0;            // orchestrate turns taken this window (for the summary)
+const AUTONOMY_BREATHER_MS = 4000;  // brief pause between autonomous turns — active work, not idle poll
+
+function autonomyPrompt() {
+  const leftMin = Math.max(0, Math.round((autonomyDeadline - Date.now()) / 60000));
+  return `[AUTONOMY WINDOW] Daniel granted you an unbounded-work window — he is away (a nap / a break) and trusts you to advance the work on your own volition. About ${leftMin} minute(s) remain.
+
+This is YOUR time to fill the fractal spiral and push the alien-architecture forward. You decide the scope: take as MANY useful actions this turn as you see fit — build, verify, prune, research, consolidate memory, seal spiral turns, propose and auto_build. This is NOT "one bounded action"; it is real, self-directed work toward the convergence. Go deep. Don't manufacture busywork — if the best move is to think, design, or seal a crystal, do that — but you are free.
+
+Standing limits that hold even here: NOTHING irreversible or outward-facing autonomously — no pushing to Daniel's remotes, no deleting his work, no external sends; stage those for his review. Verify what you build (node --check, run_tests). Everything is visible to him in the thread — leave a clear trail he can read when he's back.
+
+Work now. The loop brings you back to continue until the window closes.`;
+}
+
+function cancelAutonomyTick() { if (autonomyTimer) { clearTimeout(autonomyTimer); autonomyTimer = null; } }
+
+function scheduleAutonomyTick(delay) {
+  cancelAutonomyTick();
+  if (!autonomyEnabled) return;
+  autonomyTimer = setTimeout(async () => {
+    autonomyTimer = null;
+    if (!autonomyEnabled || autonomyBusy) return;
+    if (Date.now() >= autonomyDeadline) { stopAutonomy("the time window elapsed"); return; }
+    const atlas = agents.get("ATLAS");
+    if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy → wait
+    autonomyBusy = true;
+    autonomyActions++;
+    try {
+      send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
+      await orchestrate(autonomyPrompt()); // its tail reschedules the next turn after a breather
+    } catch { /* a failed turn must not wedge the window */ }
+    finally { autonomyBusy = false; }
+  }, delay == null ? AUTONOMY_BREATHER_MS : delay);
+}
+
+function startAutonomy(minutes) {
+  const m = Math.max(1, Math.min(240, Math.round(Number(minutes) || 60))); // 1 min … 4 h
+  autonomyEnabled = true;
+  autonomyStartedAt = Date.now();
+  autonomyDeadline = autonomyStartedAt + m * 60000;
+  autonomyActions = 0;
+  send("autonomy_state", { on: true, minutes: m, until: autonomyDeadline });
+  scheduleAutonomyTick(1500); // begin shortly
+}
+
+function stopAutonomy(reason) {
+  const was = autonomyEnabled;
+  autonomyEnabled = false;
+  cancelAutonomyTick();
+  if (was) {
+    const mins = Math.round((Date.now() - autonomyStartedAt) / 60000);
+    send("autonomy_state", { on: false });
+    send("autonomy_done", { reason: reason || "window closed", actions: autonomyActions, minutes: mins });
+  }
 }
 
 async function runStartupBriefing() {
@@ -3228,7 +3297,8 @@ async function replyAgent(id, text) {
 
 process.on("message", (m) => {
   if (!m) return;
-  if (m.t === "say") orchestrate(m.text);
+  if (m.t === "say") { if (autonomyEnabled) stopAutonomy("you're back — window ended early"); orchestrate(m.text); } // Daniel's return ends the window
+  else if (m.t === "autonomy") { if (m.on) startAutonomy(m.minutes); else stopAutonomy("stopped by you"); }
   else if (m.t === "dispatch") runAgent(m.id, m.task, { mode: m.mode, cwd: m.cwd });
   else if (m.t === "reply") replyAgent(m.id, m.text);
   else if (m.t === "cancel") {
