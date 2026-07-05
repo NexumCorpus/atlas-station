@@ -47,6 +47,11 @@ body::after{content:"";position:fixed;inset:-5%;pointer-events:none;z-index:0;ba
 .mem,#vitals,#main,#reply,.bar{zoom:var(--ui-scale,1)}
 .uiscale-btn{font-family:inherit;font-size:11px;line-height:1;width:16px;height:16px;padding:0;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;border-radius:3px}
 .uiscale-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+.thread-seam{display:flex;align-items:center;gap:8px;padding:2px 16px;margin:6px 0}
+.thread-seam .ts-line{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent)}
+.thread-seam .ts-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.thread-seam .ts-clear{color:var(--ember);cursor:pointer;opacity:.7}
+.thread-seam .ts-clear:hover{opacity:1;text-decoration:underline}
 .dim{color:var(--dim)}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid rgba(157,107,255,.12);font-size:10px;letter-spacing:.16em;text-transform:uppercase;flex:none;z-index:2;
   background:linear-gradient(90deg,rgba(157,107,255,.04) 0%,transparent 30%,transparent 70%,rgba(34,225,255,.02) 100%);
@@ -889,6 +894,7 @@ input:focus-visible{outline:none}
   var kbBroodIdx = -1;
 
   var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t:[];}catch(e){return[];}})();
+  var restoredAtBoot = thread.length; // messages carried over from the last session — the seam is drawn after them
   var agents=new Map();
   var HIST={commits:[],runs:[]};
   var SEL=null;
@@ -1438,6 +1444,12 @@ input:focus-visible{outline:none}
         var tsStr = formatTs(msg.ts);
         var costHtml = (msg.role === 'atlas' && msg.cost != null && msg.cost > 0)
           ? '<span style="font-size:9px;color:var(--dim);margin-left:auto;opacity:.5">$' + Number(msg.cost).toFixed(2) + '</span>' : '';
+        var seam = (restoredAtBoot > 0 && i === restoredAtBoot - 1)
+          ? '<div class="thread-seam"><span class="ts-line"></span>' +
+            '<span class="ts-label">' + restoredAtBoot + ' from last session · ' +
+            '<span class="ts-clear" onclick="clearThread()" title="wipe the persisted channel history">clear history</span></span>' +
+            '<span class="ts-line"></span></div>'
+          : '';
         return '<div class="msg ' + cls + '">' +
           '<div class="msg-avatar">' + avatar + '</div>' +
           '<div class="msg-body">' +
@@ -1449,7 +1461,7 @@ input:focus-visible{outline:none}
             '<div class="msg-text">' + renderMd(msg.text || '') + '</div>' +
           '</div>' +
           '<span class="msg-copy" onclick="copyMsg(' + i + ')">copy</span>' +
-        '</div>';
+        '</div>' + seam;
       }).join('');
     }
     // Stagger fade-in for last 3 messages (only on small threads to skip history loads)
@@ -1508,6 +1520,14 @@ input:focus-visible{outline:none}
     var msg = visible[idx];
     if (!msg) return;
     try { navigator.clipboard.writeText(msg.text || ''); } catch(e) {}
+  }
+
+  // Wipe the persisted conversation channel — a fresh start, no residual.
+  function clearThread() {
+    thread.length = 0;
+    restoredAtBoot = 0;
+    try { localStorage.removeItem('atlas_thread'); } catch(e) {}
+    renderThread();
   }
 
   function setTyping(on) {
@@ -2586,6 +2606,7 @@ input:focus-visible{outline:none}
   // Expose inline-onclick helpers to global scope
   window.scrollThread = scrollThread;
   window.copyMsg = copyMsg;
+  window.clearThread = clearThread;
   window.loadConstellation = loadConstellation;
 
   // ── search events ───────────────────────────────────
