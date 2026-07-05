@@ -73,7 +73,7 @@ try {
     } catch (_) {
       // Not yet in master — merge it
       try {
-        execFileSync("git", ["-C", DIR, "merge", "--no-edit", branch], { cwd: DIR, encoding: "utf8" });
+        execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "daemon-startup: auto-merge " + branch, branch], { cwd: DIR });
         writeLog({ event: "startup-auto-merge", branch });
         console.log("[daemon] auto-merged unmerged branch:", branch);
       } catch (mergeErr) {
