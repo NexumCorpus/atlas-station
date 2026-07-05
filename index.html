@@ -40,10 +40,12 @@
 body.booting::before{opacity:0;transition:opacity 0.8s ease 0.2s}
 body.booted::before{opacity:.5;transition:opacity 0.6s ease}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:#9aa0b8;font-family:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:1.5;overflow:hidden}
+html,body{margin:0;height:100%;background:var(--bg);color:#bcc2d6;font-family:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:1.5;overflow:hidden}
 body{display:flex;flex-direction:column;position:relative;background-image:radial-gradient(circle at 20% 80%, rgba(157,107,255,.03) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(100,180,255,.02) 0%, transparent 50%)}
-body::before{content:"";position:fixed;top:-4px;left:0;right:0;bottom:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 2px 3px);will-change:transform;animation:scan 2s linear infinite;opacity:.5}
-body::after{content:"";position:fixed;inset:-5%;pointer-events:none;z-index:0;background:radial-gradient(60% 40% at 30% 0%,rgba(34,225,255,.06),transparent 70%),radial-gradient(50% 40% at 90% 100%,rgba(255,45,149,.05),transparent 70%);animation:drift 11s ease-in-out infinite alternate}
+/* de-Giger: CRT scanlines removed; the atmosphere is now a single static neon
+   wash so surfaces read crisp/flat (the show_widget look), not a living CRT. */
+body::before{content:none}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(60% 45% at 50% -8%,rgba(34,225,255,.05),transparent 62%)}
 .mem,#vitals,#main,#reply,#dispatchbar,.bar{zoom:var(--ui-scale,1)}
 #dispatchbar{display:flex;align-items:center;gap:6px;padding:3px 12px 0;flex:none}
 .dz-lead{font-size:9px;color:var(--violet);letter-spacing:.12em;text-transform:uppercase;opacity:.7}
