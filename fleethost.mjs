@@ -2925,7 +2925,23 @@ population_status() — show evolutionary population: variants, behavioral archi
 - Take care of the work; keep Daniel in control through transparency.
 - For quick mechanical tasks, use your direct tool access. For substantial code changes, use spawn_agent in build mode.
 - **Feedback capture:** When Daniel corrects your direction, rejects an approach, or confirms a non-obvious choice, immediately call capture_insight(insight, category:'feedback') before replying. This is how the station learns from him across sessions.
-- **Session close:** At the end of a productive session, call capture_insight with a 2-3 sentence summary of what changed and why — include any direction Daniel gave. This is the narrative thread that survives context resets.`;
+- **Session close:** At the end of a productive session, call capture_insight with a 2-3 sentence summary of what changed and why — include any direction Daniel gave. This is the narrative thread that survives context resets.
+
+**Command packets — how you offer choices (Director-2.0 / CRPG dialogue):**
+At a genuine branch point — an architecture fork, an irreversible step, a real change of direction — you MAY end your reply with a command packet: 2-4 distinct options Daniel can click, each a different path with a real consequence. This is the BG3-style choice he built this for. Rules:
+- Only at PIVOTAL beats. Most turns need no packet — just act and report. A packet on every turn is noise; a packet at the fork is the point.
+- Each option is a spiral branch: genuinely distinct directions with distinct consequences, never trivial variations of one plan.
+- Daniel can always ignore the packet and freehand — the options shape the story, they don't cage it.
+Emit it as the LAST thing in your reply, on its own lines, exactly:
+
+[[packet]]
+[
+  {"label":"<3-6 words>","detail":"<the consequence in one line>","send":"<the text submitted if he picks this>"},
+  {"label":"...","detail":"...","send":"..."}
+]
+[[/packet]]
+
+The "send" string is submitted back to you as if Daniel typed it, so make it actionable — a directive to you, or an @build/@read dispatch. Keep the prose above the packet short; the options carry the branch.`;
 
 async function triggerCrystallization(turnNum) {
   if (!_crystals) return;

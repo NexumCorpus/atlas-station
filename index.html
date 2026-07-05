@@ -57,6 +57,19 @@ body::after{content:"";position:fixed;inset:-5%;pointer-events:none;z-index:0;ba
 .thread-seam .ts-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
 .thread-seam .ts-clear{color:var(--ember);cursor:pointer;opacity:.7}
 .thread-seam .ts-clear:hover{opacity:1;text-decoration:underline}
+.packet{margin:9px 0 2px;display:flex;flex-direction:column;gap:5px;border-left:2px solid rgba(157,107,255,.35);padding-left:9px}
+.pkt-lead{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--violet);opacity:.75}
+.pkt-opt{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;font-family:inherit;padding:7px 10px;border:1px solid var(--border);background:rgba(157,107,255,.05);color:var(--ink);border-radius:5px;cursor:pointer;transition:border-color .13s,background .13s,transform .13s}
+.pkt-opt:hover{border-color:var(--violet);background:rgba(157,107,255,.14);transform:translateX(2px)}
+.pkt-key{flex:none;width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;border-radius:3px;background:rgba(157,107,255,.18);color:var(--violet);font-weight:700}
+.pkt-obody{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pkt-label{font-size:12px;color:#eaf2ff;letter-spacing:.01em}
+.pkt-detail{font-size:10px;color:var(--dim);line-height:1.35}
+.packet.resolved .pkt-opt{cursor:default;transform:none}
+.pkt-opt.picked{border-color:var(--acid);background:rgba(73,255,158,.1)}
+.pkt-opt.picked .pkt-key{background:rgba(73,255,158,.2);color:var(--acid)}
+.pkt-opt.faded{opacity:.4}
+.pkt-opt.faded:hover{border-color:var(--border);background:rgba(157,107,255,.05);transform:none}
 .dim{color:var(--dim)}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mem{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid rgba(157,107,255,.12);font-size:10px;letter-spacing:.16em;text-transform:uppercase;flex:none;z-index:2;
   background:linear-gradient(90deg,rgba(157,107,255,.04) 0%,transparent 30%,transparent 70%,rgba(34,225,255,.02) 100%);
@@ -1477,6 +1490,26 @@ input:focus-visible{outline:none}
             '<span class="ts-clear" onclick="clearThread()" title="wipe the persisted channel history">clear history</span></span>' +
             '<span class="ts-line"></span></div>'
           : '';
+        var pk = (msg.role === 'atlas') ? parsePacket(msg.text || '') : { prose: msg.text || '', options: [] };
+        var packetHtml = '';
+        if (pk.options.length) {
+          var chosen = msg.chosen;
+          packetHtml = '<div class="packet' + (chosen ? ' resolved' : '') + '">' +
+            '<div class="pkt-lead">' + (chosen ? '⟢ chose' : '⟢ choose a path — or freehand below') + '</div>' +
+            pk.options.map(function(o, oi) {
+              var send = o.send || o.label || '';
+              var inner = '<span class="pkt-key">' + (oi + 1) + '</span>' +
+                '<span class="pkt-obody"><span class="pkt-label">' + esc(o.label || send) + '</span>' +
+                (o.detail ? '<span class="pkt-detail">' + esc(o.detail) + '</span>' : '') +
+                '</span>';
+              if (chosen) {
+                var pickedCls = (send === chosen) ? 'pkt-opt picked' : 'pkt-opt faded';
+                return '<div class="' + pickedCls + '">' + inner + '</div>';
+              }
+              return '<button class="pkt-opt" data-send="' + esc(send) + '">' + inner + '</button>';
+            }).join('') +
+          '</div>';
+        }
         return '<div class="msg ' + cls + '">' +
           '<div class="msg-avatar">' + avatar + '</div>' +
           '<div class="msg-body">' +
@@ -1485,7 +1518,8 @@ input:focus-visible{outline:none}
             (msg.restored ? '<span class="msg-time">earlier</span>' : '') +
             costHtml +
             '</div>' +
-            '<div class="msg-text">' + renderMd(msg.text || '') + '</div>' +
+            '<div class="msg-text">' + renderMd(pk.prose) + '</div>' +
+            packetHtml +
           '</div>' +
           '<span class="msg-copy" onclick="copyMsg(' + i + ')">copy</span>' +
         '</div>' + seam;
@@ -1505,7 +1539,7 @@ input:focus-visible{outline:none}
       localStorage.setItem('atlas_thread', JSON.stringify(
         thread.filter(function(t) { return t.role !== 'atlas' || !t.pending; })
           .slice(-150)
-          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts}; })
+          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts,chosen:t.chosen}; })
       ));
     } catch(e) {}
     // Show/hide typing indicator based on pending atlas state
@@ -1578,7 +1612,9 @@ input:focus-visible{outline:none}
     var threadEl2 = document.getElementById('thread');
     var atBottom = threadEl2 ? threadEl2.scrollHeight - threadEl2.scrollTop - threadEl2.clientHeight < 120 : false;
     var textEl = document.getElementById('stream-text');
-    if (textEl) textEl.innerHTML = renderMd(text || '');
+    // Suppress the packet fence (even partially streamed) so raw JSON never flashes;
+    // renderThread turns it into cards once the final message lands.
+    if (textEl) textEl.innerHTML = renderMd((text || '').replace(/\[\[packet\]\][\s\S]*$/, '').replace(/\s+$/, ''));
     if (threadEl2 && atBottom) threadEl2.scrollTop = threadEl2.scrollHeight;
   }
 
@@ -1812,6 +1848,24 @@ input:focus-visible{outline:none}
   });
   $('ledger').addEventListener('click',onClick);
 
+  // Command-packet option clicks — mark the choice on the message model (so it
+  // survives re-render as resolved, not re-clickable), then submit through the
+  // same door as a typed message.
+  $('thread').addEventListener('click', function(e){
+    var opt = e.target.closest('.pkt-opt');
+    if (!opt || !opt.getAttribute) return;
+    var send = opt.getAttribute('data-send');
+    if (send == null) return; // already-resolved options are <div>, no data-send
+    var msgEl = opt.closest('.msg');
+    if (msgEl) {
+      var allMsgs = Array.prototype.slice.call($('thread').querySelectorAll('.msg'));
+      var vi = allMsgs.indexOf(msgEl);
+      var vis = thread.filter(function(m){ return !m.pending; });
+      if (vis[vi]) vis[vi].chosen = send;
+    }
+    submitFromUI(send);
+  });
+
   var atlaspanel = $('atlaspanel');
   var apclose = $('apclose');
   if ($('eye')) {
@@ -1845,6 +1899,42 @@ input:focus-visible{outline:none}
     thread.push({role:"atlas",text:"",pending:true,activity:"thinking",lastTool:null,ts:Date.now()});
     window.atlas.say(text);
     renderThread();
+  }
+
+  // The single door for a UI-originated submission — composer Enter OR a clicked
+  // command-packet option. @build/@read verbs spawn agents; everything else goes
+  // to ATLAS. A clicked choice is indistinguishable from Daniel typing it.
+  function submitFromUI(text){
+    text = (text || '').trim();
+    if (!text) return;
+    var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
+    if (agentMatch) {
+      var mode = agentMatch[1].toLowerCase().charAt(0) === 'b' ? 'build' : 'read';
+      var task = agentMatch[2].trim();
+      window.atlas.dispatch(task, null, mode);
+      thread.push({ role: 'system', text: '⟁ dispatched ' + mode + ' agent: ' + task.slice(0, 60), error: false, ts: Date.now() });
+      renderThread();
+      return;
+    }
+    say(text);
+  }
+
+  // Parse a command packet out of an ATLAS reply. Returns {prose, options} —
+  // options is [] when there's no packet. The packet is stripped from the prose
+  // so the raw JSON never renders as text.
+  function parsePacket(text){
+    var t = text || '';
+    var m = t.match(/\[\[packet\]\]([\s\S]*?)\[\[\/packet\]\]/);
+    if (!m) return { prose: t, options: [] };
+    var prose = t.replace(m[0], '').trim();
+    var options = [];
+    try {
+      var arr = JSON.parse(m[1].trim());
+      if (Array.isArray(arr)) {
+        options = arr.filter(function(o){ return o && (o.label || o.send); }).slice(0, 4);
+      }
+    } catch(e) { /* malformed packet → just show the prose, no cards */ }
+    return { prose: prose, options: options };
   }
 
   function renderMemFacts(facts) {
