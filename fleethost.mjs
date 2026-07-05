@@ -721,7 +721,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, close_proposal, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health, population_status`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -760,7 +760,7 @@ const capabilityManifestTool = tool(
     const full = args.format === "full";
     const tools = [
       "spawn_agent", "check_fleet", "chain_agents", "fleet_status", "diagnose",
-      "propose_improvement", "load_proposals",
+      "propose_improvement", "load_proposals", "close_proposal",
       "journal_write", "recall_memory",
       "set_goal", "list_goals", "resolve_goal",
       "self_assess", "defer_task", "notify_self", "memory_health",
@@ -780,7 +780,7 @@ const capabilityManifestTool = tool(
       "project_create", "project_advance", "project_status", "project_complete",
       "auto_build",
       "triage_proposals",
-      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health"
+      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health", "population_status"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
@@ -2820,7 +2820,84 @@ const populationStatusTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, populationStatusTool] });
+const closeProposalTool = tool(
+  "close_proposal",
+  "Mark a specific proposal as resolved/consumed without building it. Use when a proposal is stale (the feature was already built), wrong, or explicitly cancelled. Accepts a P-ID (e.g. 'P-1782770769342') or a keyword that uniquely matches one pending proposal's description.",
+  {
+    id: z.string().describe("The P-ID (e.g. 'P-1782770769342') or a unique keyword substring matching one pending proposal's description"),
+    reason: z.string().optional().describe("Why this proposal is being closed without building"),
+  },
+  async (args) => {
+    try {
+      const fs = _require('fs');
+      const memDir = path.join(REPO, 'memory');
+      const pfile = path.join(memDir, 'proposals.ndjson');
+      if (!fs.existsSync(pfile)) return { content: [{ type: 'text', text: 'No proposals file found.' }] };
+
+      // Load all proposals
+      const lines = fs.readFileSync(pfile, 'utf8').trim().split('\n').filter(Boolean);
+      const proposals = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+      // Extract numeric suffix from id (strip 'P-' prefix)
+      const idSuffix = args.id.replace(/^P-/, '').trim();
+
+      // Try to match by P-ID first: check if proposal ts ends with the given digits
+      let matches = [];
+      for (const p of proposals) {
+        if (!p.ts) continue;
+        // Extract millisecond portion from ISO timestamp: 'ts' looks like '2026-06-29T22:06:09.342Z'
+        // The milliseconds are the 3 digits before 'Z'
+        const msMatch = p.ts.match(/\.(\d{3})Z$/);
+        if (msMatch) {
+          const msDigits = msMatch[1];
+          if (msDigits === idSuffix) {
+            matches.push(p);
+          }
+        }
+      }
+
+      // If no match by ID, try substring match on description (case-insensitive)
+      if (!matches.length) {
+        const kw = args.id.toLowerCase();
+        matches = proposals.filter(p => (p.description || p.text || p.proposal || '').toLowerCase().includes(kw));
+      }
+
+      // Handle match results
+      if (matches.length === 0) {
+        return { content: [{ type: 'text', text: `No proposal found matching: ${args.id}` }] };
+      }
+      if (matches.length > 1) {
+        const list = matches.map(m => `  • [${m.id}] ${(m.description || m.text || '').slice(0, 60)}`).join('\n');
+        return { content: [{ type: 'text', text: `Multiple matches for "${args.id}" — please be more specific:\n${list}` }] };
+      }
+
+      // Exactly one match: update it
+      const matched = matches[0];
+      const updated = proposals.map(p => {
+        if (p.ts === matched.ts) {
+          return {
+            ...p,
+            state: 'consumed',
+            consumedTs: new Date().toISOString(),
+            consumedBy: 'ATLAS-close_proposal',
+            resolveNote: args.reason || 'manually closed',
+          };
+        }
+        return p;
+      });
+
+      // Write back to disk
+      fs.writeFileSync(pfile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+
+      const descPrefix = (matched.description || matched.text || matched.proposal || 'proposal').slice(0, 100);
+      return { content: [{ type: 'text', text: `Closed: "${descPrefix}"${args.reason ? ' — ' + args.reason : ''}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `close_proposal error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -2834,6 +2911,7 @@ fleet_status — richer agent detail with cost/elapsed
 diagnose — self-check: files, memory, git state
 propose_improvement(description,priority?,area?) — queue a self-directed proposal
 load_proposals(status?) — list proposals
+close_proposal(id,reason?) — mark a proposal consumed/closed without building (by P-ID or keyword match)
 journal_write(observation,topic?,confidence?) — record to persistent memory
 recall_memory(query,maxResults?) — retrieve relevant facts
 set_goal(goal,priority?,area?) — record a persistent intention
