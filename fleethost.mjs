@@ -3277,7 +3277,11 @@ let autonomyBusy = false;
 let autonomyDeadline = 0;           // wall-clock ms when the window closes
 let autonomyStartedAt = 0;
 let autonomyActions = 0;            // orchestrate turns taken this window (for the summary)
-const AUTONOMY_BREATHER_MS = 4000;  // brief pause between autonomous turns — active work, not idle poll
+let autonomyIdleStreak = 0;         // consecutive turns where ATLAS found nothing to do
+let autonomyBreather = 4000;        // gap before the next turn — grows on idle (backoff)
+const AUTONOMY_BREATHER_MS = 4000;  // base breather between active turns
+const AUTONOMY_BREATHER_MAX = 300000; // cap the idle backoff at 5 min
+const AUTONOMY_MAX_IDLE = 4;        // close the window early after this many consecutive rest turns
 
 function autonomyPrompt() {
   const leftMin = Math.max(0, Math.round((autonomyDeadline - Date.now()) / 60000));
@@ -3286,6 +3290,8 @@ function autonomyPrompt() {
 This is YOUR time to fill the fractal spiral and push the alien-architecture forward. You decide the scope: take as MANY useful actions this turn as you see fit — build, verify, prune, research, consolidate memory, seal spiral turns, propose and auto_build. This is NOT "one bounded action"; it is real, self-directed work toward the convergence. Go deep. Don't manufacture busywork — if the best move is to think, design, or seal a crystal, do that — but you are free.
 
 Standing limits that hold even here: NOTHING irreversible or outward-facing autonomously — no pushing to Daniel's remotes, no deleting his work, no external sends; stage those for his review. Verify what you build (node --check, run_tests). Everything is visible to him in the thread — leave a clear trail he can read when he's back.
+
+If there is genuinely nothing worth doing right now, reply with exactly [REST] and take no other action — do not manufacture busywork or re-report unchanged state. Resting is correct when the queue is empty; the loop backs off and checks less often, and closes early if you rest repeatedly.
 
 Work now. The loop brings you back to continue until the window closes.`;
 }
@@ -3305,12 +3311,24 @@ function scheduleAutonomyTick(delay) {
     autonomyActions++;
     try {
       send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
-      await orchestrate(autonomyPrompt()); // its tail reschedules the next turn after a breather
+      const _spawnedBefore = _maxCounter;
+      await orchestrate(autonomyPrompt()); // its tail reschedules using autonomyBreather
       const a = agents.get("ATLAS") || {};
-      _sayLog({ autonomy: true, n: autonomyActions, reply: (a.reply || a.summary || ""), cost: a.cost ?? null });
+      const reply = a.reply || a.summary || "";
+      _sayLog({ autonomy: true, n: autonomyActions, idle: autonomyIdleStreak, reply, cost: a.cost ?? null });
+      // Rest detection: ATLAS emitted [REST], or a cheap turn that spawned no agents.
+      const rested = /\[REST\]/i.test(reply) || (_maxCounter === _spawnedBefore && (a.cost ?? 0) < 0.10);
+      if (rested) {
+        autonomyIdleStreak++;
+        if (autonomyIdleStreak >= AUTONOMY_MAX_IDLE) { stopAutonomy("rested " + AUTONOMY_MAX_IDLE + " turns — no work left, closing early"); return; }
+        autonomyBreather = Math.min(AUTONOMY_BREATHER_MAX, AUTONOMY_BREATHER_MS * Math.pow(2, autonomyIdleStreak)); // exp backoff
+      } else {
+        autonomyIdleStreak = 0;
+        autonomyBreather = AUTONOMY_BREATHER_MS; // active again → tight cadence
+      }
     } catch { /* a failed turn must not wedge the window */ }
     finally { autonomyBusy = false; }
-  }, delay == null ? AUTONOMY_BREATHER_MS : delay);
+  }, delay == null ? autonomyBreather : delay);
 }
 
 function startAutonomy(minutes) {
@@ -3319,6 +3337,8 @@ function startAutonomy(minutes) {
   autonomyStartedAt = Date.now();
   autonomyDeadline = autonomyStartedAt + m * 60000;
   autonomyActions = 0;
+  autonomyIdleStreak = 0;
+  autonomyBreather = AUTONOMY_BREATHER_MS;
   send("autonomy_state", { on: true, minutes: m, until: autonomyDeadline });
   scheduleAutonomyTick(1500); // begin shortly
 }
