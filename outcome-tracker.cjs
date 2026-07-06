@@ -20,7 +20,7 @@ function rateOutcome(agentId, rating, notes, memDir, failureMode, causalChain) {
     : String(rating).toLowerCase();
   const entry = { agentId, rating: normalized, notes: notes || '', ts: new Date().toISOString() };
   if (failureMode) entry.failureMode = failureMode;
-  if (Array.isArray(causalChain) && causalChain.length) entry.causalChain = causalChain;
+  if (causalChain) entry.causalChain = causalChain;
   fs.appendFileSync(OUTCOMES_FILE(memDir), JSON.stringify(entry) + '\n', 'utf8');
   return entry;
 }
