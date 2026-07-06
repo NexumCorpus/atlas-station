@@ -12,6 +12,12 @@ function _saveRoutines(data, memDir) {
 
 // A routine step: { tool: string, args: object, description: string }
 function saveRoutine(name, description, steps, memDir) {
+  if (!name || name.toString().trim() === '') {
+    throw new Error('saveRoutine: name is required and must be non-empty');
+  }
+  if (!Array.isArray(steps) || steps.length === 0) {
+    throw new Error('saveRoutine: steps must be a non-empty array');
+  }
   const all = listRoutines(memDir).filter(r => r.name !== name);
   all.push({ name, description, steps, ts: new Date().toISOString() });
   _saveRoutines(all, memDir);

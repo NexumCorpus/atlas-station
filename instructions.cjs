@@ -10,6 +10,12 @@ function _saveInstructions(data, filePath) {
 }
 
 function setInstruction(key, instruction, memDir) {
+  if (!key || key.toString().trim() === '') {
+    throw new Error('setInstruction: key is required and must be non-empty');
+  }
+  if (instruction === null || instruction === undefined || instruction.toString().trim() === '') {
+    throw new Error('setInstruction: instruction is required and must be non-empty');
+  }
   // Load existing, replace if key exists
   const all = listInstructions(memDir).filter(i => i.key !== key);
   all.push({ key, instruction, ts: new Date().toISOString() });
