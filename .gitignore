@@ -41,3 +41,4 @@ _peer_reply1.*
 .claude/worktrees/
 .atlas/say-inbox
 .atlas/say-outbox.jsonl
+docs/Atlas-Capstone.pdf

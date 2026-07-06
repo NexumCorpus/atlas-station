@@ -1,10 +1,10 @@
 # ATLAS Self-State
-*Last updated: 2026-07-06T04:11:15.044Z*
+*Last updated: 2026-07-06T04:36:15.055Z*
 
 ## Session
-- Uptime: 25 min
+- Uptime: 50 min
 - Agents: 130 done, 19 failed, 0 active
-- Session cost: $0.237
+- Session cost: $17.655
 - Agents spawned: 2
 
 ## Tools (65 registered)
