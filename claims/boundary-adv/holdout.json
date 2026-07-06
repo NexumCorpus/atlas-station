@@ -1,0 +1,19 @@
+{
+  "committed_before_check_written": true,
+  "note": "Adversarial holdout seeds — genuinely different failure CLASS from null/empty. These test Unicode zero-width characters (U+200B ZWSP) that look empty but are NOT stripped by .trim(). The null-guard fix (spiral 20) targets ASCII whitespace; it CANNOT address this class. Seeds chosen before check.mjs was written.",
+  "seeds": [3, 4],
+  "seed3": {
+    "id": 3,
+    "fn": "setInstruction",
+    "module": "instructions.cjs",
+    "input": "value = '\\u200b' (U+200B zero-width space — passes .trim() !== '' guard, stores invisible instruction)",
+    "adversarial_class": "unicode-empty-like"
+  },
+  "seed4": {
+    "id": 4,
+    "fn": "addGoal",
+    "module": "goal-store.cjs",
+    "input": "text = '\\u200b' (U+200B zero-width space — passes .trim() !== '' guard, stores invisible goal text)",
+    "adversarial_class": "unicode-empty-like"
+  }
+}
