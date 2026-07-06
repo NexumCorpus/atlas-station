@@ -225,8 +225,9 @@ function makeWorktree(id) {
   mkdirSync(WT_BASE, { recursive: true });
   try { gitC(["worktree", "remove", "--force", dir]); } catch (_) {}
   try { gitC(["branch", "-D", branch]); } catch (_) {}
+  const baseHash = (() => { try { return gitC(["rev-parse", "HEAD"]).trim(); } catch { return null; } })();
   gitC(["worktree", "add", "-f", "-b", branch, dir, "HEAD"]);
-  return { dir, branch };
+  return { dir, branch, baseHash };
 }
 function branchStat(branch) {
   try { const stat = gitC(["diff", "--shortstat", "master.." + branch]).trim(); const commits = Number(gitC(["rev-list", "--count", "master.." + branch]).trim()) || 0; return { branchStat: stat || "no diff yet", commits }; }
@@ -267,14 +268,24 @@ async function consume(id, iterable, build, branch) {
         try {
           const { spawnSync } = _require('child_process');
           // Use agent's worktree CWD, not REPO — build agents commit to their fleet branch worktree
-          const agentCwd = agents.get(id)?.cwd || REPO;
-          const result = spawnSync('git', ['-C', agentCwd, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
-            encoding: 'utf8', timeout: 5000
-          });
-          if (result.status === 0) {
-            const files = (result.stdout || '').trim().split('\n').filter(Boolean);
-            if (files.length) _mutmap.recordMutation(id, files, path.join(REPO, 'memory'));
+          const ag = agents.get(id) || {};
+          const agentCwd = ag.cwd || REPO;
+          // Use baseHash (recorded at worktree creation) to capture ALL commits, not just the last one
+          let files = [];
+          if (ag.baseHash) {
+            const r = spawnSync('git', ['-C', agentCwd, 'diff', '--name-only', ag.baseHash + '..HEAD'], {
+              encoding: 'utf8', timeout: 5000
+            });
+            if (r.status === 0) files = (r.stdout || '').trim().split('\n').filter(Boolean);
           }
+          // Fallback: just the last commit (covers single-commit builds and missing baseHash)
+          if (!files.length) {
+            const r2 = spawnSync('git', ['-C', agentCwd, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
+              encoding: 'utf8', timeout: 5000
+            });
+            if (r2.status === 0) files = (r2.stdout || '').trim().split('\n').filter(Boolean);
+          }
+          if (files.length) _mutmap.recordMutation(id, files, path.join(REPO, 'memory'));
         } catch {}
       }
     }
@@ -332,7 +343,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
   }
   const enriched = _memcontext ? _memcontext.inject(enrichedTask, { tier: mode === 'build' ? 'build' : 'full' }) : enrichedTask;
   if (mode === "build") {
-    try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); }
+    try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
   const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
