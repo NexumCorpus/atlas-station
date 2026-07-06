@@ -51,7 +51,7 @@ export function savePopulation(pop, atlasDir = DEFAULT_ATLAS_DIR) {
 function meanScore(performanceScores) {
   const vals = Object.values(performanceScores || {});
   if (!vals.length) return 0;
-  const nums = vals.map((v) => (v == null ? 0 : Number(v)));
+  const nums = vals.map((v) => v == null ? 0 : typeof v === 'object' ? Number(v.score ?? 0) : Number(v));
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
