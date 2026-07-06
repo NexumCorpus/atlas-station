@@ -2408,7 +2408,8 @@ const autoBuildTool = tool(
             if (p.ts === proposal.ts) return { ...p, state: 'queued', queuedTs: new Date().toISOString(), agentId: bareId };
             return p;
           });
-          fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+          fs.writeFileSync(proposalsFile + '.tmp', updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+          fs.renameSync(proposalsFile + '.tmp', proposalsFile);
         } catch {}
       }
 
@@ -2496,7 +2497,8 @@ const triageProposalsTool = tool(
           }
           return p;
         });
-        fs.writeFileSync(proposalsFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+        fs.writeFileSync(proposalsFile + '.tmp', updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+        fs.renameSync(proposalsFile + '.tmp', proposalsFile);
       }
 
       // Sort kept proposals by score descending
@@ -2945,7 +2947,8 @@ const closeProposalTool = tool(
       });
 
       // Write back to disk
-      fs.writeFileSync(pfile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+      fs.writeFileSync(pfile + '.tmp', updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+      fs.renameSync(pfile + '.tmp', pfile);
 
       const descPrefix = (matched.description || matched.text || matched.proposal || 'proposal').slice(0, 100);
       return { content: [{ type: 'text', text: `Closed: "${descPrefix}"${args.reason ? ' — ' + args.reason : ''}` }] };
@@ -3930,7 +3933,8 @@ async function runDeferredTasks() {
             if (!match) return p;
             return { ...p, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-task' };
           });
-          _fs.writeFileSync(propFile, updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+          _fs.writeFileSync(propFile + '.tmp', updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+          _fs.renameSync(propFile + '.tmp', propFile);
         }
       } catch {}
     }
