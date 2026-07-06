@@ -1,0 +1,6 @@
+{
+  "statement": "ATLAS null/empty-input validation rejects ALL empty-appearing inputs — including Unicode zero-width characters (U+200B ZERO WIDTH SPACE) that look empty but are not stripped by JavaScript .trim()",
+  "check": ["node", "check.mjs", "{seed}"],
+  "claimed_seeds": [0, 1, 2],
+  "artifact": "goal-store.cjs::addGoal() + instructions.cjs::setInstruction() + routines.cjs::saveRoutine() — null/empty guards from spiral 20"
+}
