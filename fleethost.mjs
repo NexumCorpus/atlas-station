@@ -3218,7 +3218,7 @@ async function orchestrate(userText) {
       fs.appendFileSync(telFile, JSON.stringify(entry) + '\n', 'utf8');
     } catch {}
   }
-  set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null });
+  set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null, reply: "", summary: "" }); // clear last turn's reply so streaming events don't rebroadcast it as this turn's "thinking"
   // Dynamic self-instructions injection
   let dynamicRole = ORCH_ROLE;
   if (_instructions) {

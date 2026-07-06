@@ -1133,7 +1133,9 @@ input:focus-visible{outline:none}
       if(m.id==="ATLAS"){
         if(m.partial){
           agents.set("ATLAS",m);
-          var _partialText=m.reply||m.summary||'';
+          // Prefer the LIVE summary over the full reply: reply holds the prior
+          // turn's result and must not be rebroadcast as this turn's streaming.
+          var _partialText=m.summary||'';
           if(_partialText){
             atlasStreamText=_partialText;
             atlasStreaming=true;
