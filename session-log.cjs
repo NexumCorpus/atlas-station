@@ -17,7 +17,8 @@ function appendTurn(text, memDir) {
   existing.push(entry);
   // Keep rolling window
   if (existing.length > MAX_TURNS) existing = existing.slice(-MAX_TURNS);
-  fs.writeFileSync(file, existing.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+  fs.writeFileSync(file + '.tmp', existing.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+  fs.renameSync(file + '.tmp', file);
 }
 
 function getRecentTurns(memDir, n) {

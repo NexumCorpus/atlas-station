@@ -1635,7 +1635,8 @@ const validateFactsTool = tool(
         if (anyMissing) { staleRemoved++; } else { validLines.push(line); }
       }
       const remain = validLines.length;
-      fs.writeFileSync(factsFile, validLines.join('\n') + (validLines.length ? '\n' : ''), 'utf8');
+      fs.writeFileSync(factsFile + '.tmp', validLines.join('\n') + (validLines.length ? '\n' : ''), 'utf8');
+      fs.renameSync(factsFile + '.tmp', factsFile);
       const summary = `validate_facts: ${total} total, ${pathsChecked} paths checked, ${staleRemoved} stale removed, ${remain} remain`;
       return { content: [{ type: 'text', text: summary }] };
     } catch (e) {
