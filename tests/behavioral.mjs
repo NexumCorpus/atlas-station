@@ -297,6 +297,75 @@ console.log('\n15. resonance: true Jaccard similarity');
   console.log('  PASS: true Jaccard (all 4 assertions)');
 }
 
+// ─── 16. goal-store: addGoal/listGoals/resolveGoal roundtrip ────────────────
+console.log('\n16. goal-store: addGoal/listGoals/resolveGoal roundtrip');
+{
+  const { addGoal, listGoals, resolveGoal } = require(join(ROOT, 'goal-store.cjs'));
+  const dir = tempDir();
+  try {
+    const g = addGoal('test goal text', 'high', 'fleet', dir);
+    assert(g.id.startsWith('G-'), 'addGoal returns entry with G- id');
+    assert(g.state === 'active', 'addGoal entry starts active');
+
+    const goals = listGoals(dir);
+    assert(goals.length === 1, 'listGoals finds the goal');
+    assert(goals[0].text === 'test goal text', 'listGoals returns correct text');
+
+    const resolved = resolveGoal(g.id, 'done', dir);
+    assert(resolved.state === 'done', 'resolveGoal marks goal done');
+    assert(listGoals(dir)[0].state === 'done', 'resolved state persists');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 17. instructions: setInstruction/listInstructions/clearInstruction ──────
+console.log('\n17. instructions: set/list/clear roundtrip');
+{
+  const { setInstruction, listInstructions, clearInstruction } = require(join(ROOT, 'instructions.cjs'));
+  const dir = tempDir();
+  try {
+    setInstruction('test-key', 'do the thing', dir);
+    const all = listInstructions(dir);
+    assert(all.length === 1, 'listInstructions finds instruction');
+    assert(all[0].key === 'test-key', 'instruction has correct key');
+    assert(all[0].instruction === 'do the thing', 'instruction has correct text');
+
+    // setInstruction replaces existing key
+    setInstruction('test-key', 'do the other thing', dir);
+    const updated = listInstructions(dir);
+    assert(updated.length === 1, 'replace does not duplicate');
+    assert(updated[0].instruction === 'do the other thing', 'replacement stored');
+
+    clearInstruction('test-key', dir);
+    assert(listInstructions(dir).length === 0, 'clearInstruction removes entry');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 18. predict: addPrediction/resolvePrediction/predictionAccuracy ─────────
+console.log('\n18. predict: addPrediction/resolvePrediction/predictionAccuracy');
+{
+  const { addPrediction, resolvePrediction, predictionAccuracy } = require(join(ROOT, 'predict.cjs'));
+  const dir = tempDir();
+  try {
+    const id = addPrediction('test claim', 0.8, dir);
+    assert(typeof id === 'string' && id.startsWith('pred-'), 'addPrediction returns pred- id');
+
+    const acc0 = predictionAccuracy(dir);
+    assert(acc0.total === 1, 'predictionAccuracy sees 1 total');
+    assert(acc0.resolved === 0, 'none resolved yet');
+
+    resolvePrediction(id, 'correct', 'matched exactly', dir);
+    const acc1 = predictionAccuracy(dir);
+    assert(acc1.resolved === 1, 'predictionAccuracy sees 1 resolved');
+    assert(Math.abs(acc1.accuracy - 1.0) < 1e-9, 'accuracy is 1.0 after correct resolution');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ─── 14. fleethost structural invariants ─────────────────────────────────
 // META guard: verifies no wrong query() shapes (Anthropic REST) remain in
 // fleethost.mjs. This catches regressions of the bug class fixed in Spirals 1+4
