@@ -413,15 +413,19 @@ const chainTool = tool(
     projectId: z.string().optional().describe("Project ID (P-xxx) — propagated to all steps in the chain"),
   },
   async (args) => {
-    let context = "";
-    const results = [];
-    for (const step of (args.steps || [])) {
-      const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 4000) : step.task;
-      const result = await runSubagent(taskWithCtx, step.mode || 'read', undefined, undefined, args.projectId || null);
-      context = result;
-      results.push(result);
+    try {
+      let context = "";
+      const results = [];
+      for (const step of (args.steps || [])) {
+        const taskWithCtx = context ? step.task + "\n\n[Prior step result]\n" + context.slice(0, 4000) : step.task;
+        const result = await runSubagent(taskWithCtx, step.mode || 'read', undefined, undefined, args.projectId || null);
+        context = result;
+        results.push(result);
+      }
+      return { content: [{ type: "text", text: results.join("\n\n---\n\n") }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `chain_agents error: ${e.message}` }] };
     }
-    return { content: [{ type: "text", text: results.join("\n\n---\n\n") }] };
   }
 );
 const statusTool = tool(
