@@ -818,12 +818,14 @@ const triggerSelfloopTool = tool(
     abortControllers.set(loopId, ctrl);
     try {
       const iterable = query({
-        model: MODEL,
-        systemPrompt: prompt,
-        messages: [{ role: 'user', content: 'Run the self-improvement cycle now.' + (args.focus ? ` Focus: ${args.focus}` : '') }],
-        mcpServers: [fleetServer],
-        permissionMode: 'bypassPermissions',
-        abortSignal: ctrl.signal,
+        prompt: 'Run the self-improvement cycle now.' + (args.focus ? ` Focus: ${args.focus}` : ''),
+        options: {
+          model: MODEL,
+          systemPrompt: prompt,
+          mcpServers: [fleetServer],
+          permissionMode: 'bypassPermissions',
+          abortSignal: ctrl.signal,
+        },
       });
       const reply = await consume(loopId, iterable, false, null);
       set(loopId, { state: 'done', reply, cost: agents.get(loopId)?.cost });
@@ -1087,10 +1089,12 @@ const webResearchTool = tool(
       abortControllers.set(researchId, ctrl);
       try {
         const iter = query({
-          model: MODEL_HAIKU,
-          messages: [{ role: 'user', content: prompt }],
-          permissionMode: 'bypassPermissions',
-          abortSignal: ctrl.signal,
+          prompt,
+          options: {
+            model: MODEL_HAIKU,
+            permissionMode: 'bypassPermissions',
+            abortSignal: ctrl.signal,
+          },
         });
         summary = await consume(researchId, iter, false, null);
       } catch (e) {
@@ -1276,10 +1280,12 @@ const fanResearchTool = tool(
           abortControllers.set(fanId, ac);
           let text = '';
           const iter = query({
-            model: MODEL_HAIKU,
-            messages: [{ role: 'user', content: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.` }],
-            permissionMode: 'bypassPermissions',
-            abortSignal: ac.signal,
+            prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.`,
+            options: {
+              model: MODEL_HAIKU,
+              permissionMode: 'bypassPermissions',
+              abortSignal: ac.signal,
+            },
           });
           text = await consume(fanId, iter, false, null);
           abortControllers.delete(fanId);
@@ -1301,10 +1307,12 @@ Write a unified 300-400 word synthesis. Highlight where angles agree, where they
       const synthAc = new AbortController();
       abortControllers.set(synthId, synthAc);
       const synthIter = query({
-        model: MODEL_SONNET,
-        messages: [{ role: 'user', content: synthPrompt }],
-        permissionMode: 'bypassPermissions',
-        abortSignal: synthAc.signal,
+        prompt: synthPrompt,
+        options: {
+          model: MODEL_SONNET,
+          permissionMode: 'bypassPermissions',
+          abortSignal: synthAc.signal,
+        },
       });
       const synthesis = await consume(synthId, synthIter, false, null);
       abortControllers.delete(synthId);
@@ -3146,10 +3154,12 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
     let crystalText = '';
     try {
       const iter = query({
-        model: MODEL_HAIKU,
-        messages: [{ role: 'user', content: prompt }],
-        permissionMode: 'bypassPermissions',
-        abortSignal: ac.signal,
+        prompt,
+        options: {
+          model: MODEL_HAIKU,
+          permissionMode: 'bypassPermissions',
+          abortSignal: ac.signal,
+        },
       });
       crystalText = await consume(crystalId, iter, false, null);
     } finally {
