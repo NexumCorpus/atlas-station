@@ -8,13 +8,25 @@
 // Agents are durable (persisted + restored on restart) and conversational
 // (sessions resume). ATLAS is gated to read + delegation: to change anything it
 // MUST spawn a build subagent (isolated worktree), never the live tree.
-import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
+
+// Root-cause guard for the query() shape bug class.
+// The SDK query() accepts {prompt, options:{...}} but silently fails if called with
+// the Anthropic REST shape {model, messages:[...]}. This wrapper throws immediately
+// at the call site with a diagnostic, making regressions visible rather than silent.
+function query(args) {
+  if (args && typeof args === 'object' && !('prompt' in args)) {
+    const keys = Object.keys(args).join(', ');
+    throw new Error(`query() wrong shape: got {${keys}} — use {prompt, options:{model,...}} not Anthropic REST shape`);
+  }
+  return _sdkQuery(args);
+}
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
@@ -1636,6 +1648,10 @@ const stagedVerifyTool = tool(
     const branch = 'fleet/' + args.agentId;
     const temp = 'verify-temp-' + args.agentId;
     try {
+      // Idempotent pre-clean: delete stale temp branch left by any prior crashed run.
+      // git checkout -b fails if the branch already exists — without this, a prior crash
+      // leaves the tool permanently broken for this agentId.
+      try { gitC(['branch', '-D', temp]); } catch {}
       // Create temp branch off master
       gitC(['checkout', '-b', temp, 'master']);
       // Attempt merge (no-commit to inspect merged state without touching master)

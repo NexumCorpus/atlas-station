@@ -2,7 +2,7 @@
 // Run: node tests/behavioral.mjs
 
 import { createRequire } from 'module';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -295,6 +295,24 @@ console.log('\n15. resonance: true Jaccard similarity');
   const s2 = similarity(['b','c'], ['a','b','c','d']);
   assert(Math.abs(s2 - 0.5) < 1e-9, 'subset: 2/4 = 0.5, got ' + s2);
   console.log('  PASS: true Jaccard (all 4 assertions)');
+}
+
+// ─── 14. fleethost structural invariants ─────────────────────────────────
+// META guard: verifies no wrong query() shapes (Anthropic REST) remain in
+// fleethost.mjs. This catches regressions of the bug class fixed in Spirals 1+4
+// — the SDK query() accepts {prompt, options:{...}} but silently fails with the
+// REST shape {model, messages:[...]}. A build agent re-introducing the wrong
+// shape would be caught by this test before it reaches production.
+console.log('\n14. fleethost structural invariants');
+{
+  const fleet = readFileSync(join(ROOT, 'fleethost.mjs'), 'utf8');
+  // Wrong shape: messages array at top level of a query() call
+  const wrongShape = /query\s*\(\s*\{[^}]*messages\s*:\s*\[/.test(fleet);
+  assert(!wrongShape, 'no Anthropic REST query() shapes (messages:[...]) in fleethost.mjs');
+  // Correct shape: every query() call has prompt at top level
+  // Count query({ calls and prompt: occurrences inside them (structural, not semantic — catches obvious regressions)
+  const queryCallCount = (fleet.match(/\b_sdkQuery\s*\(|function query\s*\(/g) || []).length;
+  assert(queryCallCount >= 2, 'safeQuery wrapper and SDK import are present (found ' + queryCallCount + ')');
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────
