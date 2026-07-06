@@ -254,7 +254,9 @@ async function consume(id, iterable, build, branch) {
       if (build && _mutmap) {
         try {
           const { spawnSync } = _require('child_process');
-          const result = spawnSync('git', ['-C', REPO, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
+          // Use agent's worktree CWD, not REPO — build agents commit to their fleet branch worktree
+          const agentCwd = agents.get(id)?.cwd || REPO;
+          const result = spawnSync('git', ['-C', agentCwd, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
             encoding: 'utf8', timeout: 5000
           });
           if (result.status === 0) {
