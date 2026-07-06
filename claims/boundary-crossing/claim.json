@@ -1,0 +1,5 @@
+{
+  "statement": "ATLAS null/empty-input validation: systematic fixes to goal-store, instructions, and routines modules cause all null/empty write operations to throw immediately with a descriptive error, for inputs not specifically examined during fix design",
+  "check": ["node", "check.mjs", "{seed}"],
+  "claimed_seeds": [0, 1, 2]
+}

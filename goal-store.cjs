@@ -19,6 +19,9 @@ function _save(goals, dir) {
 }
 
 function addGoal(text, priority, area, dir) {
+  if (text === null || text === undefined || text.toString().trim() === '') {
+    throw new Error('addGoal: text is required and must be non-empty');
+  }
   dir = dir || path.join(__dirname, 'memory');
   const goals = _load(dir);
   const goal = { id: 'G-' + Date.now(), ts: new Date().toISOString(), text, priority: priority || 'medium', area: area || 'general', state: 'active' };
@@ -33,6 +36,7 @@ function listGoals(dir) {
 }
 
 function resolveGoal(id, outcome, dir) {
+  if (!id) throw new Error('resolveGoal: id is required');
   dir = dir || path.join(__dirname, 'memory');
   const goals = _load(dir);
   const g = goals.find(g => g.id === id);
