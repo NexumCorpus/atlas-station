@@ -1526,8 +1526,30 @@ const verifyBuildTool = tool(
         }
       }
 
-      const verdict = failed === 0 ? 'PASS' : 'FAIL';
-      const summary = `${verdict} — ${passed} ok, ${failed} failed (${filesToCheck.length} files checked)`;
+      let syntaxVerdict = failed === 0 ? 'PASS' : 'FAIL';
+      const syntaxSummary = `syntax ${syntaxVerdict} — ${passed} ok, ${failed} failed (${filesToCheck.length} files checked)`;
+
+      // If syntax passes, also run behavioral tests to catch semantic regressions
+      let behavioralSummary = '';
+      if (syntaxVerdict === 'PASS') {
+        try {
+          const testResult = spawnSync(process.execPath, [path2.join(REPO, 'tests', 'behavioral.mjs')], {
+            encoding: 'utf8', timeout: 30000, cwd: REPO
+          });
+          const lastLine = (testResult.stdout || '').trim().split('\n').pop() || '';
+          const behavPass = testResult.status === 0;
+          behavioralSummary = `behavioral ${behavPass ? 'PASS' : 'FAIL'} — ${lastLine}`;
+          if (!behavPass) {
+            syntaxVerdict = 'FAIL'; // escalate overall verdict
+            behavioralSummary += '\n' + (testResult.stdout || '').slice(-800);
+          }
+        } catch (te) {
+          behavioralSummary = `behavioral SKIP (runner error: ${te.message})`;
+        }
+      }
+
+      const verdict = syntaxVerdict;
+      const summary = [syntaxSummary, behavioralSummary].filter(Boolean).join(' | ');
 
       // Store verdict as fact
       if (_memstore) {
