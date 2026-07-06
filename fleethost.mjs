@@ -76,6 +76,8 @@ let _sessionState = null;
 try { _sessionState = _require('./session-state.cjs'); } catch { _sessionState = null; }
 let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
+let _predict = null;
+try { _predict = _require('./predict.cjs'); } catch { _predict = null; }
 
 // Debounced persist — fires at most once per second to avoid thrashing disk on
 // streaming updates (which call set() dozens of times per second).
@@ -721,7 +723,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, close_proposal, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health, population_status`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, close_proposal, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health, population_status, make_prediction, resolve_prediction, prediction_accuracy`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -780,9 +782,10 @@ const capabilityManifestTool = tool(
       "project_create", "project_advance", "project_status", "project_complete",
       "auto_build",
       "triage_proposals",
-      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health", "population_status"
+      "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health", "population_status",
+      "make_prediction", "resolve_prediction", "prediction_accuracy"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log", "predict"];
     const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
@@ -2897,7 +2900,68 @@ const closeProposalTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool] });
+const makePredictionTool = tool(
+  "make_prediction",
+  "State a prediction before acting — claim (what you predict) + confidence (0.0–1.0). Returns a prediction ID. Resolve later with resolve_prediction. Builds ATLAS's calibration record.",
+  {
+    claim: z.string().describe("The prediction claim"),
+    confidence: z.number().min(0).max(1).describe("Confidence level from 0.0 (low) to 1.0 (high)"),
+  },
+  async (args) => {
+    if (!_predict) return { content: [{ type: 'text', text: 'predict module not available' }] };
+    try {
+      const id = _predict.addPrediction(args.claim, args.confidence, path.join(REPO, 'memory'));
+      return { content: [{ type: 'text', text: `Prediction recorded: ${id}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+const resolvePredictionTool = tool(
+  "resolve_prediction",
+  "Resolve a prior prediction as correct or incorrect. Provide the prediction ID and evidence. Updates the calibration ledger.",
+  {
+    id: z.string().describe("The prediction ID to resolve"),
+    outcome: z.enum(['correct','incorrect']).describe("Whether the prediction was correct or incorrect"),
+    evidence: z.string().optional().describe("Optional evidence explaining the outcome"),
+  },
+  async (args) => {
+    if (!_predict) return { content: [{ type: 'text', text: 'predict module not available' }] };
+    try {
+      _predict.resolvePrediction(args.id, args.outcome, args.evidence || '', path.join(REPO, 'memory'));
+      return { content: [{ type: 'text', text: `Resolved ${args.id} as ${args.outcome}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+const predictionAccuracyTool = tool(
+  "prediction_accuracy",
+  "Show ATLAS's prediction calibration: accuracy rate, average confidence for correct vs incorrect predictions. Use to assess whether ATLAS is over- or under-confident.",
+  {},
+  async () => {
+    if (!_predict) return { content: [{ type: 'text', text: 'predict module not available' }] };
+    try {
+      const stats = _predict.predictionAccuracy(path.join(REPO, 'memory'));
+      const lines = [
+        `Total predictions: ${stats.total}`,
+        `Resolved: ${stats.resolved}`,
+      ];
+      if (stats.accuracy !== null) {
+        lines.push(`Accuracy: ${(stats.accuracy * 100).toFixed(1)}%`);
+        lines.push(`Avg confidence (correct): ${stats.avgConfidenceCorrect !== null ? stats.avgConfidenceCorrect.toFixed(3) : 'N/A'}`);
+        lines.push(`Avg confidence (incorrect): ${stats.avgConfidenceIncorrect !== null ? stats.avgConfidenceIncorrect.toFixed(3) : 'N/A'}`);
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
