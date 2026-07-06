@@ -25,7 +25,8 @@ function resolvePrediction(id, outcome, evidence, memDir) {
     return l;
   });
   if (!found) throw new Error('prediction ' + id + ' not found');
-  fs.writeFileSync(f, updated.join('\n') + '\n', 'utf8');
+  fs.writeFileSync(f + '.tmp', updated.join('\n') + '\n', 'utf8');
+  fs.renameSync(f + '.tmp', f);
 }
 
 function getPredictions(memDir, opts = {}) {

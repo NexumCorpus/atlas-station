@@ -556,6 +556,7 @@ const journalWriteTool = tool(
     confidence: z.enum(["verified", "inferred", "tentative"]).optional().describe("Confidence level (default: inferred)"),
   },
   async (args) => {
+    if (!_memstore) return { content: [{ type: 'text', text: 'memstore not available' }] };
     try {
       const fact = {
         topic: args.topic || 'general',
@@ -669,9 +670,14 @@ const deferTaskTool = tool(
     mode: z.enum(["read", "build"]).optional().describe("Agent mode (default: read)"),
   },
   async (args) => {
-    const entry = _deferred.deferTask(args.task, args.reason, path.join(REPO, 'memory'));
-    send('deferred', entry);
-    return { content: [{ type: 'text', text: `Deferred: ${entry.id} — will run on next startup` }] };
+    if (!_deferred) return { content: [{ type: 'text', text: 'deferred module not available' }] };
+    try {
+      const entry = _deferred.deferTask(args.task, args.reason, path.join(REPO, 'memory'));
+      send('deferred', entry);
+      return { content: [{ type: 'text', text: `Deferred: ${entry.id} — will run on next startup` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `defer_task error: ${e.message}` }] };
+    }
   }
 );
 
