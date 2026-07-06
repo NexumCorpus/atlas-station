@@ -446,31 +446,35 @@ const diagnoseTool = tool(
   "Run a self-check on the station: verify source files exist, check memory store health, report fleet summary. Use when something seems wrong.",
   {},
   async () => {
-    const fs = _require('fs');
-    const checks = [];
-    // Check key source files
-    const files = ['main.cjs', 'fleethost.mjs', 'index.html', 'preload.cjs', 'memcontext.cjs', 'memstore.cjs', 'prune.mjs'];
-    for (const f of files) {
-      const exists = fs.existsSync(path.join(REPO, f));
-      checks.push((exists ? "✓" : "✗") + " " + f);
-    }
-    // Check memory dir
-    const memDir = path.join(REPO, 'memory');
-    checks.push(fs.existsSync(memDir) ? "✓ memory/" : "✗ memory/ (missing)");
-    // Agent summary
-    const all = [...agents.values()];
-    const summary = all.length === 0 ? "no agents" :
-      all.map(a => `${a.id}[${a.state}]`).join(", ");
-    checks.push("fleet: " + summary);
-    // Git status
     try {
-      const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
-      const hash = gitC(["rev-parse", "--short", "HEAD"]).trim();
-      checks.push("git: " + branch + "@" + hash);
-    } catch (_) {
-      checks.push("git: unavailable");
+      const fs = _require('fs');
+      const checks = [];
+      // Check key source files
+      const files = ['main.cjs', 'fleethost.mjs', 'index.html', 'preload.cjs', 'memcontext.cjs', 'memstore.cjs', 'prune.mjs'];
+      for (const f of files) {
+        const exists = fs.existsSync(path.join(REPO, f));
+        checks.push((exists ? "✓" : "✗") + " " + f);
+      }
+      // Check memory dir
+      const memDir = path.join(REPO, 'memory');
+      checks.push(fs.existsSync(memDir) ? "✓ memory/" : "✗ memory/ (missing)");
+      // Agent summary
+      const all = [...agents.values()];
+      const summary = all.length === 0 ? "no agents" :
+        all.map(a => `${a.id}[${a.state}]`).join(", ");
+      checks.push("fleet: " + summary);
+      // Git status
+      try {
+        const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+        const hash = gitC(["rev-parse", "--short", "HEAD"]).trim();
+        checks.push("git: " + branch + "@" + hash);
+      } catch (_) {
+        checks.push("git: unavailable");
+      }
+      return { content: [{ type: "text", text: checks.join("\n") }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `diagnose error: ${e.message}` }] };
     }
-    return { content: [{ type: "text", text: checks.join("\n") }] };
   }
 );
 const proposeTool = tool(
@@ -626,9 +630,13 @@ const setGoalTool = tool(
   },
   async (args) => {
     if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
-    const g = _goals.addGoal(args.goal, args.priority, args.area, path.join(REPO, 'memory'));
-    send('goal', g);
-    return { content: [{ type: 'text', text: `Goal set: ${g.id} — "${g.text}"` }] };
+    try {
+      const g = _goals.addGoal(args.goal, args.priority, args.area, path.join(REPO, 'memory'));
+      send('goal', g);
+      return { content: [{ type: 'text', text: `Goal set: ${g.id} — "${g.text}"` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `set_goal error: ${e.message}` }] };
+    }
   }
 );
 
@@ -638,10 +646,14 @@ const listGoalsTool = tool(
   {},
   async () => {
     if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
-    const goals = _goals.listGoals(path.join(REPO, 'memory'));
-    if (!goals.length) return { content: [{ type: 'text', text: 'no goals yet' }] };
-    const lines = goals.map(g => `[${g.state}] ${g.id} (${g.priority}): ${g.text}`);
-    return { content: [{ type: 'text', text: lines.join('\n') }] };
+    try {
+      const goals = _goals.listGoals(path.join(REPO, 'memory'));
+      if (!goals.length) return { content: [{ type: 'text', text: 'no goals yet' }] };
+      const lines = goals.map(g => `[${g.state}] ${g.id} (${g.priority}): ${g.text}`);
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `list_goals error: ${e.message}` }] };
+    }
   }
 );
 
@@ -654,10 +666,14 @@ const resolveGoalTool = tool(
   },
   async (args) => {
     if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
-    const g = _goals.resolveGoal(args.id, args.outcome, path.join(REPO, 'memory'));
-    if (!g) return { content: [{ type: 'text', text: `Goal ${args.id} not found` }] };
-    send('goal_resolved', g);
-    return { content: [{ type: 'text', text: `Goal ${g.id} marked ${g.state}` }] };
+    try {
+      const g = _goals.resolveGoal(args.id, args.outcome, path.join(REPO, 'memory'));
+      if (!g) return { content: [{ type: 'text', text: `Goal ${args.id} not found` }] };
+      send('goal_resolved', g);
+      return { content: [{ type: 'text', text: `Goal ${g.id} marked ${g.state}` }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `resolve_goal error: ${e.message}` }] };
+    }
   }
 );
 
@@ -731,8 +747,10 @@ const notifySelfTool = tool(
     type: z.enum(["info", "done", "alert"]).optional().describe("Visual type: info (default), done (success), alert (warning)"),
   },
   async (args) => {
-    const n = _notif ? _notif.notify(args.text, args.type, path.join(REPO, 'memory')) : null;
-    if (n) send('notification', n);
+    try {
+      const n = _notif ? _notif.notify(args.text, args.type, path.join(REPO, 'memory')) : null;
+      if (n) send('notification', n);
+    } catch (_) {}
     return { content: [{ type: 'text', text: `Notification queued: ${args.text.slice(0, 80)}` }] };
   }
 );
