@@ -1566,6 +1566,19 @@ const runTestsTool = tool(
 
       const verdict = results.failed === 0 ? 'PASS' : 'FAIL';
       const summary = `run_tests: ${verdict} — ${results.passed} passed, ${results.failed} failed`;
+
+      // Store verdict as fact so ATLAS can recall last test state across session resets
+      if (_memstore) {
+        try {
+          _memstore.appendFact({
+            topic: 'tests:last_run',
+            fact: summary + (results.failures.length ? ` | failing: ${results.failures.slice(0, 5).join('; ')}` : ''),
+            source: 'run_tests',
+            confidence: 'verified',
+          }, path.join(REPO, 'memory'));
+        } catch {}
+      }
+
       if (results.failures.length > 0) {
         return { content: [{ type: 'text', text: summary + '\n\nFailing tests:\n' + results.failures.slice(0, 20).join('\n') }] };
       }
