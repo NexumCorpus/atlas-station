@@ -1030,10 +1030,12 @@ Write the synthesis note now:`;
       abortControllers.set(consolidationId, ctrl);
       try {
         const iter = query({
-          model: MODEL_HAIKU,
-          messages: [{ role: 'user', content: prompt }],
-          permissionMode: 'bypassPermissions',
-          abortSignal: ctrl.signal,
+          prompt,
+          options: {
+            model: MODEL_HAIKU,
+            permissionMode: 'bypassPermissions',
+            abortSignal: ctrl.signal,
+          },
         });
         synthesis = await consume(consolidationId, iter, false, null);
       } catch (e) {
@@ -1437,6 +1439,17 @@ const verifyBuildTool = tool(
           filesToCheck = (result.stdout || '').trim().split('\n').filter(f =>
             f && /\.(js|cjs|mjs)$/.test(f)
           );
+        }
+        // diff-tree returns empty for merge commits — fall back to files changed by the fleet branch
+        if (!filesToCheck.length) {
+          const mergeResult = spawnSync('git', ['-C', REPO, 'diff', '--name-only', 'HEAD^1', 'HEAD^2'], {
+            encoding: 'utf8', timeout: 5000
+          });
+          if (mergeResult.status === 0) {
+            filesToCheck = (mergeResult.stdout || '').trim().split('\n').filter(f =>
+              f && /\.(js|cjs|mjs)$/.test(f)
+            );
+          }
         }
       }
 
@@ -1995,12 +2008,15 @@ const rateBuildTool = tool(
     agentId: z.string().describe("Agent ID to rate (e.g. 'B-91')"),
     rating: z.enum(["good", "partial", "bad"]).describe("good = achieved goal cleanly; partial = worked but with issues; bad = missed the goal or introduced problems"),
     notes: z.string().optional().describe("What specifically was good or bad about this build"),
-    causalChain: z.array(z.object({
-      step: z.string(),
-      assumption: z.string(),
-      violated: z.boolean(),
-      evidence: z.string(),
-    })).optional().describe("3-5 causal chain items explaining what reasoning steps led to this outcome. Required for 'bad' ratings."),
+    causalChain: z.union([
+      z.string(),
+      z.array(z.object({
+        step: z.string(),
+        assumption: z.string(),
+        violated: z.boolean(),
+        evidence: z.string(),
+      }))
+    ]).optional().describe("Explanation of outcome. String or structured array of 3-5 items. Required for 'bad' ratings."),
   },
   async (args) => {
     if (!_outcomeTracker) return { content: [{ type: 'text', text: 'outcome-tracker module not available' }] };
