@@ -12,7 +12,9 @@ function _load(dir) {
 
 function _save(tasks, dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, FILE), tasks.map(t => JSON.stringify(t)).join('\n') + (tasks.length ? '\n' : ''), 'utf8');
+  const _fp = path.join(dir, FILE);
+  fs.writeFileSync(_fp + '.tmp', tasks.map(t => JSON.stringify(t)).join('\n') + (tasks.length ? '\n' : ''), 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
 }
 
 function deferTask(task, reason, dir) {

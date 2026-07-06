@@ -35,7 +35,9 @@ function getAllEmbs(dir = DEFAULT_DIR) {
 function compactEmbs(dir = DEFAULT_DIR) {
   const map = _loadEmbs(dir);
   const lines = [...map.entries()].map(([id, emb]) => JSON.stringify({ id, emb }));
-  fs.writeFileSync(path.join(dir, EMB_FILE), lines.join('\n') + '\n', 'utf8');
+  const _fp = path.join(dir, EMB_FILE);
+  fs.writeFileSync(_fp + '.tmp', lines.join('\n') + '\n', 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
   return map.size;
 }
 

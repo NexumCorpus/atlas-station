@@ -25,7 +25,9 @@ function _load(dir) {
 
 function _save(projects, dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, PROJECTS_FILE), projects.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+  const _fp = path.join(dir, PROJECTS_FILE);
+  fs.writeFileSync(_fp + '.tmp', projects.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
 }
 
 function _defaultDir() {

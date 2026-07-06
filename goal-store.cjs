@@ -13,7 +13,9 @@ function _load(dir) {
 
 function _save(goals, dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, GOALS_FILE), goals.map(g => JSON.stringify(g)).join('\n') + '\n', 'utf8');
+  const _fp = path.join(dir, GOALS_FILE);
+  fs.writeFileSync(_fp + '.tmp', goals.map(g => JSON.stringify(g)).join('\n') + '\n', 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
 }
 
 function addGoal(text, priority, area, dir) {

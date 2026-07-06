@@ -12,7 +12,9 @@ function _load(dir) {
 
 function _save(notifs, dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, FILE), notifs.map(n => JSON.stringify(n)).join('\n') + (notifs.length ? '\n' : ''), 'utf8');
+  const _fp = path.join(dir, FILE);
+  fs.writeFileSync(_fp + '.tmp', notifs.map(n => JSON.stringify(n)).join('\n') + (notifs.length ? '\n' : ''), 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
 }
 
 function notify(text, type, dir) {

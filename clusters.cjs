@@ -26,7 +26,9 @@ function loadClusters(memDir) {
 function saveClusters(clusters, memDir) {
   const dir = memDir;
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CLUSTERS_FILE(memDir), clusters.map(c => JSON.stringify(c)).join('\n') + (clusters.length ? '\n' : ''), 'utf8');
+  const _fp = CLUSTERS_FILE(memDir);
+  fs.writeFileSync(_fp + '.tmp', clusters.map(c => JSON.stringify(c)).join('\n') + (clusters.length ? '\n' : ''), 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
 }
 
 // Assign a fact to the nearest cluster, creating a new cluster if no match above threshold

@@ -4,11 +4,17 @@ const path = require('path');
 
 const ROUTINES_FILE = (dir) => path.join(dir, 'routines.ndjson');
 
+function _saveRoutines(data, memDir) {
+  const _fp = ROUTINES_FILE(memDir);
+  fs.writeFileSync(_fp + '.tmp', data.map(r => JSON.stringify(r)).join('\n') + (data.length ? '\n' : ''), 'utf8');
+  fs.renameSync(_fp + '.tmp', _fp);
+}
+
 // A routine step: { tool: string, args: object, description: string }
 function saveRoutine(name, description, steps, memDir) {
   const all = listRoutines(memDir).filter(r => r.name !== name);
   all.push({ name, description, steps, ts: new Date().toISOString() });
-  fs.writeFileSync(ROUTINES_FILE(memDir), all.map(r => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+  _saveRoutines(all, memDir);
 }
 
 function getRoutine(name, memDir) {
@@ -17,7 +23,7 @@ function getRoutine(name, memDir) {
 
 function deleteRoutine(name, memDir) {
   const remaining = listRoutines(memDir).filter(r => r.name !== name);
-  fs.writeFileSync(ROUTINES_FILE(memDir), remaining.map(r => JSON.stringify(r)).join('\n') + (remaining.length ? '\n' : ''), 'utf8');
+  _saveRoutines(remaining, memDir);
 }
 
 function listRoutines(memDir) {

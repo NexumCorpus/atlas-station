@@ -4,16 +4,21 @@ const path = require('path');
 
 const INSTR_FILE = (dir) => path.join(dir, 'instructions.ndjson');
 
+function _saveInstructions(data, filePath) {
+  fs.writeFileSync(filePath + '.tmp', data.map(i => JSON.stringify(i)).join('\n') + (data.length ? '\n' : ''), 'utf8');
+  fs.renameSync(filePath + '.tmp', filePath);
+}
+
 function setInstruction(key, instruction, memDir) {
   // Load existing, replace if key exists
   const all = listInstructions(memDir).filter(i => i.key !== key);
   all.push({ key, instruction, ts: new Date().toISOString() });
-  fs.writeFileSync(INSTR_FILE(memDir), all.map(i => JSON.stringify(i)).join('\n') + '\n', 'utf8');
+  _saveInstructions(all, INSTR_FILE(memDir));
 }
 
 function clearInstruction(key, memDir) {
   const remaining = listInstructions(memDir).filter(i => i.key !== key);
-  fs.writeFileSync(INSTR_FILE(memDir), remaining.map(i => JSON.stringify(i)).join('\n') + (remaining.length ? '\n' : ''), 'utf8');
+  _saveInstructions(remaining, INSTR_FILE(memDir));
 }
 
 function listInstructions(memDir) {
@@ -24,7 +29,7 @@ function listInstructions(memDir) {
     .map(l => { try { return JSON.parse(l); } catch { return null; } })
     .filter(i => i && i.key && i.instruction); // require both fields; rejects legacy {text} entries
   if (valid.length < rawLines.length) {
-    try { fs.writeFileSync(f, valid.map(i => JSON.stringify(i)).join('\n') + (valid.length ? '\n' : ''), 'utf8'); } catch {}
+    try { _saveInstructions(valid, f); } catch {}
   }
   return valid;
 }
