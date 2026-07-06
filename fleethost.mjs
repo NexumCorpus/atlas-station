@@ -825,7 +825,7 @@ const capabilityManifestTool = tool(
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
       "read_self", "fan_research",
-      "signal_propagate", "generate_tool", "verify_build", "run_tests", "validate_facts", "staged_verify_build", "mutation_map",
+      "signal_propagate", "generate_tool", "verify_build", "run_tests", "validate_facts", "shard_memory", "recover_shard", "staged_verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
@@ -1696,6 +1696,66 @@ const validateFactsTool = tool(
       return { content: [{ type: 'text', text: summary }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `validate_facts error: ${e.message}` }] };
+    }
+  }
+);
+
+const shardMemoryTool = tool(
+  "shard_memory",
+  "Shard a critical memory file using Reed-Solomon erasure coding via the estate's station CLI (shard_rs.py). Creates n fragments where any k reconstitute the file byte-exact. Returns a PIN for recovery. Use on crystals.ndjson, facts.ndjson, or goals.ndjson to protect against corruption.",
+  {
+    file: z.string().describe("Memory file name (relative to memory/ dir, e.g. 'crystals.ndjson') or absolute path"),
+    k: z.number().optional().describe("Minimum fragments needed for recovery (default: 4)"),
+    n: z.number().optional().describe("Total fragment count to create (default: 6)"),
+  },
+  async (args) => {
+    try {
+      const { spawnSync } = _require('child_process');
+      const fs = _require('fs');
+      const absPath = path.isAbsolute(args.file)
+        ? args.file
+        : path.join(REPO, 'memory', args.file);
+      if (!fs.existsSync(absPath)) {
+        return { content: [{ type: 'text', text: `shard_memory: file not found: ${absPath}` }] };
+      }
+      const cmdArgs = ['E:/station/station.py', 'shard', absPath];
+      if (args.k) cmdArgs.push(String(args.k));
+      if (args.n) cmdArgs.push(String(args.n));
+      const r = spawnSync('python', cmdArgs, { encoding: 'utf8', timeout: 15000, cwd: REPO });
+      if (r.status !== 0) {
+        return { content: [{ type: 'text', text: `shard_memory: station shard failed: ${(r.stderr || r.stdout || '').slice(0, 300)}` }] };
+      }
+      const out = (r.stdout || '').trim();
+      const pinMatch = out.match(/pin=([0-9a-f]+)/);
+      const pin = pinMatch ? pinMatch[1] : null;
+      send('shard_memory', { file: args.file, pin, output: out });
+      return { content: [{ type: 'text', text: out + (pin ? `\nPIN: ${pin} — use recover_shard("${pin}") to restore after corruption` : '') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `shard_memory error: ${e.message}` }] };
+    }
+  }
+);
+
+const recoverShardTool = tool(
+  "recover_shard",
+  "Recover a sharded memory file from surviving fragments using the estate's Reed-Solomon coder. Requires the PIN from shard_memory. Writes the recovered bytes back to the original path, byte-exact. Succeeds with any k of the original n fragments.",
+  {
+    pin: z.string().describe("16-char hex PIN returned by shard_memory (e.g. '939d1fb2b93f0956')"),
+  },
+  async (args) => {
+    try {
+      const { spawnSync } = _require('child_process');
+      const r = spawnSync('python', ['E:/station/station.py', 'recover', args.pin], {
+        encoding: 'utf8', timeout: 15000, cwd: REPO
+      });
+      if (r.status !== 0) {
+        return { content: [{ type: 'text', text: `recover_shard: failed: ${(r.stderr || r.stdout || '').slice(0, 300)}` }] };
+      }
+      const out = (r.stdout || '').trim();
+      send('recover_shard', { pin: args.pin, output: out });
+      return { content: [{ type: 'text', text: out }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `recover_shard error: ${e.message}` }] };
     }
   }
 );
@@ -3081,7 +3141,7 @@ const predictionAccuracyTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -3126,6 +3186,8 @@ generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-too
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 run_tests() — run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
 validate_facts() — scan facts.ndjson for Windows file-path refs, remove facts whose paths no longer exist, return count summary
+shard_memory(file,k?,n?) — shard a memory file into k-of-n RS fragments via estate CLI; returns PIN for recovery
+recover_shard(pin) — recover a sharded memory file from any k surviving fragments; byte-exact reconstruction
 staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail — never touches master; call before a real merge
 mutation_map(file?,topN?) — codebase churn map: most-edited files, which agents touched them, modification history per file
 set_instruction(key,instruction) — write a standing behavioral directive to memory; injected into your context every session
@@ -3741,8 +3803,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (65 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
+        `## Tools (67 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, shard_memory, recover_shard, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,

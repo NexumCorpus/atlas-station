@@ -1,0 +1,6 @@
+{
+  "statement": "ATLAS safeQuery() throws immediately when called with any object missing the 'prompt' key (the Anthropic REST shape), regardless of which specific other keys are present",
+  "check": ["node", "check.mjs", "{seed}"],
+  "claimed_seeds": [0, 1, 2],
+  "artifact": "fleethost.mjs::safeQuery() wrapper"
+}
