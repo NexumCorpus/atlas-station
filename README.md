@@ -1,8 +1,12 @@
 # ATLAS // station
 
-A desktop **oversight surface for a fleet of autonomous Claude agents.** Each row
-in the brood is a real agent running through the Claude Code harness via
-[`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk)
+> Current provider note: ATLAS defaults to the Codex CLI bridge; see
+> [`docs/CODEX_PROVIDER.md`](docs/CODEX_PROVIDER.md). The Claude-specific
+> sections below describe the legacy compatibility provider.
+
+A desktop **oversight surface for a fleet of autonomous coding agents.** Each row
+in the brood is a real agent running through a provider bridge: Codex CLI by
+default, with the Claude Code SDK retained as an explicit compatibility provider.
 — with its own task, tools, turn count, and cost. The window is the station you
 dispatch from and watch, not a single chat cell.
 

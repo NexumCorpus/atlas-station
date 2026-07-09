@@ -13,6 +13,7 @@
     "test:grader": "node tests/grader.test.mjs",
     "test:shim": "node tests/shim.test.mjs",
     "test:mission": "node tests/mission.test.mjs",
+    "test:providers": "node tests/codex-provider.test.mjs && node tests/continuity.test.mjs",
     "start": "electron ."
   },
   "keywords": [],

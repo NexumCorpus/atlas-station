@@ -9,6 +9,7 @@
 // (sessions resume). ATLAS is gated to read + delegation: to change anything it
 // MUST spawn a build subagent (isolated worktree), never the live tree.
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createCodexCliProvider, compatibleSession } from "./providers/codex-cli.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
@@ -25,11 +26,19 @@ function query(args) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} — use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
+  if (ACTIVE_PROVIDER === "codex-cli") return _codexProvider.query(args);
   return _sdkQuery(args);
 }
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
+const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "codex-cli").toLowerCase();
+const _codexProvider = createCodexCliProvider();
+const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
+  ? "codex-cli"
+  : REQUESTED_PROVIDER === "claude" || REQUESTED_PROVIDER === "claude-sdk"
+    ? "claude-sdk"
+    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Use codex-cli or claude-sdk.`); })();
 const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MODEL_OPUS   = "claude-opus-4-8";
@@ -90,6 +99,8 @@ let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 let _predict = null;
 try { _predict = _require('./predict.cjs'); } catch { _predict = null; }
+let _continuity = null;
+try { _continuity = _require('./continuity.cjs'); } catch { _continuity = null; }
 
 // Debounced persist — fires at most once per second to avoid thrashing disk on
 // streaming updates (which call set() dozens of times per second).
@@ -114,6 +125,7 @@ const abortControllers = new Map();
 const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
+let orchSessionProvider = null; // prevents a Claude session id being resumed by Codex (or vice versa)
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
 let orchTurnCount = 0;
@@ -178,7 +190,7 @@ function set(id, patch) {
     send('session_cost', { total: runningCost, agentCount: sessionStats.agentCount });
   }
   if (_persist) {
-    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession };
+    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider };
     if (patch.state === 'done' || patch.state === 'failed') {
       try { _persist.save(newState); } catch (_) {} // immediate — don't lose terminal state on exit
     } else {
@@ -346,7 +358,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
-  const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: agentModel, systemPrompt: "claude_code", atlasMode: mode === "build" ? "build" : "read", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   let final = "";
   const ac = new AbortController();
   abortControllers.set(id, ac);
@@ -825,7 +837,7 @@ const capabilityManifestTool = tool(
       "run_script", "memory_consolidate", "web_research",
       "relate_facts", "fact_graph", "load_dreams", "resonance_stats",
       "read_self", "fan_research",
-      "signal_propagate", "generate_tool", "verify_build", "run_tests", "validate_facts", "shard_memory", "recover_shard", "staged_verify_build", "mutation_map",
+      "signal_propagate", "generate_tool", "verify_build", "run_tests", "validate_facts", "shard_memory", "recover_shard", "continuity_status", "staged_verify_build", "mutation_map",
       "set_instruction", "get_instructions", "clear_instruction",
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
@@ -874,6 +886,7 @@ const triggerSelfloopTool = tool(
         prompt: 'Run the self-improvement cycle now.' + (args.focus ? ` Focus: ${args.focus}` : ''),
         options: {
           model: MODEL,
+          atlasMode: 'read',
           systemPrompt: prompt,
           mcpServers: [fleetServer],
           permissionMode: 'bypassPermissions',
@@ -1756,6 +1769,34 @@ const recoverShardTool = tool(
       return { content: [{ type: 'text', text: out }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `recover_shard error: ${e.message}` }] };
+    }
+  }
+);
+
+const continuityStatusTool = tool(
+  "continuity_status",
+  "Inspect whether a memory file's CURRENT bytes are covered by a recoverable shard snapshot. Reports STALE when only an older valid snapshot exists; never overwrites or recovers data.",
+  {
+    file: z.string().optional().describe("Memory file relative to memory/ (default crystals.ndjson) or an absolute path"),
+  },
+  async (args) => {
+    if (!_continuity) return { content: [{ type: 'text', text: 'continuity module not available' }] };
+    try {
+      const requested = args.file || 'crystals.ndjson';
+      const filePath = path.isAbsolute(requested) ? requested : path.join(REPO, 'memory', requested);
+      const ledgerPath = process.env.ATLAS_SHARD_LEDGER || 'E:/station/shards.jsonl';
+      const report = _continuity.inspectFile(filePath, { ledgerPath });
+      const lines = [_continuity.formatStatus(report)];
+      if (report.status === 'stale') {
+        lines.push('Current bytes are NOT recoverable from the listed snapshot. Shard a new version before treating recovery coverage as current.');
+      }
+      if (report.snapshots?.length) {
+        lines.push(`snapshots=${report.snapshots.map(s => `${s.pin}:${s.fragments}/${s.k}-of-${s.n}`).join(', ')}`);
+      }
+      send('continuity', { report });
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `continuity_status error: ${e.message}` }] };
     }
   }
 );
@@ -3141,7 +3182,7 @@ const predictionAccuracyTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -3378,14 +3419,15 @@ async function orchestrate(userText) {
     for await (const m of query({
       prompt: enriched,
       options: {
-        resume: orchSession || undefined,
+        resume: compatibleSession(orchSession, orchSessionProvider, ACTIVE_PROVIDER) || undefined,
         model: MODEL,
+        atlasMode: "orchestrator",
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
       },
     })) {
-      if (m.type === "system" && m.subtype === "init") { orchSession = m.session_id; set("ATLAS", { session: orchSession }); }
+      if (m.type === "system" && m.subtype === "init") { orchSession = m.session_id; orchSessionProvider = ACTIVE_PROVIDER; set("ATLAS", { session: orchSession }); }
       else if (m.type === "assistant") {
         let patch = { state: "working" };
         for (const b of (m.message?.content ?? [])) {
@@ -3607,7 +3649,7 @@ async function runAgent(id, task, opts) {
   set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null });
   const enriched = _memcontext ? _memcontext.inject(task, { tier: 'build' }) : task;
   if (build) { try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); } catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; } }
-  const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: MODEL, systemPrompt: "claude_code", atlasMode: build ? "build" : "read", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   const ac = new AbortController();
   abortControllers.set(id, ac);
   try {
@@ -3627,7 +3669,7 @@ async function replyAgent(id, text) {
   if (!a || !a.session) { if (a) set(id, { state: "failed", summary: "cannot continue: session not ready" }); return; }
   const build = a.mode === "build"; const cwd = a.cwd || REPO; const branch = a.branch || null;
   set(id, { state: "working", lastTool: null });
-  const options = { resume: a.session, cwd, model: MODEL, systemPrompt: "claude_code", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { resume: a.session, cwd, model: MODEL, systemPrompt: "claude_code", atlasMode: build ? "build" : "read", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   const ac = new AbortController();
   abortControllers.set(id, ac);
   try {
@@ -3702,11 +3744,21 @@ if (_persist) {
       }
       _maxCounter = saved.maxCounter || 0;
     }
-    if (saved && saved.orchSession) orchSession = saved.orchSession;
-    const atlas = agents.get("ATLAS"); if (atlas && atlas.session) orchSession = atlas.session;
+    if (saved) {
+      orchSession = compatibleSession(saved.orchSession, saved.orchSessionProvider, ACTIVE_PROVIDER);
+      if (orchSession) orchSessionProvider = ACTIVE_PROVIDER;
+    }
+    const atlas = agents.get("ATLAS");
+    if (!orchSession && saved?.orchSessionProvider === ACTIVE_PROVIDER && atlas?.session) {
+      orchSession = atlas.session;
+      orchSessionProvider = ACTIVE_PROVIDER;
+    }
   } catch {}
 }
 send("counter", { value: _maxCounter });
+send("provider", ACTIVE_PROVIDER === "codex-cli"
+  ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._codexProvider.probe() }
+  : { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, available: true });
 send("ready", {});
 
 // Auto-prune merged fleet branches and their worktrees on startup
