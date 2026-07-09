@@ -1,0 +1,27 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-09T23:18:34Z",
+  "subject": "Alien metabolism: proof-bound income hypotheses rather than self-reported commercial progress",
+  "spirals": [
+    {
+      "turn": 93,
+      "commit": "bffabb9",
+      "artifact": "station/station.py::cmd_market",
+      "measure": "A market thesis requires a buyer, bounded problem and deliverable, live local proof, external test, due date, and kill condition before it can be armed."
+    },
+    {
+      "turn": 94,
+      "commit": "44f50c2",
+      "artifact": "station/station.py::_market_pack",
+      "measure": "A proof packet binds exact local artifacts to short SHA-256 hashes; PAID is refused without receipt:<existing-local-file>."
+    },
+    {
+      "turn": 95,
+      "commit": "ed0895f",
+      "artifact": "station/market.jsonl",
+      "measure": "Three distinct hypotheses are armed through 2026-08-09: agent assurance, evidence-gate implementation, and bounded discovery; every one remains unvalidated."
+    }
+  ],
+  "current_truth": "paid=0 and demand=unmeasured. The packets establish inspectable scope, not customer demand, payment, safety certification, or a discovery result.",
+  "next_kill": "Narrow or retire any thesis without a qualifying external signal by 2026-08-09. Reject any state transition that represents payment without an append-only signal and live local receipt pointer."
+}
