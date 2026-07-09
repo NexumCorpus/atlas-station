@@ -5,6 +5,31 @@ import { createInterface } from "node:readline";
 
 const MAX_DIAGNOSTIC_CHARS = 1_200;
 
+// These two locally-probed models have deliberately different jobs. The deep
+// route is for implementation, orchestration, and reflective changes where a
+// wrong answer can mutate the estate. The fast route is for bounded reading,
+// memory compression, and wide research fan-out. Every value is overrideable:
+// a Codex subscription may expose a different model catalogue on another host.
+const DEFAULT_DEEP_MODEL = "gpt-5.6-terra";
+const DEFAULT_FAST_MODEL = "gpt-5.5";
+
+const PURPOSE_ROUTES = Object.freeze({
+  orchestrate: "deep",
+  orchestrator: "deep",
+  orchestration: "deep",
+  build: "deep",
+  implementation: "deep",
+  self_improvement: "deep",
+  reflection: "deep",
+  research_synthesis: "deep",
+  read: "fast",
+  analysis: "fast",
+  research: "fast",
+  fan_research: "fast",
+  memory_consolidation: "fast",
+  crystallization: "fast",
+});
+
 function truncate(value, limit = MAX_DIAGNOSTIC_CHARS) {
   const text = String(value || "").trim();
   return text.length > limit ? text.slice(0, limit) + "…" : text;
@@ -47,6 +72,38 @@ export function resolveCodexSandbox(options = {}, env = process.env) {
   return env.ATLAS_CODEX_READ_SANDBOX || "read-only";
 }
 
+/**
+ * Choose a model by the work's failure surface, not by the old Claude model
+ * label that happened to be passed through the legacy call sites. A persisted
+ * assignment wins for a resumed thread, so changing an environment variable
+ * cannot silently change the mind mid-conversation.
+ */
+export function resolveCodexModel(options = {}, env = process.env) {
+  const purpose = String(options.atlasPurpose || options.atlasMode || "read").toLowerCase();
+  const route = PURPOSE_ROUTES[purpose] || "fast";
+  if (options.atlasAssignedModel) {
+    return { purpose, route, model: String(options.atlasAssignedModel), source: "persisted" };
+  }
+  if (env.ATLAS_CODEX_MODEL) {
+    return { purpose, route, model: env.ATLAS_CODEX_MODEL, source: "global-override" };
+  }
+  const routeOverride = route === "deep"
+    ? env.ATLAS_CODEX_DEEP_MODEL
+    : env.ATLAS_CODEX_FAST_MODEL;
+  if (routeOverride) {
+    return { purpose, route, model: routeOverride, source: `${route}-override` };
+  }
+  if (env.ATLAS_CODEX_DEFAULT_MODEL) {
+    return { purpose, route, model: env.ATLAS_CODEX_DEFAULT_MODEL, source: "default-override" };
+  }
+  return {
+    purpose,
+    route,
+    model: route === "deep" ? DEFAULT_DEEP_MODEL : DEFAULT_FAST_MODEL,
+    source: "station-default",
+  };
+}
+
 /** A session id only has meaning to the provider that issued it. */
 export function compatibleSession(sessionId, sessionProvider, activeProvider) {
   return typeof sessionId === "string" && sessionId && sessionProvider === activeProvider
@@ -83,14 +140,15 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
   const binary = command || resolveCodexBinary(env);
   const preparedPrompt = buildCodexPrompt(prompt, options);
   const useUserConfig = env.ATLAS_CODEX_USE_USER_CONFIG === "1";
-  const model = env.ATLAS_CODEX_MODEL;
+  const assignment = resolveCodexModel(options, env);
+  const model = assignment.model;
 
   if (options.resume) {
     const args = ["exec", "resume", "--json"];
     if (!useUserConfig) args.push("--ignore-user-config");
     if (model) args.push("--model", model);
     args.push(String(options.resume), preparedPrompt);
-    return { binary, args, cwd: options.cwd || env.ATLAS_REPO || process.cwd() };
+    return { binary, args, cwd: options.cwd || env.ATLAS_REPO || process.cwd(), assignment };
   }
 
   const args = ["exec", "--json", "--color", "never"];
@@ -99,7 +157,7 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
   args.push("-C", options.cwd || env.ATLAS_REPO || process.cwd());
   args.push("-s", resolveCodexSandbox(options, env));
   args.push(preparedPrompt);
-  return { binary, args, cwd: options.cwd || env.ATLAS_REPO || process.cwd() };
+  return { binary, args, cwd: options.cwd || env.ATLAS_REPO || process.cwd(), assignment };
 }
 
 /** Translate Codex exec JSONL into the small event shape fleethost already uses. */
@@ -202,6 +260,7 @@ export function createCodexCliProvider({ env = process.env, command } = {}) {
   const binary = command || resolveCodexBinary(env);
   return {
     name: "codex-cli",
+    assign(options) { return resolveCodexModel(options, env); },
     query(args) { return codexCliQuery(args, { env, command: binary }); },
     probe() {
       const result = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 5_000, windowsHide: true });

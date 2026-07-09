@@ -33,10 +33,19 @@ provider adapter, not a claim that the Claude Agent SDK and Codex are identical.
 |---|---|
 | `ATLAS_PROVIDER` | `codex-cli` (default) or legacy `claude-sdk` |
 | `ATLAS_CODEX_BIN` | Explicit Codex executable path; otherwise discover the Desktop CLI |
-| `ATLAS_CODEX_MODEL` | Optional model passed to `codex exec --model` |
+| `ATLAS_CODEX_MODEL` | Global emergency model pin; overrides every task route |
+| `ATLAS_CODEX_DEEP_MODEL` | Implementation, orchestration, self-improvement, reflection, and research synthesis; default `gpt-5.6-terra` |
+| `ATLAS_CODEX_FAST_MODEL` | Reading, research fan-out, consolidation, and crystallization; default `gpt-5.5` |
+| `ATLAS_CODEX_DEFAULT_MODEL` | Fallback pin if neither route-specific override is set |
 | `ATLAS_CODEX_ORCHESTRATOR_SANDBOX` | Default `read-only` |
 | `ATLAS_CODEX_BUILD_SANDBOX` | Default `workspace-write` |
 | `ATLAS_CODEX_USE_USER_CONFIG` | Set `1` to load user plugins/MCP configuration |
+
+The defaults were probed through this station's installed CLI. They are not
+assumed portable: if another Codex account exposes a different catalogue, set a
+route override. ATLAS records the resolved model on every agent card and pins it
+for a resumed Codex conversation, so an environment change cannot swap a
+thread's model midstream.
 
 ## Continuity companion
 

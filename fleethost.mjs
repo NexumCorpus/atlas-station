@@ -9,7 +9,7 @@
 // (sessions resume). ATLAS is gated to read + delegation: to change anything it
 // MUST spawn a build subagent (isolated worktree), never the live tree.
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { createCodexCliProvider, compatibleSession } from "./providers/codex-cli.mjs";
+import { createCodexCliProvider, compatibleSession, resolveCodexModel } from "./providers/codex-cli.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
@@ -43,6 +43,20 @@ const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MODEL_OPUS   = "claude-opus-4-8";
 const MODEL = MODEL_SONNET; // default for ATLAS orchestrator
+
+// Keep the UI/state record aligned with the provider actually running the task.
+// The legacy Claude labels remain inputs to its SDK path only.
+function assignedModel(options, fallbackModel) {
+  return ACTIVE_PROVIDER === "codex-cli"
+    ? resolveCodexModel(options, process.env).model
+    : fallbackModel;
+}
+
+function codexRouting(route, fallbackModel) {
+  return ACTIVE_PROVIDER === "codex-cli"
+    ? { ...route, atlasAssignedModel: assignedModel(route, fallbackModel) }
+    : {};
+}
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -126,6 +140,7 @@ const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent record
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 let orchSessionProvider = null; // prevents a Claude session id being resumed by Codex (or vice versa)
+let orchSessionModel = null; // prevents an env change from silently swapping a resumed Codex thread's model
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
 let orchTurnCount = 0;
@@ -190,7 +205,7 @@ function set(id, patch) {
     send('session_cost', { total: runningCost, agentCount: sessionStats.agentCount });
   }
   if (_persist) {
-    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider };
+    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider, orchSessionModel };
     if (patch.state === 'done' || patch.state === 'failed') {
       try { _persist.save(newState); } catch (_) {} // immediate — don't lose terminal state on exit
     } else {
@@ -331,8 +346,12 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   sessionStats.agentCount++;
   const agentModel = model || MODEL_HAIKU; // workers default to Haiku (Sonnet head dispatches Haiku); ATLAS may override per-task
+  const atlasMode = mode === "build" ? "build" : "read";
+  const atlasPurpose = mode === "build" ? "implementation" : "analysis";
+  const routing = codexRouting({ atlasMode, atlasPurpose }, agentModel);
+  const routedModel = routing.atlasAssignedModel || agentModel;
   let cwd = REPO, branch = null;
-  set(id, { state: "working", task, mode: mode === "build" ? "build" : "read", parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: agentModel });
+  set(id, { state: "working", task, mode: atlasMode, parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: routedModel });
   let enrichedTask = task;
   if (projectId && _projects) {
     try {
@@ -358,7 +377,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
-  const options = { cwd, model: agentModel, systemPrompt: "claude_code", atlasMode: mode === "build" ? "build" : "read", ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...routing, ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   let final = "";
   const ac = new AbortController();
   abortControllers.set(id, ac);
@@ -878,7 +897,8 @@ const triggerSelfloopTool = tool(
     const prompt = (_selfloop ? _selfloop.SELFLOOP_PROMPT : '') + focus;
     if (!prompt) return { content: [{ type: 'text', text: 'selfloop module not available' }] };
     const loopId = 'SL-' + Date.now();
-    set(loopId, { id: loopId, task: 'self-improvement loop', mode: 'read', state: 'working', ts: new Date().toISOString() });
+    const loopOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'self_improvement' }, MODEL);
+    set(loopId, { id: loopId, task: 'self-improvement loop', mode: 'read', state: 'working', model: assignedModel(loopOptions, MODEL), ts: new Date().toISOString() });
     const ctrl = new AbortController();
     abortControllers.set(loopId, ctrl);
     try {
@@ -886,7 +906,7 @@ const triggerSelfloopTool = tool(
         prompt: 'Run the self-improvement cycle now.' + (args.focus ? ` Focus: ${args.focus}` : ''),
         options: {
           model: MODEL,
-          atlasMode: 'read',
+          ...loopOptions,
           systemPrompt: prompt,
           mcpServers: [fleetServer],
           permissionMode: 'bypassPermissions',
@@ -1092,7 +1112,8 @@ ${journal.map(j => `[${j.ts || '?'}] ${j.note || j.entry || JSON.stringify(j)}`)
 Write the synthesis note now:`;
 
       const consolidationId = 'MC-' + Date.now();
-      set(consolidationId, { id: consolidationId, state: 'working', mode: 'read', task: 'memory consolidation', model: MODEL_HAIKU });
+      const consolidationOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'memory_consolidation' }, MODEL_HAIKU);
+      set(consolidationId, { id: consolidationId, state: 'working', mode: 'read', task: 'memory consolidation', model: assignedModel(consolidationOptions, MODEL_HAIKU) });
       let synthesis = '';
       const ctrl = new AbortController();
       abortControllers.set(consolidationId, ctrl);
@@ -1101,6 +1122,7 @@ Write the synthesis note now:`;
           prompt,
           options: {
             model: MODEL_HAIKU,
+            ...consolidationOptions,
             permissionMode: 'bypassPermissions',
             abortSignal: ctrl.signal,
           },
@@ -1149,7 +1171,8 @@ const webResearchTool = tool(
         ? `You have WebFetch available. Fetch ${args.url} and summarize the key information relevant to: "${args.query || 'the page content'}". Write 2-4 sentences.`
         : `You have WebSearch and WebFetch available. Research the following question:\n\n"${args.query}"\n\nSearch for current information, read the most relevant results, then write a factual summary of 2-5 sentences. Be concise and accurate.`;
 
-      set(researchId, { id: researchId, state: 'working', mode: 'read', task: 'web research: ' + (args.query || '').slice(0, 40), model: MODEL_HAIKU });
+      const researchOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'research' }, MODEL_HAIKU);
+      set(researchId, { id: researchId, state: 'working', mode: 'read', task: 'web research: ' + (args.query || '').slice(0, 40), model: assignedModel(researchOptions, MODEL_HAIKU) });
       let summary = '';
       const ctrl = new AbortController();
       abortControllers.set(researchId, ctrl);
@@ -1158,6 +1181,7 @@ const webResearchTool = tool(
           prompt,
           options: {
             model: MODEL_HAIKU,
+            ...researchOptions,
             permissionMode: 'bypassPermissions',
             abortSignal: ctrl.signal,
           },
@@ -1342,13 +1366,15 @@ const fanResearchTool = tool(
         try {
           const ac = new AbortController();
           const fanId = `FAN-${Date.now()}-${idx}`;
-          set(fanId, { id: fanId, state: 'working', mode: 'read', task: `fan_research angle: ${angle.slice(0,40)}`, model: MODEL_HAIKU });
+          const fanOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'fan_research' }, MODEL_HAIKU);
+          set(fanId, { id: fanId, state: 'working', mode: 'read', task: `fan_research angle: ${angle.slice(0,40)}`, model: assignedModel(fanOptions, MODEL_HAIKU) });
           abortControllers.set(fanId, ac);
           let text = '';
           const iter = query({
             prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.`,
             options: {
               model: MODEL_HAIKU,
+              ...fanOptions,
               permissionMode: 'bypassPermissions',
               abortSignal: ac.signal,
             },
@@ -1369,13 +1395,15 @@ ${angleResults.map((r, i) => `[Angle ${i+1}: ${r.angle}]\n${r.text}`).join('\n\n
 Write a unified 300-400 word synthesis. Highlight where angles agree, where they diverge, and what the combined picture reveals. Be direct — no padding.`;
 
       const synthId = `FAN-SYNTH-${Date.now()}`;
-      set(synthId, { id: synthId, state: 'working', mode: 'read', task: `fan_research synthesis: ${args.question.slice(0,40)}`, model: MODEL_SONNET });
+      const synthesisOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'research_synthesis' }, MODEL_SONNET);
+      set(synthId, { id: synthId, state: 'working', mode: 'read', task: `fan_research synthesis: ${args.question.slice(0,40)}`, model: assignedModel(synthesisOptions, MODEL_SONNET) });
       const synthAc = new AbortController();
       abortControllers.set(synthId, synthAc);
       const synthIter = query({
         prompt: synthPrompt,
         options: {
           model: MODEL_SONNET,
+          ...synthesisOptions,
           permissionMode: 'bypassPermissions',
           abortSignal: synthAc.signal,
         },
@@ -3322,7 +3350,8 @@ async function triggerCrystallization(turnNum) {
     }
 
     const crystalId = `CRYS-${Date.now()}`;
-    set(crystalId, { id: crystalId, state: 'working', mode: 'read', task: 'crystallize session', model: MODEL_HAIKU });
+    const crystalOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'crystallization' }, MODEL_HAIKU);
+    set(crystalId, { id: crystalId, state: 'working', mode: 'read', task: 'crystallize session', model: assignedModel(crystalOptions, MODEL_HAIKU) });
     const ac = new AbortController();
     abortControllers.set(crystalId, ac);
 
@@ -3356,6 +3385,7 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
         prompt,
         options: {
           model: MODEL_HAIKU,
+          ...crystalOptions,
           permissionMode: 'bypassPermissions',
           abortSignal: ac.signal,
         },
@@ -3415,19 +3445,34 @@ async function orchestrate(userText) {
       }
     } catch {}
   }
+  const resumedSession = compatibleSession(orchSession, orchSessionProvider, ACTIVE_PROVIDER);
+  const orchestrationRouting = ACTIVE_PROVIDER === "codex-cli"
+    ? codexRouting({
+      atlasMode: "orchestrator",
+      atlasPurpose: "orchestration",
+      ...(resumedSession && orchSessionModel ? { atlasAssignedModel: orchSessionModel } : {}),
+    }, MODEL)
+    : {};
+  const orchestrationModel = orchestrationRouting.atlasAssignedModel || MODEL;
+  set("ATLAS", { id: "ATLAS", model: orchestrationModel });
   try {
     for await (const m of query({
       prompt: enriched,
       options: {
-        resume: compatibleSession(orchSession, orchSessionProvider, ACTIVE_PROVIDER) || undefined,
+        resume: resumedSession || undefined,
         model: MODEL,
-        atlasMode: "orchestrator",
+        ...orchestrationRouting,
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
       },
     })) {
-      if (m.type === "system" && m.subtype === "init") { orchSession = m.session_id; orchSessionProvider = ACTIVE_PROVIDER; set("ATLAS", { session: orchSession }); }
+      if (m.type === "system" && m.subtype === "init") {
+        orchSession = m.session_id;
+        orchSessionProvider = ACTIVE_PROVIDER;
+        orchSessionModel = orchestrationModel;
+        set("ATLAS", { session: orchSession, model: orchestrationModel });
+      }
       else if (m.type === "assistant") {
         let patch = { state: "working" };
         for (const b of (m.message?.content ?? [])) {
@@ -3646,10 +3691,11 @@ Instructions:
 async function runAgent(id, task, opts) {
   opts = opts || {}; const build = opts.mode === "build"; let cwd = opts.cwd || REPO, branch = null;
   const num = parseInt(String(id).replace(/^[A-Z]-/, ""), 10); if (!isNaN(num)) _maxCounter = Math.max(_maxCounter, num);
-  set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null });
+  const legacyRouting = codexRouting({ atlasMode: build ? "build" : "read", atlasPurpose: build ? "implementation" : "analysis" }, MODEL);
+  set(id, { state: "working", task, mode: build ? "build" : "read", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, model: legacyRouting.atlasAssignedModel || MODEL });
   const enriched = _memcontext ? _memcontext.inject(task, { tier: 'build' }) : task;
   if (build) { try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch }); } catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 150) }); return; } }
-  const options = { cwd, model: MODEL, systemPrompt: "claude_code", atlasMode: build ? "build" : "read", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: MODEL, systemPrompt: "claude_code", ...legacyRouting, ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   const ac = new AbortController();
   abortControllers.set(id, ac);
   try {
@@ -3669,7 +3715,8 @@ async function replyAgent(id, text) {
   if (!a || !a.session) { if (a) set(id, { state: "failed", summary: "cannot continue: session not ready" }); return; }
   const build = a.mode === "build"; const cwd = a.cwd || REPO; const branch = a.branch || null;
   set(id, { state: "working", lastTool: null });
-  const options = { resume: a.session, cwd, model: MODEL, systemPrompt: "claude_code", atlasMode: build ? "build" : "read", ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const replyRouting = codexRouting({ atlasMode: build ? "build" : "read", atlasPurpose: build ? "implementation" : "analysis", atlasAssignedModel: a.model || undefined }, MODEL);
+  const options = { resume: a.session, cwd, model: MODEL, systemPrompt: "claude_code", ...replyRouting, ...(build ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
   const ac = new AbortController();
   abortControllers.set(id, ac);
   try {
@@ -3746,12 +3793,16 @@ if (_persist) {
     }
     if (saved) {
       orchSession = compatibleSession(saved.orchSession, saved.orchSessionProvider, ACTIVE_PROVIDER);
-      if (orchSession) orchSessionProvider = ACTIVE_PROVIDER;
+      if (orchSession) {
+        orchSessionProvider = ACTIVE_PROVIDER;
+        orchSessionModel = saved.orchSessionModel || null;
+      }
     }
     const atlas = agents.get("ATLAS");
     if (!orchSession && saved?.orchSessionProvider === ACTIVE_PROVIDER && atlas?.session) {
       orchSession = atlas.session;
       orchSessionProvider = ACTIVE_PROVIDER;
+      orchSessionModel = atlas.model || null;
     }
   } catch {}
 }
@@ -3925,7 +3976,8 @@ Priority guide: HIGH = should be acted on this session or next; MEDIUM = worth s
 Be honest. Be specific to the actual data. Find what the runs add up to, not what you'd expect them to say.`;
 
         const dreamId = 'DREAM-' + pulseCount;
-        set(dreamId, { id: dreamId, state: 'working', mode: 'read', task: `dream protocol (pulse ${pulseCount})`, model: MODEL_SONNET });
+        const dreamOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'reflection' }, MODEL_SONNET);
+        set(dreamId, { id: dreamId, state: 'working', mode: 'read', task: `dream protocol (pulse ${pulseCount})`, model: dreamOptions.atlasAssignedModel || MODEL_SONNET });
         const dreamCtrl = new AbortController();
         abortControllers.set(dreamId, dreamCtrl);
         let dreamText = '';
@@ -3934,6 +3986,7 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
             prompt: dreamPrompt,
             options: {
               model: MODEL_SONNET,
+              ...dreamOptions,
               permissionMode: 'bypassPermissions',
               abortSignal: dreamCtrl.signal,
             },

@@ -4,6 +4,7 @@ import {
   buildCodexPrompt,
   compatibleSession,
   normalizeCodexEvent,
+  resolveCodexModel,
   resolveCodexSandbox,
 } from '../providers/codex-cli.mjs';
 
@@ -15,6 +16,22 @@ assert.equal(resolveCodexSandbox({ atlasMode: 'build' }, env), 'workspace-write'
 assert.equal(compatibleSession('thread-1', 'codex-cli', 'codex-cli'), 'thread-1');
 assert.equal(compatibleSession('claude-session', 'claude-sdk', 'codex-cli'), null);
 assert.equal(compatibleSession('legacy-session', undefined, 'codex-cli'), null);
+assert.deepEqual(
+  resolveCodexModel({ atlasPurpose: 'implementation' }, env),
+  { purpose: 'implementation', route: 'deep', model: 'gpt-5.6-terra', source: 'station-default' },
+);
+assert.deepEqual(
+  resolveCodexModel({ atlasPurpose: 'crystallization' }, env),
+  { purpose: 'crystallization', route: 'fast', model: 'gpt-5.5', source: 'station-default' },
+);
+assert.equal(
+  resolveCodexModel({ atlasPurpose: 'build' }, { ...env, ATLAS_CODEX_DEEP_MODEL: 'deep-pin' }).model,
+  'deep-pin',
+);
+assert.equal(
+  resolveCodexModel({ atlasPurpose: 'research', atlasAssignedModel: 'thread-pin' }, env).source,
+  'persisted',
+);
 
 const direct = buildCodexCommand({
   prompt: 'inspect the repository', options: { cwd: 'E:/atlas-station', atlasMode: 'build' }, env, command: 'codex',
@@ -23,6 +40,7 @@ assert.deepEqual(direct.args.slice(0, 3), ['exec', '--json', '--color']);
 assert.ok(direct.args.includes('-C'));
 assert.ok(direct.args.includes('workspace-write'));
 assert.ok(direct.args.includes('--ignore-user-config'));
+assert.equal(direct.assignment.model, 'gpt-5.6-terra');
 
 const resumed = buildCodexCommand({
   prompt: 'continue', options: { resume: 'thread-123', atlasMode: 'orchestrator' }, env, command: 'codex',
@@ -30,6 +48,7 @@ const resumed = buildCodexCommand({
 assert.deepEqual(resumed.args.slice(0, 3), ['exec', 'resume', '--json']);
 assert.ok(resumed.args.includes('thread-123'));
 assert.ok(!resumed.args.includes('-C'), 'Codex resume owns its original cwd');
+assert.equal(resumed.assignment.model, 'gpt-5.6-terra');
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);
