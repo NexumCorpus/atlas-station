@@ -1,0 +1,39 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-09T22:53:00Z",
+  "subject": "Codex takeover: task-risk routing and falsifiable discovery transport",
+  "spirals": [
+    {
+      "turn": 88,
+      "commit": "0e679d2",
+      "artifact": "atlas-station/providers/codex-cli.mjs",
+      "measure": "Two locally-probed models route by task risk and resume assignments are pinned."
+    },
+    {
+      "turn": 89,
+      "commit": "6e7267c",
+      "artifact": "recursive-discovery-engine/rde/config.py",
+      "measure": "Builder/Synthesizer use gpt-5.6-terra and Adversary gpt-5.5; grade=intra-family-diverse, not independent corroboration."
+    },
+    {
+      "turn": 90,
+      "commit": "cd36249",
+      "artifact": "recursive-discovery-engine/rde/engine.py",
+      "measure": "Every result, claim, and audit bundle carries its model-assignment provenance."
+    },
+    {
+      "turn": 91,
+      "commit": "23c679f",
+      "artifact": "recursive-discovery-engine/campaigns/20260709_codex_cache_scrubbed_v1.json",
+      "measure": "A campaign refuses a changed domain, roster, fanout, or budget before execution."
+    },
+    {
+      "turn": 92,
+      "commit": "fe8d950",
+      "artifact": "recursive-discovery-engine/campaigns/receipts/20260709_codex_cache_scrubbed_v1.json",
+      "measure": "One frozen live cache attempt used 4 calls; its grounded candidate was adversarially exposed and below the adaptive-human baseline."
+    }
+  ],
+  "current_truth": "No discovery claim. The campaign is a negative exploratory result; cross-provider corroboration, untouched holdouts, and external review remain mandatory.",
+  "next_kill": "Any follow-up that tunes against this run's exposed traces without a newly committed campaign manifest is invalid."
+}
