@@ -32,6 +32,10 @@ assert.equal(
   resolveCodexModel({ atlasPurpose: 'research', atlasAssignedModel: 'thread-pin' }, env).source,
   'persisted',
 );
+assert.deepEqual(
+  resolveCodexModel({ atlasPurpose: 'orchestration', atlasAssignedModel: 'gpt-5.6-terra', atlasRequiredModel: 'gpt-5.6-luna' }, env),
+  { purpose: 'orchestration', route: 'deep', model: 'gpt-5.6-luna', source: 'required-directive' },
+);
 
 const direct = buildCodexCommand({
   prompt: 'inspect the repository', options: { cwd: 'E:/atlas-station', atlasMode: 'build' }, env, command: 'codex',
@@ -49,6 +53,17 @@ assert.deepEqual(resumed.args.slice(0, 3), ['exec', 'resume', '--json']);
 assert.ok(resumed.args.includes('thread-123'));
 assert.ok(!resumed.args.includes('-C'), 'Codex resume owns its original cwd');
 assert.equal(resumed.assignment.model, 'gpt-5.6-terra');
+
+const lunaFresh = buildCodexCommand({
+  prompt: 'orchestrate', options: { cwd: 'E:/atlas-station', atlasMode: 'orchestrator', atlasPurpose: 'orchestration', atlasRequiredModel: 'gpt-5.6-luna' }, env, command: 'codex',
+});
+assert.equal(lunaFresh.assignment.model, 'gpt-5.6-luna');
+assert.equal(lunaFresh.assignment.source, 'required-directive');
+const lunaResumed = buildCodexCommand({
+  prompt: 'resume', options: { resume: 'terra-thread', atlasMode: 'orchestrator', atlasPurpose: 'orchestration', atlasAssignedModel: 'gpt-5.6-terra', atlasRequiredModel: 'gpt-5.6-luna' }, env, command: 'codex',
+});
+assert.ok(lunaResumed.args.includes('gpt-5.6-luna'));
+assert.ok(!lunaResumed.args.includes('gpt-5.6-terra'));
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);

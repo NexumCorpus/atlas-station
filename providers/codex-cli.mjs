@@ -81,6 +81,13 @@ export function resolveCodexSandbox(options = {}, env = process.env) {
 export function resolveCodexModel(options = {}, env = process.env) {
   const purpose = String(options.atlasPurpose || options.atlasMode || "read").toLowerCase();
   const route = PURPOSE_ROUTES[purpose] || "fast";
+  // A named directive is stronger than continuity.  Resuming a thread on a
+  // different model is exceptional, so callers must name it explicitly; this
+  // prevents an old persisted assignment from silently defeating the current
+  // organism-level routing directive.
+  if (options.atlasRequiredModel) {
+    return { purpose, route, model: String(options.atlasRequiredModel), source: "required-directive" };
+  }
   if (options.atlasAssignedModel) {
     return { purpose, route, model: String(options.atlasAssignedModel), source: "persisted" };
   }

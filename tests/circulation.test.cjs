@@ -15,6 +15,9 @@ assert.throws(() => validate({ ...legacy(), completeness: { scope: 'source', rea
 assert.throws(() => validate({ ...legacy('memory-write'), confidence: 'verified', stage: 'memory-write' }), /falsifier/);
 assert.doesNotThrow(() => validate({ ...legacy('memory-write'), confidence: 'verified', stage: 'memory-write', falsifiers: [{ status: 'pass', ref: 'test:x' }] }));
 assert.throws(() => validate({ ...legacy(), authority: { level: 'propose', human_grant: null, mutation_allowed: true } }), /write/);
+assert.throws(() => validate({ ...legacy('memory-write'), organism: true }), /executing provider/);
+assert.doesNotThrow(() => validate({ ...legacy('memory-write'), organism: true,
+  execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'orchestrator-required-directive' } }));
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-circulation-'));
 const verified = { ...legacy('memory-write', 'test'), flow_id: 'flow-1', legacy: false,

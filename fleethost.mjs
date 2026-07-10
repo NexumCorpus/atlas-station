@@ -43,6 +43,9 @@ const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MODEL_OPUS   = "claude-opus-4-8";
 const MODEL = MODEL_SONNET; // default for ATLAS orchestrator
+// Hermes is the whole operating body.  Its current executive directive is
+// explicit and beats an old conversation's persisted model assignment.
+const ORCHESTRATOR_MODEL_DIRECTIVE = process.env.ATLAS_CODEX_ORCHESTRATOR_MODEL || "gpt-5.6-luna";
 
 // Keep the UI/state record aligned with the provider actually running the task.
 // The legacy Claude labels remain inputs to its SDK path only.
@@ -3451,7 +3454,9 @@ async function orchestrate(userText) {
     ? codexRouting({
       atlasMode: "orchestrator",
       atlasPurpose: "orchestration",
-      ...(resumedSession && orchSessionModel ? { atlasAssignedModel: orchSessionModel } : {}),
+      atlasRequiredModel: ORCHESTRATOR_MODEL_DIRECTIVE,
+      ...(resumedSession && orchSessionModel && orchSessionModel !== ORCHESTRATOR_MODEL_DIRECTIVE
+        ? { atlasPreviousModel: orchSessionModel } : {}),
     }, MODEL)
     : {};
   const orchestrationModel = orchestrationRouting.atlasAssignedModel || MODEL;
@@ -3512,6 +3517,16 @@ async function orchestrate(userText) {
               totalCost: sessionStats.totalCost,
               topics: sessionStats.topics,
               note: null,
+              hermes: {
+                v: 1, flow_id: `atlas:${orchSession || Date.now()}`, parent_flow_id: null,
+                stage: 'memory-write', actor: 'ATLAS', organism: true,
+                execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
+                provenance: [],
+                completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' },
+                authority: { level: 'write', human_grant: null, mutation_allowed: false },
+                loss: { kind: 'derived', input_bytes: 0, output_bytes: full.length, status: 'unmeasured' },
+                falsifiers: [],
+              },
             }, path.join(REPO, "memory"));
           } catch (_) {}
         }

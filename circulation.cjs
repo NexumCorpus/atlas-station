@@ -32,6 +32,12 @@ function validate(packet, { requireFlow = false } = {}) {
   if (packet.stage === 'memory-write' && packet.confidence === 'verified' && !(packet.falsifiers || []).some(f => f && f.status === 'pass')) {
     throw new Error('verified memory requires a passing falsifier');
   }
+  if (packet.organism) {
+    const execution = packet.execution || {};
+    if (typeof execution.provider !== 'string' || !execution.provider || typeof execution.model !== 'string' || !execution.model || typeof execution.route !== 'string' || !execution.route) {
+      throw new Error('organism receipt requires executing provider, model, and route');
+    }
+  }
   return packet;
 }
 
