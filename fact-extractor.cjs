@@ -315,6 +315,10 @@ function extractAndStore(text, source, {
         }],
         completeness: { scope: 'selected', read_bytes: Buffer.byteLength(text, 'utf8'), unread_bytes: 0, status: 'complete' },
         loss: { kind: 'derived', input_bytes: Buffer.byteLength(text, 'utf8'), output_bytes: Buffer.byteLength(c.fact, 'utf8'), status: 'unmeasured' },
+        // Selection is explicit and independent of the source anchor. Pending
+        // means the fact is retained as inferred, never silently upgraded.
+        admission: { stale_status: 'fresh', falsifier_ref: 'holdout:independent-source', selector: 'independent-holdout' },
+        falsifiers: [...(hermes.falsifiers || []), { ref: 'holdout:independent-source', status: 'pending', independent: true }],
       } : null;
       stored.push(appendFact({ ...c, hermes: packet }, dir));
     }

@@ -38,6 +38,37 @@ function validate(packet, { requireFlow = false } = {}) {
     if (typeof execution.provider !== 'string' || !execution.provider || typeof execution.model !== 'string' || !execution.model || typeof execution.route !== 'string' || !execution.route) {
       throw new Error('organism receipt requires executing provider, model, and route');
     }
+
+    // Recursive memory admission is the first place where an observation can
+    // change future routing. Make the loss/staleness/falsifier boundary
+    // executable instead of trusting a model-produced receipt to describe it.
+    if (packet.stage === 'memory-write' && packet.confidence) {
+      if (execution.model !== 'gpt-5.6-luna') {
+        throw new Error('organism memory admission requires gpt-5.6-luna');
+      }
+      if (!Array.isArray(packet.provenance) || !packet.provenance.some(p => p && typeof p.sha256 === 'string' && p.sha256.startsWith('sha256:'))) {
+        throw new Error('organism memory admission requires an exact source anchor');
+      }
+      if (c.scope !== 'selected' || c.status !== 'complete' || c.unread_bytes !== 0) {
+        throw new Error('organism memory admission requires complete selected context');
+      }
+      const admission = packet.admission || {};
+      if (admission.stale_status !== 'fresh') {
+        throw new Error('organism memory admission requires fresh source status');
+      }
+      if (typeof admission.falsifier_ref !== 'string' || !admission.falsifier_ref ||
+          typeof admission.selector !== 'string' || !admission.selector ||
+          ['source-self-confirmation', 'same-source'].includes(admission.selector)) {
+        throw new Error('organism memory admission requires an independent falsifier selector');
+      }
+      const selected = (packet.falsifiers || []).find(f => f && f.ref === admission.falsifier_ref);
+      if (!selected || selected.independent !== true) {
+        throw new Error('organism memory admission requires a selected independent falsifier');
+      }
+      if (packet.confidence === 'verified' && selected.status !== 'pass') {
+        throw new Error('verified organism memory requires a passing selected falsifier');
+      }
+    }
   }
   return packet;
 }

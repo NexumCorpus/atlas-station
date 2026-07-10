@@ -1,0 +1,36 @@
+{
+  "schema": "hermes-circulation-receipt/v1",
+  "receipt_id": "hermes-recursive-gain-2026-07-10",
+  "ts": "2026-07-10T19:05:32.5731807Z",
+  "organism_model_assignment": "gpt-5.6-luna",
+  "change": {
+    "boundary": "circulation.validate -> organism memory-write admission",
+    "invariant": "An organism-derived memory write requires Luna identity, an exact source anchor, complete selected context with zero unread bytes, fresh source status, and a selected independent falsifier.",
+    "failure_preservation": "pending or failed independent falsifiers remain admissible only as non-verified receipts; verified requires an independent pass. No failed record is rewritten."
+  },
+  "measurement": {
+    "hostile_cases": 6,
+    "baseline_old_validator_accepted": 5,
+    "new_validator_rejected": 6,
+    "new_validator_retained_inferred_pending": 1,
+    "regression": "npm test: 68 passed, 0 failed; circulation, fact-extractor, provider, and continuity suites passed"
+  },
+  "hostile_cases": [
+    "source-self-confirmation selector",
+    "stale source",
+    "partial context",
+    "wrong model",
+    "non-independent falsifier",
+    "false verified claim"
+  ],
+  "recursive_gain": "Routing-facing memory can no longer admit a model-produced receipt whose source freshness, byte loss, provenance, or falsifier independence is merely asserted.",
+  "new_blind_spot": "The independent-holdout selector is structurally required but this repository does not yet execute a separate holdout grader for it.",
+  "next_falsifier": "Run a generator/grader-separated holdout that can mark holdout:independent-source pass or fail from bytes not selected by the model, then verify failed packets remain queryable and unverified.",
+  "evidence": [
+    "circulation.cjs",
+    "fact-extractor.cjs",
+    "tests/circulation.test.cjs",
+    "tests/codex-provider.test.mjs",
+    "npm test"
+  ]
+}

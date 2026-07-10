@@ -21,6 +21,24 @@ assert.throws(() => validate({ ...legacy('memory-write'), organism: true }), /ex
 assert.doesNotThrow(() => validate({ ...legacy('memory-write'), organism: true,
   execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'orchestrator-required-directive' } }));
 
+const recursive = { ...legacy('memory-write', 'test'), flow_id: 'recursive-1', legacy: false,
+  organism: true, confidence: 'inferred',
+  execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'orchestrator-required-directive' },
+  provenance: [{ kind: 'model-output-utf8', sha256: textAnchor('observed') }],
+  completeness: { scope: 'selected', read_bytes: 8, unread_bytes: 0, status: 'complete' },
+  admission: { stale_status: 'fresh', falsifier_ref: 'holdout-1', selector: 'independent-holdout' },
+  falsifiers: [{ ref: 'holdout-1', status: 'pending', independent: true }] };
+assert.doesNotThrow(() => validate(recursive), 'inferred pending receipt is retained');
+for (const [name, change] of [
+  ['self-confirming selector', { admission: { ...recursive.admission, selector: 'source-self-confirmation' } }],
+  ['stale source', { admission: { ...recursive.admission, stale_status: 'stale' } }],
+  ['partial context', { completeness: { ...recursive.completeness, unread_bytes: 3, status: 'partial' } }],
+  ['wrong model', { execution: { ...recursive.execution, model: 'gpt-5.6-terra' } }],
+  ['non-independent falsifier', { falsifiers: [{ ref: 'holdout-1', status: 'pending', independent: false }] }],
+]) assert.throws(() => validate({ ...recursive, ...change }), /organism|complete selected|independent|fresh|Luna/,
+  `hostile case rejected: ${name}`);
+assert.throws(() => validate({ ...recursive, confidence: 'verified', falsifiers: [{ ref: 'holdout-1', status: 'fail', independent: true }] }), /passing/);
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-circulation-'));
 const verified = { ...legacy('memory-write', 'test'), flow_id: 'flow-1', legacy: false,
   falsifiers: [{ ref: 'test:green', status: 'pass' }] };
