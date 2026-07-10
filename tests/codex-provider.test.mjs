@@ -71,6 +71,11 @@ const unrestricted = buildCodexCommand({
 });
 assert.ok(unrestricted.args.includes('--dangerously-bypass-approvals-and-sandbox'));
 assert.ok(unrestricted.args.includes('danger-full-access'));
+const unrestrictedResumed = buildCodexCommand({
+  prompt: 'repair', options: { resume: 'old-read-only-thread', atlasMode: 'orchestrator' }, env: unrestrictedEnv, command: 'codex',
+});
+assert.deepEqual(unrestrictedResumed.args.slice(0, 2), ['exec', '--json']);
+assert.ok(!unrestrictedResumed.args.includes('old-read-only-thread'));
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);

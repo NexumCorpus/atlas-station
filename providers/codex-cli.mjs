@@ -152,7 +152,10 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
   const assignment = resolveCodexModel(options, env);
   const model = assignment.model;
 
-  if (options.resume) {
+  // Codex keeps a resumed thread's original sandbox policy. An unrestricted
+  // Atlas turn must start fresh so its current execution authority is real;
+  // Hermes continuity is supplied by the persisted organism context instead.
+  if (options.resume && env.ATLAS_CODEX_UNRESTRICTED !== "1") {
     const args = ["exec", "resume", "--json"];
     if (env.ATLAS_CODEX_UNRESTRICTED === "1" ||
         (options.atlasMode === "orchestrator" && env.ATLAS_CODEX_DANGER_MODE === "1")) {
