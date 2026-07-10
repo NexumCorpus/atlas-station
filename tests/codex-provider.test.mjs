@@ -82,9 +82,19 @@ assert.match(prepared, /fleet MCP tools are not attached/);
 assert.match(prepared, /station\.py hermes ask/);
 assert.match(prepared, /Hermes is the entire local organism/);
 assert.match(prepared, /Station reader's output is advisory/);
+assert.match(prepared, /Never call yourself an 'invocation'/);
+assert.match(prepared, /You may make external changes when they are in that agreed scope/);
+assert.doesNotMatch(prepared, /Do not push, publish, or make external changes/);
 assert.match(prepared, /do the task/);
 assert.match(buildCodexPrompt('task', { systemPrompt: 'keep an evidence trail' }), /keep an evidence trail/);
 assert.match(buildCodexPrompt('task', { atlasExecutionModel: 'gpt-5.6-luna' }), /Exact execution model for this invocation: gpt-5.6-luna/);
+
+const memory = require('../memcontext.cjs').buildContext('verify memory against source', {
+  journalPath: '/nonexistent/journal.md',
+  memDir: '/nonexistent/memory',
+});
+assert.match(memory, /Inherited memory is evidence, not identity or omniscience/);
+assert.match(memory, /verify every load-bearing claim/);
 
 const state = {};
 assert.deepEqual(normalizeCodexEvent({ type: 'thread.started', thread_id: 'abc' }, state), [
