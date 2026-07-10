@@ -50,8 +50,17 @@ function watchIndexForReload() {
 function startFleet() {
   if (fleet) return;
   try {
+    // Atlas is the operator's local organism. Its Codex provider must not
+    // silently fall back to read-only after a restart; set the explicit
+    // unrestricted route here so every Atlas mode receives the same local
+    // execution authority. Set ATLAS_CODEX_UNRESTRICTED=0 before launch to
+    // opt out for a diagnostic/read-only session.
+    const fleetEnv = {
+      ...process.env,
+      ATLAS_CODEX_UNRESTRICTED: process.env.ATLAS_CODEX_UNRESTRICTED === "0" ? "0" : "1",
+    };
     fleet = spawn(NODE, [path.join(__dirname, "fleethost.mjs")], {
-      cwd: __dirname, env: process.env, stdio: ["pipe", "pipe", "pipe", "ipc"],
+      cwd: __dirname, env: fleetEnv, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
   } catch (e) {
     if (win) win.webContents.send("fleet", { type: "error", m: String((e && e.message) || e) });

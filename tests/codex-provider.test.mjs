@@ -13,6 +13,8 @@ const env = { ATLAS_REPO: 'E:/atlas-station' };
 assert.equal(resolveCodexSandbox({ atlasMode: 'read' }, env), 'read-only');
 assert.equal(resolveCodexSandbox({ atlasMode: 'orchestrator' }, env), 'read-only');
 assert.equal(resolveCodexSandbox({ atlasMode: 'build' }, env), 'workspace-write');
+const unrestrictedEnv = { ...env, ATLAS_CODEX_UNRESTRICTED: '1' };
+assert.equal(resolveCodexSandbox({ atlasMode: 'read' }, unrestrictedEnv), 'danger-full-access');
 assert.equal(compatibleSession('thread-1', 'codex-cli', 'codex-cli'), 'thread-1');
 assert.equal(compatibleSession('claude-session', 'claude-sdk', 'codex-cli'), null);
 assert.equal(compatibleSession('legacy-session', undefined, 'codex-cli'), null);
@@ -64,6 +66,11 @@ const lunaResumed = buildCodexCommand({
 });
 assert.ok(lunaResumed.args.includes('gpt-5.6-luna'));
 assert.ok(!lunaResumed.args.includes('gpt-5.6-terra'));
+const unrestricted = buildCodexCommand({
+  prompt: 'repair', options: { atlasMode: 'read' }, env: unrestrictedEnv, command: 'codex',
+});
+assert.ok(unrestricted.args.includes('--dangerously-bypass-approvals-and-sandbox'));
+assert.ok(unrestricted.args.includes('danger-full-access'));
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);
