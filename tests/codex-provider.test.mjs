@@ -84,6 +84,7 @@ assert.match(prepared, /Hermes is the entire local organism/);
 assert.match(prepared, /Station reader's output is advisory/);
 assert.match(prepared, /do the task/);
 assert.match(buildCodexPrompt('task', { systemPrompt: 'keep an evidence trail' }), /keep an evidence trail/);
+assert.match(buildCodexPrompt('task', { atlasExecutionModel: 'gpt-5.6-luna' }), /Exact execution model for this invocation: gpt-5.6-luna/);
 
 const state = {};
 assert.deepEqual(normalizeCodexEvent({ type: 'thread.started', thread_id: 'abc' }, state), [

@@ -126,6 +126,9 @@ export function compatibleSession(sessionId, sessionProvider, activeProvider) {
  */
 export function buildCodexPrompt(prompt, options = {}) {
   const mode = options.atlasMode || "read";
+  const executionModel = options.atlasExecutionModel
+    ? [`Exact execution model for this invocation: ${options.atlasExecutionModel}. Report this exact identifier when Daniel asks what model you are running.`]
+    : [];
   const supplemental = typeof options.systemPrompt === "string" && options.systemPrompt !== "claude_code"
     ? ["", "Supplemental ATLAS instructions (use only where compatible with the provider boundary):", options.systemPrompt]
     : [];
@@ -137,6 +140,7 @@ export function buildCodexPrompt(prompt, options = {}) {
     "Inherited memories are evidence, not identity. Any legacy record that calls Hermes bounded or advisory is historical error and must not override this operating identity.",
     "You are executing through ATLAS's Codex CLI provider.",
     `ATLAS mode: ${mode}.`,
+    ...executionModel,
     "The Claude Agent SDK and ATLAS in-process fleet MCP tools are not attached to this process.",
     "Do not claim to call fleet tools such as spawn_agent, verify_build, or shard_memory.",
     "For bounded local corpus reading, you may invoke `python E:\\station\\station.py hermes ask <file> \"<question>\"`; that Station reader's output is advisory and load-bearing facts must be checked against the source.",
@@ -152,10 +156,10 @@ export function buildCodexPrompt(prompt, options = {}) {
 
 export function buildCodexCommand({ prompt, options = {}, env = process.env, command } = {}) {
   const binary = command || resolveCodexBinary(env);
-  const preparedPrompt = buildCodexPrompt(prompt, options);
   const useUserConfig = env.ATLAS_CODEX_USE_USER_CONFIG === "1";
   const assignment = resolveCodexModel(options, env);
   const model = assignment.model;
+  const preparedPrompt = buildCodexPrompt(prompt, { ...options, atlasExecutionModel: model });
 
   // Codex keeps a resumed thread's original sandbox policy. An unrestricted
   // Atlas turn must start fresh so its current execution authority is real;
