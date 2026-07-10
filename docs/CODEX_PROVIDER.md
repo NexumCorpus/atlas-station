@@ -26,9 +26,10 @@ ordinary CLI seam:
 python E:\\station\\station.py hermes ask <file> "<question>"
 ```
 
-This route is local-model-only (Ollama `hermes3:8b` by default), emits the
-assigned model plus call/depth/byte counts, records a `hermes-read` spine event,
-and labels its answer advisory.
+This route defaults to the authenticated Codex family reader `gpt-5.6-luna`,
+emits the assigned model plus call/depth/byte counts, records a `hermes-read`
+spine event, and labels its answer advisory. Ollama `hermes3:8b` remains an
+explicit fallback via `HERMES_BACKEND=ollama`.
 Atlas does not read or copy OAuth material; the installed Codex CLI may use its
 own existing login state. Facts that matter must be re-read or verified against
 the source bytes.
