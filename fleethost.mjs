@@ -3801,7 +3801,14 @@ if (_persist) {
     const saved = _persist.load();
     if (saved && Array.isArray(saved.agents)) {
       for (const a of saved.agents) {
+        // Persisted done/failed/interrupted agents are historical ledger rows,
+        // not live fleet members. Re-emitting them on boot made the UI show
+        // hundreds of stale agents and replay every terminal toast. Only the
+        // orchestrator and actionable states re-enter the live map.
+        const actionable = a.id === "ATLAS" || a.state === "working" || a.state === "needs-you";
+        if (!actionable) continue;
         if (a.state === "working") a.state = "interrupted";
+        a.restored = true;
         agents.set(a.id, a);
         send("agent", a);
       }
