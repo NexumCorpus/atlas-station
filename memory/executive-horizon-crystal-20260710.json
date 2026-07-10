@@ -1,0 +1,20 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-10T05:22:31Z",
+  "subject": "Executive horizon: one broad decision frontier without an unauthorized will",
+  "spirals": [
+    {
+      "turns": "116-118",
+      "commits": ["0864010", "618494d", "9f20ed8"],
+      "measure": "Accepted obligations from integrity, prereg, market, and forecast ledgers are ranked by cost of delay and rendered with evidence, executor tier, authority, and next route."
+    },
+    {
+      "turns": "119-120",
+      "commits": ["e192e6c", "fa6660d"],
+      "measure": "Tests preserve integrity-first ordering and external authority; drift checks every frontier item remains structurally non-authorizing."
+    }
+  ],
+  "current_truth": "The live horizon surfaced three stale immune receipts, two due preregs, and six future WAIT contracts. It did not replay, score, contact, or decide for any of them.",
+  "priority_law": "integrity rot > overdue mechanical observation > overdue scoring > external-market deadline > upcoming obligation",
+  "next_kill": "Remove the horizon if it can execute a displayed next route, loses evidence/executor/authority, or treats ranking as permission."
+}
