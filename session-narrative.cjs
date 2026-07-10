@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const circulation = require('./circulation.cjs');
 
 const DEFAULT_DIR = path.join(__dirname, 'memory');
 const SESSION_FILE = 'sessions.ndjson';
@@ -21,7 +22,8 @@ function writeSession(session, dir) {
   try {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, SESSION_FILE);
-    fs.appendFileSync(file, JSON.stringify(session) + '\n', 'utf8');
+    const entry = { ...session, hermes: circulation.envelope(session?.hermes, 'memory-write', 'session-narrative') };
+    fs.appendFileSync(file, JSON.stringify(entry) + '\n', 'utf8');
   } catch (_) {}
 }
 

@@ -1,16 +1,18 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const circulation = require('./circulation.cjs');
 
 const MUTATIONS_FILE = (dir) => path.join(dir, 'mutations.ndjson');
 
 // Record files changed by an agent after a commit
-function recordMutation(agentId, files, memDir) {
+function recordMutation(agentId, files, memDir, hermes = null) {
   if (!files || !files.length) return;
   const entry = {
     ts: new Date().toISOString(),
     agentId,
     files: files.slice(0, 50), // cap at 50 files
+    hermes: circulation.envelope(hermes, 'proposal', String(agentId || 'mutation')),
   };
   fs.appendFileSync(MUTATIONS_FILE(memDir), JSON.stringify(entry) + '\n', 'utf8');
 }

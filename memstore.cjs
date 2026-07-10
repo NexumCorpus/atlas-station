@@ -18,6 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const circulation = require('./circulation.cjs');
 
 const DEFAULT_DIR = path.join(__dirname, 'memory');
 const FACTS_FILE  = 'facts.jsonl';
@@ -73,7 +74,7 @@ function _loadLines(filePath) {
  */
 function appendFact(fact, dir = DEFAULT_DIR) {
   if (!fact || typeof fact !== 'object') throw new TypeError('appendFact: fact must be an object');
-  const { topic, fact: text, source, confidence, supersedes = null } = fact;
+  const { topic, fact: text, source, confidence, supersedes = null, hermes = null } = fact;
   if (!topic)      throw new Error('appendFact: missing required field: topic');
   if (!text)       throw new Error('appendFact: missing required field: fact');
   if (!source)     throw new Error('appendFact: missing required field: source');
@@ -92,6 +93,9 @@ function appendFact(fact, dir = DEFAULT_DIR) {
     source:     String(source),
     confidence: String(confidence),
     supersedes: supersedes ? String(supersedes) : null,
+    hermes:     hermes
+      ? circulation.validate({ ...hermes, stage: 'memory-write', confidence: String(confidence) })
+      : circulation.envelope(null, 'memory-write', String(source || 'memory')),
   };
   _appendLine(path.join(dir, FACTS_FILE), entry);
 
@@ -162,7 +166,7 @@ function appendFact(fact, dir = DEFAULT_DIR) {
  */
 function appendRun(run, dir = DEFAULT_DIR) {
   if (!run || typeof run !== 'object') throw new TypeError('appendRun: run must be an object');
-  const { agentId, task, mode, state, cost = null, summary = '', branch = null, transcriptPath = null } = run;
+  const { agentId, task, mode, state, cost = null, summary = '', branch = null, transcriptPath = null, hermes = null } = run;
   if (!agentId) throw new Error('appendRun: missing required field: agentId');
   if (!task)    throw new Error('appendRun: missing required field: task');
   if (!mode)    throw new Error('appendRun: missing required field: mode');
@@ -178,6 +182,7 @@ function appendRun(run, dir = DEFAULT_DIR) {
     summary:        String(summary).slice(0, 500),
     branch:         branch ? String(branch) : null,
     transcriptPath: transcriptPath ? String(transcriptPath) : null,
+    hermes:         circulation.envelope(hermes, 'verification', String(agentId || 'run')),
   };
   _appendLine(path.join(dir, RUNS_FILE), entry);
   return entry;

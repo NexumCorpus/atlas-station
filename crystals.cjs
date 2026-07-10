@@ -1,12 +1,14 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const circulation = require('./circulation.cjs');
 const CRYSTALS_FILE = (dir) => path.join(dir, 'crystals.ndjson');
 
-function appendCrystal(text, turnRange, memDir) {
+function appendCrystal(text, turnRange, memDir, hermes = null) {
   const dir = memDir;
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const entry = { ts: new Date().toISOString(), text: text.trim(), turnRange, session: process.pid };
+  const entry = { ts: new Date().toISOString(), text: text.trim(), turnRange, session: process.pid,
+    hermes: circulation.envelope(hermes, 'memory-write', 'crystals') };
   fs.appendFileSync(CRYSTALS_FILE(memDir), JSON.stringify(entry) + '\n', 'utf8');
   return entry;
 }
