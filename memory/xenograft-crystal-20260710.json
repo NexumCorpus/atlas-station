@@ -1,0 +1,24 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-10T10:39:18Z",
+  "subject": "Xenograft: lossless declared-slice context transport and portability proof",
+  "spirals": [
+    {
+      "turn": 121,
+      "commit": "dc8ffc7",
+      "measure": "A capability must prove it survives outside the estate rather than being narrated as portable."
+    },
+    {
+      "turn": 122,
+      "commit": "d12bf0b",
+      "measure": "A command-free manifest hash-pins source bytes, copies only its declared files into an empty temporary body, and reports stale/hash/check failures."
+    },
+    {
+      "turn": 123,
+      "commit": "5aa4d8a",
+      "measure": "The temporal witness survives with exactly forecast.py, a local signal, and check.py; the check proves its import originated inside the graft."
+    }
+  ],
+  "current_truth": "The three-file temporal graft establishes lossless portability only for that declared capability slice. The full estate remains larger and is preserved through git plus the sharded codeword.",
+  "next_kill": "If forecast.py, the signal, or the check changes without a new manifest hash and successful graft run, portability is stale. Do not call this a security sandbox, whole-estate reconstruction, or independent validation."
+}
