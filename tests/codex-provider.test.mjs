@@ -52,6 +52,8 @@ assert.equal(resumed.assignment.model, 'gpt-5.6-terra');
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);
+assert.match(prepared, /station\.py hermes ask/);
+assert.match(prepared, /advisory/);
 assert.match(prepared, /do the task/);
 assert.match(buildCodexPrompt('task', { systemPrompt: 'keep an evidence trail' }), /keep an evidence trail/);
 

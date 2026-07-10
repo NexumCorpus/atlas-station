@@ -126,6 +126,7 @@ export function buildCodexPrompt(prompt, options = {}) {
     `ATLAS mode: ${mode}.`,
     "The Claude Agent SDK and ATLAS in-process fleet MCP tools are not attached to this process.",
     "Do not claim to call fleet tools such as spawn_agent, verify_build, or shard_memory.",
+    "For bounded local corpus reading, you may invoke `python E:\\station\\station.py hermes ask <file> \"<question>\"`; Hermes output is advisory and load-bearing facts must be checked against the source.",
     "Use only the current workspace and standard local tools that Codex actually exposes.",
     "Do not push, publish, or make external changes.",
     "Return a concise final report with concrete evidence and any blocker.",

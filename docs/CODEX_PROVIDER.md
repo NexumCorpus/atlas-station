@@ -17,6 +17,21 @@ provider adapter, not a claim that the Claude Agent SDK and Codex are identical.
   honestly claim to have called `spawn_agent`, `verify_build`, or another fleet
   tool that was never attached.
 
+## Hermes bridge
+
+The Codex process can use Station's bounded local Hermes reader through the
+ordinary CLI seam:
+
+```text
+python E:\\station\\station.py hermes ask <file> "<question>"
+```
+
+This route is local-model-only (Ollama `hermes3:8b` by default), emits the
+assigned model plus call/depth/byte counts, records a `hermes-read` spine event,
+and labels its answer advisory.
+The Codex provider receives no OAuth credential or hidden MCP handle; facts that
+matter must be re-read or verified against the source bytes.
+
 ## Safety defaults
 
 - Top-level ATLAS turns are `read-only` by default.
