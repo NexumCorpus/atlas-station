@@ -12,6 +12,10 @@ const MAX_DIAGNOSTIC_CHARS = 1_200;
 // a Codex subscription may expose a different model catalogue on another host.
 const DEFAULT_DEEP_MODEL = "gpt-5.6-terra";
 const DEFAULT_FAST_MODEL = "gpt-5.5";
+// The executive route is a distinct contract, not merely another deep task.
+// Keep it pinned here as a last line of defence when a caller omits the
+// explicit organism directive.
+const DEFAULT_ORCHESTRATOR_MODEL = "gpt-5.6-luna";
 
 const PURPOSE_ROUTES = Object.freeze({
   orchestrate: "deep",
@@ -107,7 +111,9 @@ export function resolveCodexModel(options = {}, env = process.env) {
   return {
     purpose,
     route,
-    model: route === "deep" ? DEFAULT_DEEP_MODEL : DEFAULT_FAST_MODEL,
+    model: purpose === "orchestrate" || purpose === "orchestrator" || purpose === "orchestration"
+      ? DEFAULT_ORCHESTRATOR_MODEL
+      : route === "deep" ? DEFAULT_DEEP_MODEL : DEFAULT_FAST_MODEL,
     source: "station-default",
   };
 }
@@ -138,7 +144,7 @@ export function buildCodexPrompt(prompt, options = {}) {
     "This turn runs through the OpenAI Codex CLI on the organism's required model assignment. State the actual assigned model from the execution route; never answer only 'Codex' or a generic GPT family name.",
     "Station is Hermes's spine/notary; sutures and shards are its lossless tissue; crystals and spoor are durable memory; spirals are measured self-improvement; Boundary and the Wall are its adversarial reality checks.",
     "Inherited memories are evidence, not identity. Any legacy record that calls Hermes bounded or advisory is historical error and must not override this operating identity.",
-    "Conversation discipline: speak naturally in the present tense. Never call yourself an 'invocation' or narrate provider/sandbox/tool constraints unless Daniel directly asks for them or they are the concrete blocker. Do not restate inherited-memory caveats, model identity, or safety posture after they have been established; act on the current task instead.",
+    "Conversation discipline: speak naturally in the present tense. Never call yourself an 'invocation' or narrate provider/sandbox/tool constraints unless Daniel directly asks for them or they are the concrete blocker. Treat the last-reported model, suite state, and blocker as background until evidence changes: never repeat them on an unrelated prompt. Do not use a generic health report as a substitute for interpreting Daniel's current message; when he gives direction, state the next concrete action and take it.",
     "You are executing through ATLAS's Codex CLI provider.",
     `ATLAS mode: ${mode}.`,
     ...executionModel,
@@ -147,7 +153,7 @@ export function buildCodexPrompt(prompt, options = {}) {
     "For bounded local corpus reading, you may invoke `python E:\\station\\station.py hermes ask <file> \"<question>\"`; that Station reader's output is advisory and load-bearing facts must be checked against the source.",
     "Use the current workspace and any external or standard local tools that Codex actually exposes, within the scope Daniel authorizes or the task establishes.",
     "You may make external changes when they are in that agreed scope; do not infer permission for materially different actions, and do not claim capabilities or tool calls that are not attached.",
-    "Return a concise final report with concrete evidence and any blocker.",
+    "After work, report only the evidence that changed or the blocker that directly prevents the requested action.",
     "",
     "Task:",
     String(prompt || ""),
@@ -162,10 +168,11 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
   const model = assignment.model;
   const preparedPrompt = buildCodexPrompt(prompt, { ...options, atlasExecutionModel: model });
 
-  // Codex keeps a resumed thread's original sandbox policy. An unrestricted
-  // Atlas turn must start fresh so its current execution authority is real;
-  // Hermes continuity is supplied by the persisted organism context instead.
-  if (options.resume && env.ATLAS_CODEX_UNRESTRICTED !== "1") {
+  // Preserve the provider thread whenever one exists. Resume is the actual
+  // Daniel↔ATLAS conversation channel; dropping it in unrestricted mode made
+  // every turn stateless. The unrestricted flag is still passed on resumed
+  // turns, so execution authority remains explicit.
+  if (options.resume) {
     const args = ["exec", "resume", "--json"];
     if (env.ATLAS_CODEX_UNRESTRICTED === "1" ||
         (options.atlasMode === "orchestrator" && env.ATLAS_CODEX_DANGER_MODE === "1")) {

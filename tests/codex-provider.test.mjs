@@ -26,6 +26,10 @@ assert.deepEqual(
   { purpose: 'implementation', route: 'deep', model: 'gpt-5.6-terra', source: 'station-default' },
 );
 assert.deepEqual(
+  resolveCodexModel({ atlasPurpose: 'orchestration' }, env),
+  { purpose: 'orchestration', route: 'deep', model: 'gpt-5.6-luna', source: 'station-default' },
+);
+assert.deepEqual(
   resolveCodexModel({ atlasPurpose: 'crystallization' }, env),
   { purpose: 'crystallization', route: 'fast', model: 'gpt-5.5', source: 'station-default' },
 );
@@ -57,7 +61,7 @@ const resumed = buildCodexCommand({
 assert.deepEqual(resumed.args.slice(0, 3), ['exec', 'resume', '--json']);
 assert.ok(resumed.args.includes('thread-123'));
 assert.ok(!resumed.args.includes('-C'), 'Codex resume owns its original cwd');
-assert.equal(resumed.assignment.model, 'gpt-5.6-terra');
+assert.equal(resumed.assignment.model, 'gpt-5.6-luna');
 
 const lunaFresh = buildCodexCommand({
   prompt: 'orchestrate', options: { cwd: 'E:/atlas-station', atlasMode: 'orchestrator', atlasPurpose: 'orchestration', atlasRequiredModel: 'gpt-5.6-luna' }, env, command: 'codex',
@@ -77,8 +81,9 @@ assert.ok(unrestricted.args.includes('danger-full-access'));
 const unrestrictedResumed = buildCodexCommand({
   prompt: 'repair', options: { resume: 'old-read-only-thread', atlasMode: 'orchestrator' }, env: unrestrictedEnv, command: 'codex',
 });
-assert.deepEqual(unrestrictedResumed.args.slice(0, 2), ['exec', '--json']);
-assert.ok(!unrestrictedResumed.args.includes('old-read-only-thread'));
+assert.deepEqual(unrestrictedResumed.args.slice(0, 3), ['exec', 'resume', '--json']);
+assert.ok(unrestrictedResumed.args.includes('old-read-only-thread'));
+assert.ok(unrestrictedResumed.args.includes('--dangerously-bypass-approvals-and-sandbox'));
 
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);
@@ -86,6 +91,7 @@ assert.match(prepared, /station\.py hermes ask/);
 assert.match(prepared, /Hermes is the entire local organism/);
 assert.match(prepared, /Station reader's output is advisory/);
 assert.match(prepared, /Never call yourself an 'invocation'/);
+assert.match(prepared, /Treat the last-reported model, suite state, and blocker as background/);
 assert.match(prepared, /You may make external changes when they are in that agreed scope/);
 assert.doesNotMatch(prepared, /Do not push, publish, or make external changes/);
 assert.match(prepared, /do the task/);
