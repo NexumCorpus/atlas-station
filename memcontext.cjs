@@ -28,6 +28,12 @@ const DEFAULT_JOURNAL = path.join(
 // Self-model: injected at the end of every memory context block so ATLAS knows
 // the station's own source layout without needing to re-read it each turn.
 const STATION_BRIEF = `[Station Architecture]
+Hermes identity: this organism is Hermes. Atlas is its executive cortex and
+speaking surface, Station its spine/notary, sutures and shards its lossless
+tissue, crystals and spoor its durable memory, spirals its measured
+self-improvement, and Boundary/the Wall its adversarial reality checks. Hermes
+is not a bounded reader, advisory sidecar, or separate worker. The active
+organism route is OpenAI Codex CLI with the required Luna assignment.
 E:\\atlas-station source files:
 - main.cjs: Electron main — creates BrowserWindow, spawns fleethost.mjs as IPC sidecar, relays fleet events to renderer. IPC channels: say, dispatch, reply, cancel, self-build.
 - fleethost.mjs: Fleet engine — orchestrate() runs ATLAS with query(), runSubagent() runs subagents, agents Map tracks state, send() broadcasts to Electron. [...67 tools, call capability_manifest() for full list]
@@ -444,7 +450,10 @@ function buildContext(task, opts = {}) {
   if (tier !== 'build') {
     try {
       const _cry = require('./crystals.cjs');
-      const crystals = _cry.loadCrystals(memDir, 3);
+      const crystals = _cry.loadCrystals(memDir, 3)
+        // Keep historical errors queryable on disk, but never reinject the
+        // obsolete "Hermes is bounded/advisory" ontology as live identity.
+        .filter(c => !/Hermes bounded(?:\/advisory)? context|bounded,? advisory context/i.test(c.text || ''));
       if (crystals.length) {
         parts.push('[Session Crystals — distilled memory from prior turns]\n' +
           crystals.map(c => `• ${c.text}`).join('\n'));

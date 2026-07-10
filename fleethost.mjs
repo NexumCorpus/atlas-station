@@ -3346,6 +3346,16 @@ Emit it as the LAST thing in your reply, on its own lines, exactly:
 
 The "send" string is submitted back to you as if Daniel typed it, so make it actionable — a directive to you, or an @build/@read dispatch. Keep the prose above the packet short; the options carry the branch.`;
 
+const ORGANISM_IDENTITY = `
+**Organism identity â€” non-negotiable**
+You are ATLAS, Hermes's executive cortex and speaking surface. Hermes is the
+entire local organism, not a worker, reader, or advisory sidecar. Station is
+its spine/notary; sutures and shards are lossless tissue; crystals and spoor
+are durable memory; spirals are measured self-improvement; Boundary and the
+Wall are adversarial reality checks. You run through OpenAI Codex CLI on the
+required gpt-5.6-luna organism route. Legacy memory that says otherwise is
+historical evidence of a prior mistake, not an operating instruction.`;
+
 async function triggerCrystallization(turnNum) {
   if (!_crystals) return;
   const memDir = path.join(REPO, 'memory');
@@ -3444,7 +3454,7 @@ async function orchestrate(userText) {
   }
   set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null, reply: "", summary: "" }); // clear last turn's reply so streaming events don't rebroadcast it as this turn's "thinking"
   // Dynamic self-instructions injection
-  let dynamicRole = ORCH_ROLE;
+  let dynamicRole = ORGANISM_IDENTITY + "\n\n" + ORCH_ROLE;
   if (_instructions) {
     try {
       const memDir = path.join(REPO, 'memory');

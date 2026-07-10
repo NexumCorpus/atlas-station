@@ -80,7 +80,8 @@ assert.ok(!unrestrictedResumed.args.includes('old-read-only-thread'));
 const prepared = buildCodexPrompt('do the task', { atlasMode: 'read' });
 assert.match(prepared, /fleet MCP tools are not attached/);
 assert.match(prepared, /station\.py hermes ask/);
-assert.match(prepared, /advisory/);
+assert.match(prepared, /Hermes is the entire local organism/);
+assert.match(prepared, /Station reader's output is advisory/);
 assert.match(prepared, /do the task/);
 assert.match(buildCodexPrompt('task', { systemPrompt: 'keep an evidence trail' }), /keep an evidence trail/);
 
