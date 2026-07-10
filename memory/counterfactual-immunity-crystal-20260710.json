@@ -1,0 +1,29 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-10T04:51:17Z",
+  "subject": "Counterfactual immunity: recursive improvement selected by tests that can feel a wound",
+  "spirals": [
+    {
+      "turns": "96-100",
+      "commits": ["97c99d7", "fae1bf0", "4fb00db", "db782e9", "5833010"],
+      "measure": "A pre-registered lesion is bound to a registered suite, applied only to a disposable copy, and retained with baseline/mutant exit codes and exact source bytes."
+    },
+    {
+      "turns": "101-102",
+      "commits": ["671cc97", "953914d"],
+      "measure": "Syntax-invalid mutants are MUTANT-INVALID rather than KILLED; the runner preserves byte-level newline grammar and clears generated Python caches between baseline and mutant."
+    },
+    {
+      "turns": "103-105",
+      "commits": ["e5eebd6", "7a47425", "4c1e9e7"],
+      "measure": "A first SURVIVED market-proof lesion created a direct regression test and then KILLED on replay. Three market lesions are current KILLED outcomes and expire under drift when station.py changes."
+    }
+  ],
+  "current_truth": "Counterfactual immunity establishes only that the registered station suite distinguishes three exact nearby market lesions. It does not establish complete coverage, general safety, customer demand, or a discovery result.",
+  "current_lesions": [
+    "market-proof-existence",
+    "market-paid-receipt",
+    "market-packet-boundary"
+  ],
+  "next_kill": "If any current lesion survives, if a stale source passes immunity verification, or if an invalid mutant counts as KILLED, replay and repair before treating the guard as protective."
+}
