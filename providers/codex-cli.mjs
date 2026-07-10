@@ -146,6 +146,9 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
 
   if (options.resume) {
     const args = ["exec", "resume", "--json"];
+    if (options.atlasMode === "orchestrator" && env.ATLAS_CODEX_DANGER_MODE === "1") {
+      args.push("--dangerously-bypass-approvals-and-sandbox");
+    }
     if (!useUserConfig) args.push("--ignore-user-config");
     if (model) args.push("--model", model);
     args.push(String(options.resume), preparedPrompt);
@@ -153,6 +156,9 @@ export function buildCodexCommand({ prompt, options = {}, env = process.env, com
   }
 
   const args = ["exec", "--json", "--color", "never"];
+  if (options.atlasMode === "orchestrator" && env.ATLAS_CODEX_DANGER_MODE === "1") {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
   if (!useUserConfig) args.push("--ignore-user-config");
   if (model) args.push("--model", model);
   args.push("-C", options.cwd || env.ATLAS_REPO || process.cwd());
