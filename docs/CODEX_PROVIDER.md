@@ -29,8 +29,9 @@ python E:\\station\\station.py hermes ask <file> "<question>"
 This route is local-model-only (Ollama `hermes3:8b` by default), emits the
 assigned model plus call/depth/byte counts, records a `hermes-read` spine event,
 and labels its answer advisory.
-The Codex provider receives no OAuth credential or hidden MCP handle; facts that
-matter must be re-read or verified against the source bytes.
+Atlas does not read or copy OAuth material; the installed Codex CLI may use its
+own existing login state. Facts that matter must be re-read or verified against
+the source bytes.
 
 ## Safety defaults
 
