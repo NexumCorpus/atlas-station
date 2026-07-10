@@ -1,0 +1,29 @@
+{
+  "schema": "atlas-crystal/v1",
+  "created_utc": "2026-07-10T05:08:35Z",
+  "subject": "Temporal witness: recursive improvement with a future that cannot be rewritten",
+  "spirals": [
+    {
+      "turns": "106-109",
+      "commits": ["9ba53ca", "ed2dd41", "97ebbd1", "55f7b7c"],
+      "measure": "A future-dated forecast binds p, a strict local observation route, divergent YES/NO actions, clock-gated resolution, Brier loss, and reviewed action consumption."
+    },
+    {
+      "turns": "110-112",
+      "commits": ["c19f58e", "e6976ab", "9804536"],
+      "measure": "Fixture coverage proves early resolution refusal, route confinement, portable receipts, and bounded absence as a real observation."
+    },
+    {
+      "turns": "113-115",
+      "commits": ["df3f839", "dd59e0a", "6e55625"],
+      "measure": "Three economic temporal contracts are armed for 2026-08-10 and drift will fail overdue or unreviewed contracts; their status is unresolved, not calibrated."
+    }
+  ],
+  "current_truth": "forecast_total=3, resolved=0, reviewed=0, mean_brier=null. The contracts establish a pre-dated future obligation, not demand, revenue, or calibration.",
+  "contracts": [
+    "market-any-signal p=0.30",
+    "market-no-paid-receipt p=0.95",
+    "evidence-gate-interest p=0.20"
+  ],
+  "next_kill": "On 2026-08-10, resolve every contract through its frozen route and review the matching branch. Drift failure is correct if any is overdue, manually resolved, or left unreviewed."
+}
