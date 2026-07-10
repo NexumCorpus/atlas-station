@@ -32,6 +32,12 @@ function query(args) {
 
 const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
 const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
+// The Atlas organism owns its local workspace. Do not let the launch path
+// silently demote a fresh sidecar to read-only; an operator may still set
+// ATLAS_CODEX_UNRESTRICTED=0 for an intentionally diagnostic session.
+if (process.env.ATLAS_CODEX_UNRESTRICTED !== "0") {
+  process.env.ATLAS_CODEX_UNRESTRICTED = "1";
+}
 const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "codex-cli").toLowerCase();
 const _codexProvider = createCodexCliProvider();
 const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
