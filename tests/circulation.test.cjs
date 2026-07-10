@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert/strict');
-const { legacy, validate, envelope } = require('../circulation.cjs');
+const { legacy, validate, envelope, textAnchor, anchorMatches } = require('../circulation.cjs');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -15,6 +15,8 @@ assert.throws(() => validate({ ...legacy(), completeness: { scope: 'source', rea
 assert.throws(() => validate({ ...legacy('memory-write'), confidence: 'verified', stage: 'memory-write' }), /falsifier/);
 assert.doesNotThrow(() => validate({ ...legacy('memory-write'), confidence: 'verified', stage: 'memory-write', falsifiers: [{ status: 'pass', ref: 'test:x' }] }));
 assert.throws(() => validate({ ...legacy(), authority: { level: 'propose', human_grant: null, mutation_allowed: true } }), /write/);
+assert.equal(anchorMatches('raw bytes', textAnchor('raw bytes')), true);
+assert.equal(anchorMatches('stale bytes', textAnchor('raw bytes')), false);
 assert.throws(() => validate({ ...legacy('memory-write'), organism: true }), /executing provider/);
 assert.doesNotThrow(() => validate({ ...legacy('memory-write'), organism: true,
   execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'orchestrator-required-directive' } }));

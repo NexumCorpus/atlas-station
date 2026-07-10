@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 
 // Hermes circulation is deliberately an envelope, not an authority grant.
 // Unknown legacy provenance remains visible and cannot be upgraded by this module.
@@ -46,4 +47,12 @@ function envelope(packet, fallbackStage, actor) {
   return validate(out);
 }
 
-module.exports = { legacy, validate, envelope };
+function textAnchor(text) {
+  return `sha256:${crypto.createHash('sha256').update(String(text), 'utf8').digest('hex')}`;
+}
+
+function anchorMatches(text, anchor) {
+  return typeof anchor === 'string' && textAnchor(text) === anchor;
+}
+
+module.exports = { legacy, validate, envelope, textAnchor, anchorMatches };

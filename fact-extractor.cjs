@@ -37,6 +37,7 @@
 
 const path = require('path');
 const { appendFact, recallFacts } = require('./memstore.cjs');
+const { textAnchor } = require('./circulation.cjs');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -291,6 +292,7 @@ function extractAndStore(text, source, {
   minScore = MIN_SCORE,
   dedup    = true,
   maxFacts = MAX_FACTS_DEFAULT,
+  hermes   = null,
 } = {}) {
   try {
     let candidates = extractFacts(text, { source, minScore });
@@ -301,7 +303,20 @@ function extractAndStore(text, source, {
 
     const stored = [];
     for (const c of candidates) {
-      stored.push(appendFact(c, dir));
+      // An extracted fact is a lossy derivative of this exact model-output
+      // buffer. Preserve its anchor; never imply the model read the underlying
+      // world completely or that its text is raw external source bytes.
+      const packet = hermes ? {
+        ...hermes,
+        stage: 'memory-write',
+        confidence: 'inferred',
+        provenance: [...(hermes.provenance || []), {
+          kind: 'model-output-utf8', ref: String(source), sha256: textAnchor(text),
+        }],
+        completeness: { scope: 'selected', read_bytes: Buffer.byteLength(text, 'utf8'), unread_bytes: 0, status: 'complete' },
+        loss: { kind: 'derived', input_bytes: Buffer.byteLength(text, 'utf8'), output_bytes: Buffer.byteLength(c.fact, 'utf8'), status: 'unmeasured' },
+      } : null;
+      stored.push(appendFact({ ...c, hermes: packet }, dir));
     }
     return stored;
   } catch (err) {
@@ -428,6 +443,29 @@ if (require.main === module) {
       'stored entries must carry confidence=inferred');
     assert.ok(stored.every(e => e.ts && e.ts.length > 0),
       'stored entries must have a timestamp');
+
+    // A model-derived memory write must retain its exact response anchor and
+    // the actual organism route rather than degrading into anonymous memory.
+    const anchored = extractAndStore(SAMPLE, 'ATLAS:anchored', {
+      dir: fs.mkdtempSync(path.join(os.tmpdir(), 'fact-extractor-anchor-')),
+      dedup: false,
+      hermes: {
+        v: 1, flow_id: 'test-luna-flow', parent_flow_id: null,
+        stage: 'memory-write', actor: 'ATLAS', organism: true,
+        execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'test' },
+        provenance: [],
+        completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' },
+        authority: { level: 'derive', human_grant: null, mutation_allowed: false },
+        loss: { kind: 'derived', input_bytes: 0, output_bytes: 0, status: 'unmeasured' },
+        falsifiers: [],
+      },
+    });
+    assert.ok(anchored.every(e => e.hermes.execution.model === 'gpt-5.6-luna'),
+      'anchored facts retain executing Luna assignment');
+    assert.ok(anchored.every(e => e.hermes.provenance.some(p => p.sha256 === textAnchor(SAMPLE))),
+      'anchored facts retain exact response hash');
+    assert.ok(anchored.every(e => e.hermes.provenance.some(p => p.kind === 'model-output-utf8') && e.hermes.completeness.scope === 'selected'),
+      'derived response text cannot masquerade as complete raw source');
 
     // ── 10. Store dedup suppresses already-stored facts on second run ─────────
     const second = extractAndStore(SAMPLE, 'agent:T-1:summary', {

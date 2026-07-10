@@ -3502,7 +3502,18 @@ async function orchestrate(userText) {
           try {
             const _extractor = _require("./fact-extractor.cjs");
             if (_extractor && typeof _extractor.extractAndStore === "function") {
-              _extractor.extractAndStore(full, "ATLAS:" + new Date().toISOString().slice(0, 10));
+              _extractor.extractAndStore(full, "ATLAS:" + new Date().toISOString().slice(0, 10), {
+                hermes: {
+                  v: 1, flow_id: `atlas:${orchSession || Date.now()}`, parent_flow_id: null,
+                  stage: 'memory-write', actor: 'ATLAS', organism: true,
+                  execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
+                  provenance: [],
+                  completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' },
+                  authority: { level: 'derive', human_grant: null, mutation_allowed: false },
+                  loss: { kind: 'derived', input_bytes: 0, output_bytes: full.length, status: 'unmeasured' },
+                  falsifiers: [],
+                },
+              });
             }
           } catch { /* silent */ }
         }
