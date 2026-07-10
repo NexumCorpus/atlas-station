@@ -9,7 +9,7 @@
 // (sessions resume). ATLAS is gated to read + delegation: to change anything it
 // MUST spawn a build subagent (isolated worktree), never the live tree.
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { createCodexCliProvider, compatibleSession, resolveCodexModel } from "./providers/codex-cli.mjs";
+import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
@@ -3461,6 +3461,15 @@ async function orchestrate(userText) {
     : {};
   const orchestrationModel = orchestrationRouting.atlasAssignedModel || MODEL;
   set("ATLAS", { id: "ATLAS", model: orchestrationModel });
+  send("execution", {
+    state: "working",
+    provider: ACTIVE_PROVIDER,
+    model: orchestrationModel,
+    sandbox: ACTIVE_PROVIDER === "codex-cli" ? resolveCodexSandbox(orchestrationRouting, process.env) : "provider-managed",
+    route: ACTIVE_PROVIDER === "codex-cli" ? "orchestrator-required-directive" : "claude-sdk",
+    task: String(userText || "").slice(0, 220),
+    startedAt: new Date().toISOString(),
+  });
   try {
     for await (const m of query({
       prompt: enriched,
@@ -3497,6 +3506,15 @@ async function orchestrate(userText) {
         set("ATLAS", patch);
       } else if (m.type === "result") {
         const full = String(m.result ?? "");
+        send("execution", {
+          state: m.subtype === "success" ? "done" : "failed",
+          provider: ACTIVE_PROVIDER,
+          model: orchestrationModel,
+          sandbox: ACTIVE_PROVIDER === "codex-cli" ? resolveCodexSandbox(orchestrationRouting, process.env) : "provider-managed",
+          route: ACTIVE_PROVIDER === "codex-cli" ? "orchestrator-required-directive" : "claude-sdk",
+          summary: full.slice(0, 220),
+          finishedAt: new Date().toISOString(),
+        });
         set("ATLAS", { state: m.subtype === "success" ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), lastToolArg: null, session: orchSession });
         if (full) {
           try {

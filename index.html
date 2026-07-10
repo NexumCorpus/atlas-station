@@ -451,6 +451,16 @@ input:focus-visible{outline:none}
 .tab:active{transform:none}
 .tab-panel{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto}
 .tab-panel[style*="display:none"]{display:none!important}
+/* Execution rail: the current run remains visible like a CLI status line. */
+#executionrail{display:flex;align-items:center;gap:7px;min-height:26px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(34,225,255,.025);font-size:9px;letter-spacing:.05em;color:var(--dim);overflow:hidden}
+#exec-dot{width:6px;height:6px;border-radius:50%;background:#57546a;flex:none}
+#executionrail.working #exec-dot{background:var(--cyan);box-shadow:0 0 9px rgba(34,225,255,.75);animation:vdot-pulse 1.2s ease-in-out infinite}
+#executionrail.done #exec-dot{background:var(--green)}
+#executionrail.failed #exec-dot{background:var(--red)}
+#exec-state{font-weight:700;text-transform:uppercase;color:#b9bed1;flex:none}
+#exec-route{color:var(--cyan);white-space:nowrap;flex:none}
+#exec-task{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;opacity:.8}
+#exec-sandbox{margin-left:auto;color:var(--amber);white-space:nowrap;flex:none}
 </style>
 </head>
 <body>
@@ -543,6 +553,9 @@ input:focus-visible{outline:none}
         </svg>
         <div><div class="atlas-wordmark">ATLAS</div><div class="atlas-tagline">// station</div><div class="sub" id="status">overseer · idle</div></div>
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:9px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
+      </div>
+      <div id="executionrail" class="idle" title="Live execution route and current Atlas state">
+        <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="exec-sandbox">—</span>
       </div>
       <div id="thread"></div>
       <div id="threadhint" style="display:none;position:absolute;top:50px;left:0;right:0;bottom:60px;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:.25;pointer-events:none">
@@ -1111,9 +1124,26 @@ input:focus-visible{outline:none}
     return null;
   }
 
+  function renderExecution(m){
+    var rail=$('executionrail'); if(!rail)return;
+    var state=m.state||'idle';
+    rail.className=state;
+    $('exec-state').textContent=state;
+    $('exec-route').textContent=(m.provider||'provider')+' · '+(m.model||'model')+' · '+(m.route||'route');
+    $('exec-task').textContent=m.task||m.summary||'No active Atlas turn.';
+    $('exec-sandbox').textContent=m.sandbox||'—';
+  }
+
   // ── fleet IPC listener ──────────────────────────────
   window.atlas.onFleet(function(m){
     if(!m)return;
+    if(m.type==="execution"){
+      renderExecution(m);
+      addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',
+        'Atlas '+(m.state||'state')+' · '+(m.model||'model')+' · '+(m.sandbox||'sandbox'),
+        m.state==='done'?'evdone':m.state==='failed'?'evfailed':'');
+      return;
+    }
     if(m.type==="autonomy_state"){
       if(window._autonomyUI){ if(m.on&&m.until)window._autonomyUI.start(m.until); else window._autonomyUI.stop(); }
       return;
