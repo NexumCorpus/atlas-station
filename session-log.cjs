@@ -5,8 +5,11 @@ const circulation = require('./circulation.cjs');
 const LOG_FILE = (dir) => path.join(dir, 'session_turns.ndjson');
 const MAX_TURNS = 20; // rolling window
 
-function appendTurn(text, memDir, hermes = null) {
-  const entry = { ts: new Date().toISOString(), text: text.slice(0, 1200),
+function appendTurn(text, memDir, hermes = null, role = 'atlas') {
+  if (!['user', 'atlas', 'autonomy', 'system'].includes(role)) {
+    throw new Error(`session-log: invalid role '${role}'`);
+  }
+  const entry = { ts: new Date().toISOString(), role, text: text.slice(0, 1200),
     hermes: circulation.envelope(hermes, 'transform', 'session-log') }; // cap per turn
   const file = LOG_FILE(memDir);
   let existing = [];

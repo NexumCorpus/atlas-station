@@ -374,6 +374,24 @@ function buildContext(task, opts = {}) {
     } catch (_) {}
   }
 
+  // Direct dialogue is a first-class continuity surface. Autonomous reports
+  // remain durable evidence, but must not crowd out Daniel's recent intent.
+  if (tier !== 'build') {
+    try {
+      const _turns = require('./session-log.cjs').getRecentTurns(memDir, 8)
+        .filter(t => (t.role || 'atlas') === 'user' || (t.role || 'atlas') === 'atlas');
+      // The current user message is supplied as the task below; do not echo it
+      // back into the context block.
+      if (_turns.length && _turns[_turns.length - 1].role === 'user' &&
+          _turns[_turns.length - 1].text === task) _turns.pop();
+      const direct = _turns.slice(-4).map(t => {
+        const who = t.role === 'user' ? 'Daniel' : 'Atlas';
+        return `${who}: ${String(t.text || '').slice(0, 320)}`;
+      });
+      if (direct.length) parts.push('[Recent Direct Dialogue]\n' + direct.join('\n'));
+    } catch (_) {}
+  }
+
   // 2. Recent run records ───────────────────────────────────────────────────
   const ms = _getMemstore();
   if (ms) {

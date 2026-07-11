@@ -159,8 +159,15 @@ let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
 // the thread produced by the previous one.
 let _orchQueue = Promise.resolve();
-function enqueueOrchestrate(userText) {
-  const turn = _orchQueue.then(() => orchestrate(userText));
+function enqueueOrchestrate(userText, source = 'user') {
+  const turn = _orchQueue.then(async () => {
+    // Persist Daniel's words at the exact execution seam. Queueing elsewhere
+    // would scramble dialogue order when several UI messages arrive together.
+    if (source === 'user' && _sessionLog) {
+      try { _sessionLog.appendTurn(String(userText || ''), path.join(REPO, 'memory'), null, 'user'); } catch {}
+    }
+    return orchestrate(userText, source);
+  });
   _orchQueue = turn.catch(() => {});
   return turn;
 }
@@ -3432,7 +3439,7 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
   } catch {} // fire-and-forget — crystallization failures are silent
 }
 
-async function orchestrate(userText) {
+async function orchestrate(userText, source = 'user') {
   let enriched, _ctxStats = null;
   if (_memcontext) {
     const _injectResult = _memcontext.inject(userText, { tier: 'full', returnStats: true });
@@ -3470,7 +3477,7 @@ async function orchestrate(userText) {
       const memDir = path.join(REPO, 'memory');
       const instr = _instructions.listInstructions(memDir);
       if (instr.length) {
-        dynamicRole = ORCH_ROLE + '\n\n**Your standing self-instructions (written by you in prior sessions):**\n' +
+        dynamicRole = ORGANISM_IDENTITY + '\n\n' + ORCH_ROLE + '\n\n**Your standing self-instructions (written by you in prior sessions):**\n' +
           instr.map(i => `- [${i.key}] ${i.instruction}`).join('\n');
       }
     } catch {}
@@ -3588,7 +3595,8 @@ async function orchestrate(userText) {
         // Capture ATLAS's reply for conversation crystallization
         if (_sessionLog && full) {
           try {
-            _sessionLog.appendTurn(full, path.join(REPO, 'memory'));
+            _sessionLog.appendTurn(full, path.join(REPO, 'memory'), null,
+              source === 'autonomy' ? 'autonomy' : 'atlas');
           } catch {}
         }
         // Crystallization every 5 ATLAS turns — fire-and-forget
@@ -3654,7 +3662,7 @@ function scheduleAutonomyTick(delay) {
     try {
       send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
       const _spawnedBefore = _maxCounter;
-      await enqueueOrchestrate(autonomyPrompt()); // its tail reschedules using autonomyBreather
+      await enqueueOrchestrate(autonomyPrompt(), 'autonomy'); // its tail reschedules using autonomyBreather
       const a = agents.get("ATLAS") || {};
       const reply = a.reply || a.summary || "";
       _sayLog({ autonomy: true, n: autonomyActions, idle: autonomyIdleStreak, reply, cost: a.cost ?? null });
@@ -3752,7 +3760,7 @@ Instructions:
 - Sign off with the current agent count / cost if relevant (0 agents, $0.00 so far).`;
 
   try {
-    await enqueueOrchestrate(briefingPrompt);
+    await enqueueOrchestrate(briefingPrompt, 'system');
   } catch (_) {
     // briefing failure is silent — never crash startup
   }
