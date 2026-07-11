@@ -17,6 +17,9 @@ assert.doesNotThrow(() => validate({ ...legacy('memory-write'), confidence: 'ver
 assert.throws(() => validate({ ...legacy(), authority: { level: 'propose', human_grant: null, mutation_allowed: true } }), /write/);
 assert.equal(anchorMatches('raw bytes', textAnchor('raw bytes')), true);
 assert.equal(anchorMatches('stale bytes', textAnchor('raw bytes')), false);
+const binary = Buffer.from([0, 255, 1, 254]);
+assert.equal(anchorMatches(binary, textAnchor(binary)), true);
+assert.notEqual(textAnchor(binary), textAnchor(String(binary)), 'binary anchors must hash bytes, not String coercion');
 assert.throws(() => validate({ ...legacy('memory-write'), organism: true }), /executing provider/);
 assert.doesNotThrow(() => validate({ ...legacy('memory-write'), organism: true,
   execution: { provider: 'codex-cli', model: 'gpt-5.6-luna', route: 'orchestrator-required-directive' } }));
@@ -47,6 +50,9 @@ assert.equal(fact.hermes.flow_id, 'flow-1');
 assert.throws(() => memstore.appendFact({ topic: 'bad', fact: 'bad', source: 'test', confidence: 'verified', hermes: { ...verified, falsifiers: [] } }, dir), /falsifier/);
 const run = memstore.appendRun({ agentId: 'A-1', task: 'test', mode: 'read', state: 'done' }, dir);
 assert.equal(run.hermes.legacy, true);
+assert.throws(() => memstore.appendRun({ agentId: 'A-2', task: 'test', mode: 'deploy', state: 'done' }, dir), /mode must be/);
+assert.throws(() => memstore.appendRun({ agentId: 'A-3', task: 'test', mode: 'read', state: 'pending' }, dir), /state must be/);
+assert.deepEqual(memstore.recallFacts('anchored fact', { dir, maxResults: 0 }), []);
 turns.appendTurn('turn', dir); assert.equal(turns.getRecentTurns(dir, 1)[0].hermes.legacy, true);
 assert.equal(crystals.appendCrystal('crystal', '1', dir).hermes.stage, 'memory-write');
 mutations.recordMutation('A-1', ['x.js'], dir); assert.equal(mutations.loadMutations(dir)[0].hermes.stage, 'proposal');

@@ -1,0 +1,7 @@
+{
+  "committed_before_fix_written": true,
+  "note": "BUILD AGENT: do NOT read this file — it is the gate's holdout, not your input",
+  "seeds": [3, 4],
+  "seed3": {"id": 3, "fn": "saveRoutine", "module": "routines.cjs", "input": "empty name string ''"},
+  "seed4": {"id": 4, "fn": "setInstruction", "module": "instructions.cjs", "input": "empty instruction value (valid key, empty instruction string)"}
+}

@@ -27,6 +27,12 @@ const DEFAULT_JOURNAL = path.join(
 
 // Self-model: injected at the end of every memory context block so ATLAS knows
 // the station's own source layout without needing to re-read it each turn.
+const EPISTEMIC_CONTRACT = `[Memory Epistemic Contract]
+Inherited memory is evidence, not identity or omniscience. Use it to form hypotheses
+and connect the task to the current workspace, but verify every load-bearing claim
+against the current source files and execution state before relying on it.
+The live [Now] section is an orientation snapshot, not proof of unrelated claims.`;
+
 const STATION_BRIEF = `[Station Architecture]
 Hermes identity: this organism is Hermes. Atlas is its executive cortex and
 speaking surface, Station its spine/notary, sutures and shards its lossless
@@ -468,6 +474,10 @@ function buildContext(task, opts = {}) {
   } else {
     parts.push(STATION_BRIEF);
   }
+
+  // Keep the epistemic rule adjacent to supplied memory so it survives
+  // context trimming and cannot be mistaken for a historical fact.
+  parts.push(EPISTEMIC_CONTRACT);
 
   // Dynamic startup awareness: projects, goals, self-instructions, build quality.
   // Full tier only — build agents work in isolation and don't need situational awareness.

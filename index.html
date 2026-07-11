@@ -1119,8 +1119,10 @@ input:focus-visible{outline:none}
     }
   }
 
-  function lastPendingAtlas(){
-    for(var i=thread.length-1;i>=0;i--){if(thread[i].role==="atlas"&&thread[i].pending)return thread[i];}
+  // Pending replies are a FIFO: the sidecar serializes ATLAS turns, so the
+  // first unanswered bubble is the one that just completed.
+  function firstPendingAtlas(){
+    for(var i=0;i<thread.length;i++){if(thread[i].role==="atlas"&&thread[i].pending)return thread[i];}
     return null;
   }
 
@@ -1178,7 +1180,7 @@ input:focus-visible{outline:none}
           return;
         }
         agents.set("ATLAS",m);
-        var pend=lastPendingAtlas();
+        var pend=firstPendingAtlas();
         if(m.state==="working"){
           if(pend){pend.lastTool=m.lastTool||null;pend.lastToolArg=m.lastToolArg||null;pend.activity=m.summary||null;}
           setTyping(true);
@@ -1312,7 +1314,7 @@ input:focus-visible{outline:none}
       prow.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
         + '<span class="ppri ' + esc(m.priority || 'medium') + '">' + esc((m.priority || 'medium').toUpperCase()) + '</span>'
         + '<span class="ptitle">' + esc(m.description || m.area || '') + '</span>'
-        + (m._score != null ? '<span style="font-size:8px;color:var(--dim);margin-left:auto">#' + Number(m._score).toFixed(0) + '</span>' : '')
+        + (m._score != null ? '<span style="font-size:8px;color:var(--dim);margin-left:auto">score ' + Number(m._score).toFixed(0) + '</span>' : '')
         + '</div>'
         + (m.area && m.description && m.area !== m.description ? '<div class="pdesc">' + esc(m.area) + '</div>' : '')
         + '<div class="pbtns">'
@@ -2016,6 +2018,21 @@ input:focus-visible{outline:none}
     say(text);
   }
 
+  // One submission path for Enter and the send button. Keeping routing and
+  // draft cleanup together prevents keyboard/click behavior from drifting.
+  function submitComposer(){
+    var input = document.getElementById('say');
+    if (!input) return false;
+    var text = input.value.trim();
+    if (!text) return false;
+    submitFromUI(text);
+    input.value = '';
+    input.style.height = 'auto';
+    savePrefs({ draft: '' });
+    input.focus();
+    return true;
+  }
+
   // Parse a command packet out of an ATLAS reply. Returns {prose, options} —
   // options is [] when there's no packet. The packet is stripped from the prose
   // so the raw JSON never renders as text.
@@ -2462,6 +2479,11 @@ input:focus-visible{outline:none}
 
   $('say').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey && $('say').value.trim()) {
+      e.preventDefault();
+      submitComposer();
+      return;
+      /* Legacy inline routing retained below only as unreachable source until
+         the surrounding handler is removed in the next UI cleanup pass.
       var sayEl2 = $('say');
       var text = sayEl2.value.trim();
       var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
@@ -2479,7 +2501,7 @@ input:focus-visible{outline:none}
       say(text);
       sayEl2.value = '';
       sayEl2.style.height = 'auto';
-      savePrefs({ draft: '' });
+      savePrefs({ draft: '' }); */
     }
   });
 
@@ -2967,6 +2989,10 @@ input:focus-visible{outline:none}
   var sendbtn = document.getElementById('sendbtn');
   if (sendbtn) {
     sendbtn.addEventListener('click', function() {
+      submitComposer();
+      return;
+      /* Legacy duplicate routing retained below only as unreachable source
+         until the surrounding handler is removed in the next UI cleanup pass.
       var text = document.getElementById('say').value.trim();
       if (!text) return;
       var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
@@ -2982,7 +3008,7 @@ input:focus-visible{outline:none}
       var sayEl = document.getElementById('say');
       sayEl.value = ''; sayEl.style.height = 'auto';
       savePrefs({ draft: '' });
-      sayEl.focus();
+      sayEl.focus(); */
     });
   }
 

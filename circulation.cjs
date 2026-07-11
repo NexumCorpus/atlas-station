@@ -79,7 +79,12 @@ function envelope(packet, fallbackStage, actor) {
 }
 
 function textAnchor(text) {
-  return `sha256:${crypto.createHash('sha256').update(String(text), 'utf8').digest('hex')}`;
+  // Preserve exact bytes for binary payloads; do not silently rewrite them
+  // through String() before provenance hashing.
+  const input = Buffer.isBuffer(text) || text instanceof Uint8Array
+    ? Buffer.from(text)
+    : Buffer.from(String(text), 'utf8');
+  return `sha256:${crypto.createHash('sha256').update(input).digest('hex')}`;
 }
 
 function anchorMatches(text, anchor) {

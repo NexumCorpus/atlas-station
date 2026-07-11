@@ -155,6 +155,16 @@ let pulseCount = 0;
 let orchTurnCount = 0;
 let _completedBuildCount = 0; // triggers improvement cycle every N builds
 
+// Codex resume threads are stateful and cannot safely accept concurrent turns.
+// Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
+// the thread produced by the previous one.
+let _orchQueue = Promise.resolve();
+function enqueueOrchestrate(userText) {
+  const turn = _orchQueue.then(() => orchestrate(userText));
+  _orchQueue = turn.catch(() => {});
+  return turn;
+}
+
 // Restore persistent session counters from prior runs
 if (_sessionState) {
   try {
@@ -3644,7 +3654,7 @@ function scheduleAutonomyTick(delay) {
     try {
       send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
       const _spawnedBefore = _maxCounter;
-      await orchestrate(autonomyPrompt()); // its tail reschedules using autonomyBreather
+      await enqueueOrchestrate(autonomyPrompt()); // its tail reschedules using autonomyBreather
       const a = agents.get("ATLAS") || {};
       const reply = a.reply || a.summary || "";
       _sayLog({ autonomy: true, n: autonomyActions, idle: autonomyIdleStreak, reply, cost: a.cost ?? null });
@@ -3742,7 +3752,7 @@ Instructions:
 - Sign off with the current agent count / cost if relevant (0 agents, $0.00 so far).`;
 
   try {
-    await orchestrate(briefingPrompt);
+    await enqueueOrchestrate(briefingPrompt);
   } catch (_) {
     // briefing failure is silent — never crash startup
   }
@@ -3816,7 +3826,7 @@ async function pollSayInbox() {
   if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); _sayLog({ control: 'autonomy-stop' }); _sayBusy = false; return; }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
-    await orchestrate(txt);
+    await enqueueOrchestrate(txt);
     const a = agents.get('ATLAS') || {};
     _sayLog({ prompt: txt.slice(0, 300), reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
   } catch (e) {
@@ -3828,7 +3838,12 @@ setInterval(pollSayInbox, 2500);
 
 process.on("message", (m) => {
   if (!m) return;
-  if (m.t === "say") { if (autonomyEnabled) stopAutonomy("you're back — window ended early"); orchestrate(m.text); } // Daniel's return ends the window
+  // ATLAS turns are serialized; see enqueueOrchestrate above.
+  if (m.t === "say") {
+    if (autonomyEnabled) stopAutonomy("you're back — window ended early");
+    enqueueOrchestrate(m.text);
+    return;
+  }
   else if (m.t === "autonomy") { if (m.on) startAutonomy(m.minutes); else stopAutonomy("stopped by you"); }
   else if (m.t === "dispatch") runAgent(m.id, m.task, { mode: m.mode, cwd: m.cwd });
   else if (m.t === "reply") replyAgent(m.id, m.text);

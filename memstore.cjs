@@ -171,6 +171,12 @@ function appendRun(run, dir = DEFAULT_DIR) {
   if (!task)    throw new Error('appendRun: missing required field: task');
   if (!mode)    throw new Error('appendRun: missing required field: mode');
   if (!state)   throw new Error('appendRun: missing required field: state');
+  if (!['read', 'build'].includes(String(mode))) {
+    throw new Error('appendRun: mode must be "read" or "build"');
+  }
+  if (!['done', 'failed'].includes(String(state))) {
+    throw new Error('appendRun: state must be "done" or "failed"');
+  }
 
   const entry = {
     ts:             new Date().toISOString(),
@@ -204,6 +210,8 @@ function appendRun(run, dir = DEFAULT_DIR) {
 function recallFacts(query, { dir = DEFAULT_DIR, maxResults = 5 } = {}) {
   const tokens = (query || '').toLowerCase().split(/\W+/).filter(t => t.length > 2);
   if (!tokens.length) return [];
+  const limit = Number.isFinite(maxResults) ? Math.max(0, Math.floor(maxResults)) : 5;
+  if (limit === 0) return [];
 
   const lines = _loadLines(path.join(dir, FACTS_FILE));
   return lines
@@ -215,8 +223,8 @@ function recallFacts(query, { dir = DEFAULT_DIR, maxResults = 5 } = {}) {
       return { entry, score };
     })
     .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults)
+    .sort((a, b) => b.score - a.score || String(b.entry.ts || '').localeCompare(String(a.entry.ts || '')) || String(b.entry.id || '').localeCompare(String(a.entry.id || '')))
+    .slice(0, limit)
     .map(({ entry }) => entry);
 }
 
