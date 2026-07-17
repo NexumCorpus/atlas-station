@@ -58,5 +58,8 @@ docs/Atlas-Capstone.pdf
 .gm/*
 !.gm/disciplines/
 !.gm/disciplines/**
+docs/SELF_STATE.md
+.gm/disciplines/codeinsight/
+.gm/disciplines/codeinsight-manifest/
 .gm/browser-profile/
 .gm/browser-profile-*/
