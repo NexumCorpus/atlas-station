@@ -122,7 +122,12 @@ function makeMessageHandler(proc) {
           if (recentMergeConflicts.length > 0) {
             _def.deferTask(
               'Retry merge-conflict builds: ' + recentMergeConflicts.map(o => o.agentId).join(', ') + '. Use staged_verify_build first, then re-attempt.',
-              'auto-deferred by daemon: merge_conflict recovery',
+              {
+                reason: 'Auto-deferred by daemon: merge_conflict recovery',
+                blocker: 'Recent build outcomes include merge_conflict failures that were not repaired in the daemon turn',
+                nextAction: 'Run staged_verify_build for the listed agent ids, then retry the merge-conflict builds',
+                validationCondition: 'Each retried build either passes staged verification or records a fresh blocker with the failing command output',
+              },
               join(DIR, 'memory')
             );
             writeLog({ event: 'merge-conflict-deferred', ids: recentMergeConflicts.map(o => o.agentId) });

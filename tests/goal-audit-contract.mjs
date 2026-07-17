@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const source = fs.readFileSync(path.join(root, 'scripts', 'audit-goals.mjs'), 'utf8');
+assert.match(source, /goodRate > qualityTarget/);
+assert.match(source, /pendingHigh === 0/);
+assert.match(source, /stateMatchesEvidence/);
+assert.match(source, /strict && !report\.consistent/);
+assert.match(source, /args\.find\(arg => arg !== '--strict'\)/);
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-goal-audit-'));
+fs.writeFileSync(path.join(tempDir, 'outcomes.ndjson'), JSON.stringify({ rating: 'good' }) + '\n');
+fs.writeFileSync(path.join(tempDir, 'proposals.ndjson'), '');
+fs.writeFileSync(path.join(tempDir, 'goals.ndjson'), JSON.stringify({ id: 'G-test', area: 'quality', state: 'active' }) + '\n');
+const script = path.join(root, 'scripts', 'audit-goals.mjs');
+const normal = spawnSync(process.execPath, [script, tempDir], { cwd: root, encoding: 'utf8' });
+assert.equal(normal.status, 0, 'default audit reports contradictions without failing');
+assert.equal(JSON.parse(normal.stdout).consistent, false);
+const strict = spawnSync(process.execPath, [script, tempDir, '--strict'], { cwd: root, encoding: 'utf8' });
+assert.equal(strict.status, 2, 'strict audit fails on evidence/status contradiction');
+assert.equal(JSON.parse(strict.stdout).consistent, false);
+fs.rmSync(tempDir, { recursive: true, force: true });
+console.log('goal audit contract: ALL PASS');

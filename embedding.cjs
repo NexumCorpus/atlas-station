@@ -11,10 +11,10 @@ async function _getPipeline() {
   if (!_pipelinePromise) {
     _pipelinePromise = (async () => {
       try {
-        const { pipeline, env } = await import('@xenova/transformers');
+        const { pipeline, env } = await import('@huggingface/transformers');
         env.cacheDir = path.join(__dirname, '.cache', 'transformers');
         env.allowLocalModels = false;
-        return await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+        return await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'q8' });
       } catch (e) {
         console.error('[embedding] model load failed:', e.message);
         return null;

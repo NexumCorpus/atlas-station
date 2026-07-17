@@ -392,6 +392,7 @@ input:focus-visible{outline:none}
 /* ── send button ──────────────────────────────── */
 #sendbtn:hover{background:rgba(157,107,255,.22);border-color:rgba(157,107,255,.5);color:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.2)}
 #sendbtn:active{transform:translateY(1px);background:rgba(157,107,255,.3)}
+#sendbtn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none;transform:none}
 /* ── character counter ────────────────────────── */
 #say-counter{font-size:9px;color:var(--dim);letter-spacing:.04em;flex:none;font-variant-numeric:tabular-nums;transition:color .2s;min-width:24px;text-align:right}
 #say-counter.warn{color:var(--amber)}
@@ -563,7 +564,7 @@ input:focus-visible{outline:none}
         <div style="font-size:11px;letter-spacing:.08em">type to talk to ATLAS</div>
         <div style="font-size:9px;color:var(--dim)">? for shortcuts</div>
       </div>
-      <div id="typing"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
+      <div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">↓</button>
     </div>
     <div id="coldivider"></div>
@@ -677,8 +678,8 @@ input:focus-visible{outline:none}
 
   <div class="bar boot-seq">
     <span class="to" id="barprefix">↳ ATLAS</span>
-    <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" autofocus style="overflow:hidden;"></textarea>
-    <button id="sendbtn" title="Send (Enter)" style="flex:none;font-family:inherit;font-size:11px;padding:5px 10px;background:rgba(157,107,255,.13);border:1px solid rgba(157,107,255,.3);border-radius:4px;color:rgba(157,107,255,.9);cursor:pointer;transition:all .15s;letter-spacing:.06em;line-height:1">↵</button>
+    <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;"></textarea>
+    <button id="sendbtn" title="Send (Enter)" aria-label="Send message" disabled style="flex:none;font-family:inherit;font-size:11px;padding:5px 10px;background:rgba(157,107,255,.13);border:1px solid rgba(157,107,255,.3);border-radius:4px;color:rgba(157,107,255,.9);cursor:pointer;transition:all .15s;letter-spacing:.06em;line-height:1">↵</button>
     <span id="say-counter"></span>
     <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
     <span class="hint">enter</span>
@@ -1146,12 +1147,34 @@ input:focus-visible{outline:none}
         m.state==='done'?'evdone':m.state==='failed'?'evfailed':'');
       return;
     }
+    if(m.type==="fleet_lifecycle"){
+      var _lifeText = m.state === 'started'
+        ? 'fleet sidecar started · generation '+m.generation+' · pid '+m.pid
+        : m.state === 'failed'
+          ? 'fleet sidecar start failed · generation '+m.generation+' · retrying'
+        : 'fleet sidecar exited · generation '+m.generation+' · '+(m.restarting?'restarting':'stopped');
+      thread.push({role:'system',text:_lifeText,error:m.state==='failed'||(m.state==='exited'&&!m.restarting),ts:Date.now()});
+      renderThread();
+      return;
+    }
     if(m.type==="autonomy_state"){
       if(window._autonomyUI){ if(m.on&&m.until)window._autonomyUI.start(m.until); else window._autonomyUI.stop(); }
       return;
     }
     if(m.type==="autonomy_tick"){
       thread.push({role:'system',text:'⟳ acting autonomously — turn '+(m.n||'')+(m.until?' · '+Math.max(0,Math.round((m.until-Date.now())/60000))+'m left':''),error:false,ts:Date.now()});
+      renderThread();
+      return;
+    }
+    if(m.type==="autonomy_progress"){
+      var _progressText = m.failed
+        ? '⟳ autonomy retry scheduled — '+(m.failure||'turn failed').slice(0,120)+' · '+Math.round((m.nextDelay||0)/1000)+'s'
+        : m.discovery
+          ? '⟳ autonomy forced discovery — idle streak '+(m.idleStreak||0)
+          : m.rested
+            ? '⟳ autonomy backoff — idle streak '+(m.idleStreak||0)+' · '+Math.round((m.nextDelay||0)/1000)+'s'
+            : '⟳ autonomy progress — active';
+      thread.push({role:'system',text:_progressText,error:!!m.failed,ts:Date.now()});
       renderThread();
       return;
     }
@@ -1189,13 +1212,13 @@ input:focus-visible{outline:none}
           clearStreamingMsg(); // remove live stream element before final render
           var txt=m.reply||m.summary||"(no reply)";
           if(pend){
-            pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;
+            pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;pend.error=m.state==="failed";
             pend.ts=pend.ts||Date.now();
           } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
-            thread.push({role:"atlas",text:txt,cost:m.cost,ts:Date.now()});
+            thread.push({role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()});
           }
           setTyping(false);
-          $('status').textContent="overseer · idle";
+          $('status').textContent=m.state==="failed"?"overseer · failed":"overseer · idle";
         }
         renderThread();
       } else {
@@ -1334,7 +1357,7 @@ input:focus-visible{outline:none}
       var grow = document.createElement('div');
       grow.className = 'grow' + (m.state !== 'active' ? ' gdone' : '');
       grow.dataset.gid = m.id;
-      grow.innerHTML = '<span class="gcheck" style="cursor:pointer" title="mark complete">✓</span>'
+      grow.innerHTML = '<button type="button" class="gcheck" aria-label="Complete goal '+esc(m.text||'goal')+'" title="mark complete">✓</button>'
         + '<span class="gpri ' + esc(m.priority||'medium') + '">' + esc((m.priority||'M')[0].toUpperCase()) + '</span>'
         + '<span class="gtitle">' + esc(m.text||'') + '</span>';
       if (gs) { gs.appendChild(grow); updateGoalCount(); }
@@ -1363,12 +1386,13 @@ input:focus-visible{outline:none}
       row.innerHTML = '<span class="nicon">' + (icons[m.type] || '◈') + '</span>'
         + '<span class="nbody">' + esc(m.text || '')
         + '<div class="nts">' + esc((m.ts||'').replace('T',' ').slice(0,16)) + '</div></span>'
-        + '<button class="ndism" data-nid="' + esc(m.id) + '">×</button>';
+        + '<button class="ndism" data-nid="' + esc(m.id) + '" aria-label="Dismiss notification">×</button>';
       tray.insertBefore(row, tray.firstChild);
       // Add dismiss-all button if not already present
       if (!tray.querySelector('.ndismall')) {
         var da = document.createElement('button');
         da.className = 'ndismall';
+        da.setAttribute('aria-label', 'Dismiss all notifications');
         da.textContent = 'dismiss all';
         da.style.cssText = 'font-size:9px;border:none;background:transparent;color:var(--dim);cursor:pointer;padding:3px 8px;float:right;letter-spacing:.08em';
         da.addEventListener('click', function() { tray.innerHTML=''; tray.style.display='none'; });
@@ -1620,7 +1644,7 @@ input:focus-visible{outline:none}
             '<div class="msg-text">' + renderMd(pk.prose) + '</div>' +
             packetHtml +
           '</div>' +
-          '<span class="msg-copy" onclick="copyMsg(' + i + ')">copy</span>' +
+          '<button type="button" class="msg-copy" aria-label="Copy message" onclick="copyMsg(' + i + ')">copy</button>' +
         '</div>' + seam;
       }).join('');
     }
@@ -1750,7 +1774,7 @@ input:focus-visible{outline:none}
       if((a.model||'').includes('haiku'))modelbadge='<span class="mmodel mmodel-h">H</span>';
       else if((a.model||'').includes('opus'))modelbadge='<span class="mmodel mmodel-o">O</span>';
       var cancelBtn=(a.state==='working'||a.state==='needs-you')
-        ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel">✕</button>'
+        ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel" aria-label="Cancel agent '+esc(a.id)+'">✕</button>'
         :'';
       var costStr=a.cost&&a.cost>0?'<span>$'+Number(a.cost).toFixed(3)+'</span>':'';
       var turnsStr=a.turns?'<span>'+a.turns+'t</span>':'';
@@ -2029,8 +2053,18 @@ input:focus-visible{outline:none}
     input.value = '';
     input.style.height = 'auto';
     savePrefs({ draft: '' });
+    updateComposerState();
     input.focus();
     return true;
+  }
+
+  function updateComposerState(){
+    var input = document.getElementById('say');
+    var button = document.getElementById('sendbtn');
+    if (!input || !button) return;
+    var ready = !!input.value.trim();
+    button.disabled = !ready;
+    button.setAttribute('aria-disabled', ready ? 'false' : 'true');
   }
 
   // Parse a command packet out of an ATLAS reply. Returns {prose, options} —
@@ -2466,6 +2500,7 @@ input:focus-visible{outline:none}
         counter.textContent = len > 60 ? len : '';
         counter.className = len > 300 ? 'over' : len > 150 ? 'warn' : '';
       }
+      updateComposerState();
     });
     // Draft persistence
     var _draftTimer = null;
@@ -2540,7 +2575,7 @@ input:focus-visible{outline:none}
         e.target.textContent = '✓';
         e.target.style.color = 'var(--acid)';
         var titleEl = row.querySelector('.gtitle');
-        window.atlas.say('Goal completed: ' + gid + ' — ' + (titleEl ? titleEl.textContent : ''));
+        if (window.atlas.resolveGoal) window.atlas.resolveGoal(gid, 'done');
       }
     }
   });

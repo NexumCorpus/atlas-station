@@ -10,6 +10,7 @@ const RELATIONS = new Set(['supports', 'contradicts', 'elaborates', 'supersedes'
 // Add a directed edge: fromKey --relation--> toKey
 function addEdge(fromKey, relation, toKey, memDir) {
   if (!RELATIONS.has(relation)) throw new Error(`Unknown relation: ${relation}`);
+  fs.mkdirSync(memDir, { recursive: true });
   const edge = { fromKey, relation, toKey, ts: new Date().toISOString() };
   fs.appendFileSync(GRAPH_FILE(memDir), JSON.stringify(edge) + '\n', 'utf8');
   // If relation is 'supersedes', mark toKey as stale in a separate stale index
@@ -19,6 +20,7 @@ function addEdge(fromKey, relation, toKey, memDir) {
 
 // Mark a fact key as stale (superseded)
 function markStale(key, memDir) {
+  fs.mkdirSync(memDir, { recursive: true });
   const staleFile = path.join(memDir, 'stale_facts.ndjson');
   fs.appendFileSync(staleFile, JSON.stringify({ key, ts: new Date().toISOString() }) + '\n', 'utf8');
 }

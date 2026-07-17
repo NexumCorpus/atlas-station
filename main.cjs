@@ -7,8 +7,10 @@ const { spawn, execFile } = require("child_process");
 const path = require("path");
 
 const fs = require("fs");
+const goalStore = require("./goal-store.cjs");
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
+let fleetGeneration = 0;
 let lastHistory = null; const lastAgents = new Map(); let reloadTimer = null;
 
 function createWindow() {
@@ -49,6 +51,8 @@ function watchIndexForReload() {
 
 function startFleet() {
   if (fleet) return;
+  const generation = ++fleetGeneration;
+  const startedAt = new Date().toISOString();
   try {
     // Atlas is the operator's local organism. Its Codex provider must not
     // silently fall back to read-only after a restart; set the explicit
@@ -62,7 +66,9 @@ function startFleet() {
     fleet = spawn(NODE, [path.join(__dirname, "fleethost.mjs")], {
       cwd: __dirname, env: fleetEnv, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
+    if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "started", generation, pid: fleet.pid, startedAt });
   } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "failed", generation, startedAt, error: String((e && e.message) || e), restarting: true });
     if (win) win.webContents.send("fleet", { type: "error", m: String((e && e.message) || e) });
     return;
   }
@@ -75,15 +81,35 @@ function startFleet() {
   });
   if (fleet.stderr) fleet.stderr.on("data", () => {});
   fleet.on("exit", (code) => {
+    const generation = fleetGeneration;
+    const exitedAt = new Date().toISOString();
     fleet = null;
+    settleStaleAgents(generation, exitedAt);
     if (win) {
-      win.webContents.send("fleet", { type: "error", m: "fleet engine exited (code " + (code ?? "?") + ")" });
-      if (code !== 0 && code !== null) setTimeout(startFleet, 2000);
+      const restarting = code !== 0 && code !== null;
+      win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, restarting });
+      win.webContents.send("fleet", { type: "error", m: "fleet engine exited (generation " + generation + ", code " + (code ?? "?") + ")" });
+      if (restarting) setTimeout(() => { if (!fleet) startFleet(); }, 2000);
     }
   });
 }
 
 function stopFleet() { try { if (fleet) fleet.kill(); } catch (_) {} fleet = null; }
+
+function settleStaleAgents(generation, exitedAt) {
+  for (const [id, agent] of lastAgents) {
+    if (!agent || !['working', 'needs-you'].includes(agent.state)) continue;
+    const settled = {
+      ...agent,
+      state: 'interrupted',
+      summary: agent.summary || 'interrupted by fleet sidecar exit',
+      interruptedGeneration: generation,
+      ts: exitedAt,
+    };
+    lastAgents.set(id, settled);
+    if (win) win.webContents.send('fleet', settled);
+  }
+}
 
 ipcMain.on("dispatch", (_e, p) => {
   if (!fleet || !p || !p.task) return;
@@ -105,6 +131,16 @@ ipcMain.on("say", (_e, p) => {
 ipcMain.on("set-autonomy", (_e, p) => {
   if (!fleet) return;
   try { fleet.send({ t: "autonomy", on: !!(p && p.on), minutes: p && p.minutes }); } catch (_) {}
+});
+
+ipcMain.on("resolve-goal", (_e, p) => {
+  if (!p || !p.id) return;
+  try {
+    const goal = goalStore.resolveGoal(p.id, p.outcome === "abandoned" ? "abandoned" : "done", path.join(__dirname, "memory"), { source: "operator-ui" });
+    if (win && goal) win.webContents.send("fleet", { type: "goal_resolved", ...goal });
+  } catch (e) {
+    if (win) win.webContents.send("fleet", { type: "error", m: "goal resolution failed: " + e.message });
+  }
 });
 
 ipcMain.on("cancel", (_e, p) => {
@@ -214,9 +250,9 @@ ipcMain.handle("atlas:station-health", async () => {
     } catch { return []; }
   }
 
-  // Goals: active (not completed)
+  // Goals: active (both legacy "completed" and goal-store "done" are terminal)
   const allGoals = await readNdjson(path.join(memDir, "goals.ndjson"));
-  const goals = allGoals.filter(g => g.state !== "completed").map(g => ({ text: g.text, priority: g.priority, state: g.state }));
+  const goals = allGoals.filter(g => g.state !== "completed" && g.state !== "done").map(g => ({ text: g.text, priority: g.priority, state: g.state }));
 
   // Proposals: pending or deferred
   const allProposals = await readNdjson(path.join(memDir, "proposals.ndjson"));

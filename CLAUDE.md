@@ -1,3 +1,4 @@
+@AGENTS.md
 # ATLAS Station — project instructions
 
 ## Shell tool permissions

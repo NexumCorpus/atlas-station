@@ -24,7 +24,8 @@ function writeSession(session, dir) {
     const file = path.join(dir, SESSION_FILE);
     const entry = { ...session, hermes: circulation.envelope(session?.hermes, 'memory-write', 'session-narrative') };
     fs.appendFileSync(file, JSON.stringify(entry) + '\n', 'utf8');
-  } catch (_) {}
+    return entry;
+  } catch (_) { return null; }
 }
 
 function buildSessionContext(dir) {

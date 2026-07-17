@@ -38,7 +38,7 @@ function assertMeasurement(measurement, task) {
  * Record one complete, independently observed run of the canonical suite.
  * `measurements` must contain exactly one scored observation per task.
  */
-export function measureVariant({ variantId, measurements, atlasDir, taskDir = DEFAULT_TASK_DIR, source = "manual-observation" }) {
+export function measureVariant({ variantId, measurements, atlasDir, taskDir = DEFAULT_TASK_DIR, source, runId }) {
   if (!variantId) throw new Error("variantId is required");
   if (!Array.isArray(measurements)) throw new Error("measurements must be an array");
 
@@ -47,6 +47,12 @@ export function measureVariant({ variantId, measurements, atlasDir, taskDir = DE
   if (byId.size !== measurements.length) throw new Error("duplicate taskId in measurements");
   if (measurements.length !== tasks.length) {
     throw new Error(`exactly ${tasks.length} measurements are required`);
+  }
+  if (typeof source !== "string" || !source.trim()) {
+    throw new Error("source is required to preserve measurement provenance");
+  }
+  if (typeof runId !== "string" || !runId.trim()) {
+    throw new Error("runId is required to make the observation traceable");
   }
 
   const pop = loadPopulation(atlasDir);
@@ -63,6 +69,7 @@ export function measureVariant({ variantId, measurements, atlasDir, taskDir = DE
       measuredAt,
       notes: measurement.notes.trim(),
       source,
+      runId: runId.trim(),
     });
   }
 
@@ -92,7 +99,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   }
   try {
     const input = JSON.parse(fs.readFileSync(path.resolve(inputFile), "utf8"));
-    const result = measureVariant({ variantId, measurements: input.measurements, atlasDir });
+    const result = measureVariant({
+      variantId,
+      measurements: input.measurements,
+      atlasDir,
+      source: input.source,
+      runId: input.runId,
+    });
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {
     console.error(`Measurement rejected: ${error.message}`);

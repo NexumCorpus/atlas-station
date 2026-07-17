@@ -8,6 +8,7 @@ let _fleetListener = null;
 contextBridge.exposeInMainWorld("atlas", {
   say: (text) => ipcRenderer.send("say", { text }),
   setAutonomy: (on, minutes) => ipcRenderer.send("set-autonomy", { on, minutes }),
+  resolveGoal: (id, outcome) => ipcRenderer.send("resolve-goal", { id, outcome }),
   dispatch: (task, cwd, mode) => ipcRenderer.send("dispatch", { task, cwd, mode }),
   replyAgent: (id, text) => ipcRenderer.send("reply", { id, text }),
   selfBuild: () => ipcRenderer.send("self-build"),

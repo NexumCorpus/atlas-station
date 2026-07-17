@@ -105,8 +105,10 @@ function loadJournalExcerpt(journalPath, maxChars) {
   try {
     const raw  = fs.readFileSync(journalPath, 'utf8');
     const body = raw.replace(/^---[\s\S]*?---\r?\n?/, '').trim();
-    if (body.length <= maxChars) return body;
-    return body.slice(0, maxChars) + '\n[... truncated]';
+    const limit = maxChars == null ? 2000 : Math.max(0, Math.floor(Number(maxChars) || 0));
+    if (limit === 0) return '';
+    if (body.length <= limit) return body;
+    return body.slice(0, limit) + '\n[... truncated]';
   } catch {
     return '';
   }
@@ -485,7 +487,7 @@ function buildContext(task, opts = {}) {
     } catch {}
   }
 
-  if (!parts.length) return returnStats ? { context: '', stats: { total: 0, sections: [], budget: effectiveMaxChars } } : '';
+  if (!parts.length) return returnStats ? { context: '', stats: { total: 0, sections: [], budget: effectiveMaxChars, trimmedSections: [] } } : '';
   // Include station architecture brief (compact for build agents)
   if (tier === 'build') {
     parts.push('[Working in: E:\\atlas-station isolated worktree. Do not orchestrate or call fleet tools — implement only.]');
@@ -523,6 +525,7 @@ function buildContext(task, opts = {}) {
     /^\[Recent Fleet Runs\]/,
     /^\[Relevant Facts/,
   ];
+  const trimmedSections = [];
   let body = parts.join('\n\n');
   if (body.length > effectiveMaxChars) {
     for (const pattern of TRIM_ORDER) {
@@ -530,10 +533,14 @@ function buildContext(task, opts = {}) {
       const idx = parts.findIndex(p => pattern.test(p));
       if (idx === -1) continue;
       const excess = body.length - effectiveMaxChars;
+      const sectionHeader = (parts[idx].split('\n')[0] || '(unnamed)')
+        .replace(/\s+\|\s+loaded .*\]$/, ']');
       if (excess >= parts[idx].length - 50) {
+        trimmedSections.push(sectionHeader + ':removed');
         parts.splice(idx, 1);
       } else {
         const keep = Math.max(100, parts[idx].length - excess);
+        trimmedSections.push(sectionHeader + ':partial');
         parts[idx] = parts[idx].slice(0, keep) + '\n[... trimmed]';
       }
       body = parts.join('\n\n');
@@ -546,7 +553,7 @@ function buildContext(task, opts = {}) {
       const header = lines[0] || '(unnamed)';
       return { header: header.slice(0, 40), chars: s.length };
     });
-    return { context: assembled, stats: { total: assembled.length, sections: sectionStats, budget: effectiveMaxChars } };
+    return { context: assembled, stats: { total: assembled.length, sections: sectionStats, budget: effectiveMaxChars, trimmedSections } };
   }
   return assembled;
 }
@@ -581,10 +588,19 @@ function inject(task, opts = {}) {
  */
 function buildContextStats(task, opts = {}) {
   try {
-    const ctx = buildContext(task, opts);
+    const built = buildContext(task, { ...opts, returnStats: true });
+    if (built && built.stats) {
+      return {
+        totalChars: built.stats.total,
+        sections: built.stats.sections,
+        budget: built.stats.budget,
+        trimmedSections: built.stats.trimmedSections || [],
+      };
+    }
+    const ctx = typeof built === 'string' ? built : '';
     const sections = ctx.split('\n\n').filter(s => s.startsWith('['));
-    return { totalChars: ctx.length, sections: sections.map(s => ({ header: s.split('\n')[0], chars: s.length })) };
-  } catch { return { totalChars: 0, sections: [] }; }
+    return { totalChars: ctx.length, sections: sections.map(s => ({ header: s.split('\n')[0], chars: s.length })), trimmedSections: [] };
+  } catch { return { totalChars: 0, sections: [], budget: 0, trimmedSections: [] }; }
 }
 
 /**
@@ -609,6 +625,10 @@ async function injectAsync(task, opts = {}) {
       const semanticFacts = await ms.recallFactsSemantic(task, { dir: memDir, maxResults: factLimit });
       if (semanticFacts && semanticFacts.length > 0) {
         const ctx = buildContext(task, { ...opts, _semanticFacts: semanticFacts });
+        if (opts.returnStats) {
+          const mem = (ctx && ctx.context) || '';
+          return { context: mem ? `${mem}\n\n${task}` : task, stats: (ctx && ctx.stats) || null };
+        }
         if (!ctx) return task;
         return `${ctx}\n\n${task}`;
       }

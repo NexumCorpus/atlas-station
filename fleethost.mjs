@@ -15,6 +15,7 @@ import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
+import { followAutonomyTurn } from "./scripts/autonomy-policy.mjs";
 const _require = createRequire(import.meta.url);
 
 // Root-cause guard for the query() shape bug class.
@@ -740,7 +741,7 @@ const resolveGoalTool = tool(
   async (args) => {
     if (!_goals) return { content: [{ type: 'text', text: 'goal-store not available' }] };
     try {
-      const g = _goals.resolveGoal(args.id, args.outcome, path.join(REPO, 'memory'));
+      const g = _goals.resolveGoal(args.id, args.outcome, path.join(REPO, 'memory'), { source: 'atlas-tool' });
       if (!g) return { content: [{ type: 'text', text: `Goal ${args.id} not found` }] };
       send('goal_resolved', g);
       return { content: [{ type: 'text', text: `Goal ${g.id} marked ${g.state}` }] };
@@ -755,13 +756,21 @@ const deferTaskTool = tool(
   "Schedule a task to run automatically on ATLAS's next startup. Use when you want to continue work in the next session without Daniel having to ask — ATLAS programs its own future. The task will be dispatched as a subagent when the station starts.",
   {
     task: z.string().describe("The task to run on next startup (will be dispatched as a subagent)"),
-    reason: z.string().optional().describe("Why this should run next time"),
+    reason: z.string().optional().describe("Why this should run next time, in addition to blocker and next_action"),
+    blocker: z.string().describe("Concrete blocker that prevented doing this task now"),
+    next_action: z.string().describe("First concrete action the next session should take"),
+    validation_condition: z.string().describe("Concrete condition that proves the resumed work is valid or ready to retry"),
     mode: z.enum(["read", "build"]).optional().describe("Agent mode (default: read)"),
   },
   async (args) => {
     if (!_deferred) return { content: [{ type: 'text', text: 'deferred module not available' }] };
     try {
-      const entry = _deferred.deferTask(args.task, args.reason, path.join(REPO, 'memory'));
+      const entry = _deferred.deferTask(args.task, {
+        reason: args.reason,
+        blocker: args.blocker,
+        nextAction: args.next_action,
+        validationCondition: args.validation_condition,
+      }, path.join(REPO, 'memory'));
       send('deferred', entry);
       return { content: [{ type: 'text', text: `Deferred: ${entry.id} — will run on next startup` }] };
     } catch (e) {
@@ -2182,7 +2191,12 @@ const drainProposalsTool = tool(
       let deferred = 0;
       for (const p of toDefer) {
         const text = p.description || p.text || p.proposal || String(p);
-        _deferred.deferTask(text, `drained from proposals (${priority})`, memDir);
+        _deferred.deferTask(text, {
+          reason: `Drained from proposals (${priority})`,
+          blocker: 'Proposal was pending in the ledger without an active execution owner',
+          nextAction: `Start the deferred proposal and ground it in the proposal record: ${text.slice(0, 120)}`,
+          validationCondition: 'The proposal is either converted into an active build with evidence, explicitly rejected as stale, or deferred again with fresh evidence',
+        }, memDir);
         deferred++;
       }
       return { content: [{ type: 'text', text: `Deferred ${deferred} proposals (priority: ${priority}).` }] };
@@ -3257,7 +3271,7 @@ recall_memory(query,maxResults?) — retrieve relevant facts
 set_goal(goal,priority?,area?) — record a persistent intention
 list_goals(status?) — review goals
 resolve_goal(id,outcome) — mark goal done or abandoned
-defer_task(task,reason?,mode?) — schedule for next startup; deferred tasks auto-execute at next startup (up to 3)
+defer_task(task,blocker,next_action,validation_condition,reason?,mode?) — schedule for next startup with a concrete blocker, first next action, and validation condition; deferred tasks auto-execute at next startup (up to 3)
 memory_health() — fact/goal/proposal/pulse counts
 notify_self(text,type?) — leave notification for Daniel
 self_assess() — structured current-state snapshot
@@ -3631,10 +3645,12 @@ let autonomyIdleStreak = 0;         // consecutive turns where ATLAS found nothi
 let autonomyBreather = 4000;        // gap before the next turn — grows on idle (backoff)
 const AUTONOMY_BREATHER_MS = 4000;  // base breather between active turns
 const AUTONOMY_BREATHER_MAX = 300000; // cap the idle backoff at 5 min
-const AUTONOMY_MAX_IDLE = 4;        // close the window early after this many consecutive rest turns
+// Idle turns back off, but never close the operator-granted window. The policy
+// forces a discovery turn at a bounded cadence instead.
 
-function autonomyPrompt() {
+function autonomyPrompt(discovery = false) {
   const leftMin = Math.max(0, Math.round((autonomyDeadline - Date.now()) / 60000));
+  const discoveryDirective = discovery ? '\\n\\nThis is a forced discovery turn after repeated idle results: inspect the proposal audit, current source, git diff, tests, and runtime evidence to find one safe concrete improvement or diagnostic. Do not emit [REST] merely because the ordinary queue is empty; if no mutation is justified, perform a bounded read-only investigation and leave its evidence in the thread.' : '';
   return `[AUTONOMY WINDOW] Daniel granted you an unbounded-work window — he is away (a nap / a break) and trusts you to advance the work on your own volition. About ${leftMin} minute(s) remain.
 
 This is YOUR time to fill the fractal spiral and push the alien-architecture forward. You decide the scope: take as MANY useful actions this turn as you see fit — build, verify, prune, research, consolidate memory, seal spiral turns, propose and auto_build. This is NOT "one bounded action"; it is real, self-directed work toward the convergence. Go deep. Don't manufacture busywork — if the best move is to think, design, or seal a crystal, do that — but you are free.
@@ -3643,7 +3659,7 @@ Standing limits that hold even here: NOTHING irreversible or outward-facing auto
 
 If there is genuinely nothing worth doing right now, reply with exactly [REST] and take no other action — do not manufacture busywork or re-report unchanged state. Resting is correct when the queue is empty; the loop backs off and checks less often, and closes early if you rest repeatedly.
 
-Work now. The loop brings you back to continue until the window closes.`;
+Work now. The loop brings you back to continue until the window closes.${discoveryDirective}`;
 }
 
 function cancelAutonomyTick() { if (autonomyTimer) { clearTimeout(autonomyTimer); autonomyTimer = null; } }
@@ -3653,35 +3669,56 @@ function scheduleAutonomyTick(delay) {
   if (!autonomyEnabled) return;
   autonomyTimer = setTimeout(async () => {
     autonomyTimer = null;
-    if (!autonomyEnabled || autonomyBusy || _sayBusy) return; // never overlap a bridge turn
+    if (!autonomyEnabled) return;
+    if (autonomyBusy || _sayBusy) { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // never overlap a bridge turn
     if (Date.now() >= autonomyDeadline) { stopAutonomy("the time window elapsed"); return; }
     const atlas = agents.get("ATLAS");
     if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy → wait
     autonomyBusy = true;
     autonomyActions++;
+    const turnPlan = followAutonomyTurn({ rested: true, idleStreak: autonomyIdleStreak });
     try {
-      send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline });
+      send("autonomy_tick", { ts: new Date().toISOString(), n: autonomyActions, until: autonomyDeadline, discovery: turnPlan.discovery });
       const _spawnedBefore = _maxCounter;
-      await enqueueOrchestrate(autonomyPrompt(), 'autonomy'); // its tail reschedules using autonomyBreather
+      await enqueueOrchestrate(autonomyPrompt(turnPlan.discovery), 'autonomy'); // its tail reschedules using autonomyBreather
       const a = agents.get("ATLAS") || {};
       const reply = a.reply || a.summary || "";
-      _sayLog({ autonomy: true, n: autonomyActions, idle: autonomyIdleStreak, reply, cost: a.cost ?? null });
+      _sayLog({ autonomy: true, n: autonomyActions, idle: autonomyIdleStreak, discovery: turnPlan.discovery, reply, cost: a.cost ?? null });
       // Rest detection: ATLAS emitted [REST], or a cheap turn that spawned no agents.
       const rested = /\[REST\]/i.test(reply) || (_maxCounter === _spawnedBefore && (a.cost ?? 0) < 0.10);
-      if (rested) {
-        autonomyIdleStreak++;
-        if (autonomyIdleStreak >= AUTONOMY_MAX_IDLE) { stopAutonomy("rested " + AUTONOMY_MAX_IDLE + " turns — no work left, closing early"); return; }
-        autonomyBreather = Math.min(AUTONOMY_BREATHER_MAX, AUTONOMY_BREATHER_MS * Math.pow(2, autonomyIdleStreak)); // exp backoff
-      } else {
-        autonomyIdleStreak = 0;
-        autonomyBreather = AUTONOMY_BREATHER_MS; // active again → tight cadence
-      }
-    } catch { /* a failed turn must not wedge the window */ }
+      const follow = followAutonomyTurn({ rested, idleStreak: autonomyIdleStreak });
+      autonomyIdleStreak = follow.idleStreak;
+      autonomyBreather = follow.delay;
+      send("autonomy_progress", {
+        ts: new Date().toISOString(),
+        n: autonomyActions,
+        rested,
+        idleStreak: autonomyIdleStreak,
+        discovery: follow.discovery,
+        nextDelay: autonomyBreather,
+        until: autonomyDeadline,
+      });
+    } catch (error) {
+      const failure = String(error?.message || error).slice(0, 240);
+      _sayLog({ autonomy: true, n: autonomyActions, failure });
+      send("autonomy_progress", {
+        ts: new Date().toISOString(),
+        n: autonomyActions,
+        failed: true,
+        failure,
+        idleStreak: autonomyIdleStreak,
+        discovery: turnPlan.discovery,
+        nextDelay: autonomyBreather,
+        until: autonomyDeadline,
+      });
+      scheduleAutonomyTick(autonomyBreather);
+    }
     finally { autonomyBusy = false; }
   }, delay == null ? autonomyBreather : delay);
 }
 
 function startAutonomy(minutes) {
+  cancelAutonomyTick();
   const m = Math.max(1, Math.min(240, Math.round(Number(minutes) || 60))); // 1 min … 4 h
   autonomyEnabled = true;
   autonomyStartedAt = Date.now();
@@ -4105,7 +4142,12 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
           try {
             const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
             for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
-              _deferred.deferTask(proposal, 'auto-deferred from dream protocol (HIGH priority)', memDir);
+              _deferred.deferTask(proposal, {
+                reason: 'Auto-deferred from dream protocol (HIGH priority)',
+                blocker: 'Dream pulse produced a HIGH proposal outside an active build turn',
+                nextAction: `Open the proposal as the next concrete work item and verify the current source before changing it: ${proposal.slice(0, 120)}`,
+                validationCondition: 'The resumed task is grounded against current source and ends with a passing relevant validation gate or an explicit evidence-backed blocker',
+              }, memDir);
               // Also write to proposals.ndjson for visibility (state: deferred so auto_build skips it — deferred task is the single execution path)
               try {
                 const pEntry = {
@@ -4115,6 +4157,10 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
                   area: 'dream',
                   state: 'deferred',
                   source: 'dream-auto',
+                  cause: 'Auto-deferred from dream protocol (HIGH priority)',
+                  blocker: 'Dream pulse produced a HIGH proposal outside an active build turn',
+                  nextAction: `Open the proposal as the next concrete work item and verify the current source before changing it: ${proposal.slice(0, 120)}`,
+                  retryCondition: 'The resumed task is grounded against current source and ends with a passing relevant validation gate or an explicit evidence-backed blocker',
                 };
                 fs.appendFileSync(path.join(memDir, 'proposals.ndjson'), JSON.stringify(pEntry) + '\n', 'utf8');
               } catch {}
@@ -4230,7 +4276,7 @@ async function runDeferredTasks() {
       const mode = entry.mode || 'read';
       send('deferred_exec', { task: entry.task, mode, count: i + 1 });
       await runSubagent(
-        `[DEFERRED TASK from prior session]\nReason it was deferred: ${entry.reason || 'scheduled'}\n\nTask:\n${entry.task}`,
+        `[DEFERRED TASK from prior session]\nCause: ${entry.cause || entry.reason || 'missing historical cause'}\nBlocker: ${entry.blocker || 'missing historical blocker'}\nNext action: ${entry.nextAction || 'missing historical next action'}\nValidation condition: ${entry.validationCondition || entry.retryCondition || 'missing historical validation condition'}\n\nTask:\n${entry.task}`,
         mode,
         20 * 60 * 1000,
         null

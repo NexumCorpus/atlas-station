@@ -27,6 +27,8 @@ function similarity(tokensA, tokensB) {
 function findSimilarRuns(task, runsFile, opts = {}) {
   const { maxResults = 3, minScore = 0.12 } = opts;
   if (!fs.existsSync(runsFile)) return [];
+  const limit = maxResults == null ? 3 : Math.max(0, Math.floor(Number(maxResults) || 0));
+  if (limit === 0) return [];
   const taskTokens = tokenize(task);
   if (!taskTokens.length) return [];
 
@@ -38,7 +40,7 @@ function findSimilarRuns(task, runsFile, opts = {}) {
     .map(r => ({ run: r, score: similarity(taskTokens, tokenize(r.task)) }))
     .filter(r => r.score >= minScore)
     .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults);
+    .slice(0, limit);
 }
 
 // Format the experience block to inject into a task prompt

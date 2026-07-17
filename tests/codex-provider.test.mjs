@@ -96,7 +96,8 @@ assert.match(prepared, /You may make external changes when they are in that agre
 assert.doesNotMatch(prepared, /Do not push, publish, or make external changes/);
 assert.match(prepared, /do the task/);
 assert.match(buildCodexPrompt('task', { systemPrompt: 'keep an evidence trail' }), /keep an evidence trail/);
-assert.match(buildCodexPrompt('task', { atlasExecutionModel: 'gpt-5.6-luna' }), /Exact execution model for this invocation: gpt-5.6-luna/);
+assert.doesNotMatch(buildCodexPrompt('task', { atlasExecutionModel: 'gpt-5.6-luna' }), /Exact execution model for this invocation/);
+assert.doesNotMatch(buildCodexPrompt('task'), /State the actual assigned model/);
 
 const memory = require('../memcontext.cjs').buildContext('verify memory against source', {
   journalPath: '/nonexistent/journal.md',

@@ -234,10 +234,12 @@ function recallFacts(query, { dir = DEFAULT_DIR, maxResults = 5 } = {}) {
  */
 function recentRuns(n = 5, dir = DEFAULT_DIR) {
   const lines = _loadLines(path.join(dir, RUNS_FILE));
+  const limit = n == null ? 5 : Math.max(0, Math.floor(Number(n) || 0));
+  if (limit === 0) return [];
   return lines
     .map(line => { try { return JSON.parse(line); } catch { return null; } })
     .filter(Boolean)
-    .slice(-Math.max(1, n))
+    .slice(-limit)
     .reverse();
 }
 

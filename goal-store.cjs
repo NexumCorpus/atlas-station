@@ -35,7 +35,7 @@ function listGoals(dir) {
   return _load(dir);
 }
 
-function resolveGoal(id, outcome, dir) {
+function resolveGoal(id, outcome, dir, metadata = {}) {
   if (!id) throw new Error('resolveGoal: id is required');
   dir = dir || path.join(__dirname, 'memory');
   const goals = _load(dir);
@@ -43,6 +43,7 @@ function resolveGoal(id, outcome, dir) {
   if (!g) return null;
   g.state = outcome === 'done' ? 'done' : 'abandoned';
   g.resolvedTs = new Date().toISOString();
+  g.resolutionSource = String(metadata.source || 'unspecified');
   _save(goals, dir);
   return g;
 }

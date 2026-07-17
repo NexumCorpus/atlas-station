@@ -110,9 +110,47 @@ console.log('\n5. deferred: deferTask/popPending roundtrip');
   const { deferTask, popPending } = require(join(ROOT, 'deferred.cjs'));
   const dir = tempDir();
   try {
-    const entry = deferTask('test task description', 'test reason', dir);
+    const entry = deferTask('test task description', {
+      reason: 'test continuation',
+      blocker: 'Current session ended before this test task could be executed',
+      nextAction: 'Resume the test task and verify the deferred roundtrip state',
+      validationCondition: 'The resumed task appears in popPending with the same actionability fields',
+    }, dir);
     assert(entry.state === 'pending', 'deferTask creates entry with state=pending');
     assert(typeof entry.id === 'string' && entry.id.startsWith('D-'), 'deferTask entry has D- prefixed id');
+    assert(entry.cause === 'test continuation', 'deferTask stores a concrete cause');
+    assert(entry.blocker.includes('Current session ended'), 'deferTask stores a concrete blocker');
+    assert(entry.nextAction.includes('Resume the test task'), 'deferTask stores a concrete next action');
+    assert(entry.validationCondition.includes('popPending'), 'deferTask stores a concrete validation condition');
+    assert(entry.retryCondition === entry.validationCondition, 'deferTask stores retryCondition alias for audits');
+    let rejectedWeakReason = false;
+    try {
+      deferTask('weak deferred task', 'test reason', dir);
+    } catch (e) {
+      rejectedWeakReason = /meaningful blocker, next action, and validation condition/.test(e.message);
+    }
+    assert(rejectedWeakReason, 'deferTask rejects generic reasons without blocker, next action, and validation condition');
+    let rejectedMissingValidation = false;
+    try {
+      deferTask('missing validation task', {
+        blocker: 'The session stopped before this task could be completed',
+        nextAction: 'Resume the task from the saved work item',
+      }, dir);
+    } catch (e) {
+      rejectedMissingValidation = /validation condition/.test(e.message);
+    }
+    assert(rejectedMissingValidation, 'deferTask rejects records missing a validation condition');
+    const textEntry = deferTask(
+      'text encoded deferred task',
+      [
+        'resume text form',
+        'Blocker: Current test session ended before text parsing ran',
+        'Next action: Parse the text reason into structured deferred fields',
+        'Validation condition: The resulting record has a retryCondition alias',
+      ].join('\n'),
+      dir
+    );
+    assert(textEntry.retryCondition.includes('retryCondition alias'), 'text reasons parse validation condition');
 
     const pending = popPending(dir);
     assert(pending.length >= 1, 'popPending returns at least one item');
@@ -311,9 +349,11 @@ console.log('\n16. goal-store: addGoal/listGoals/resolveGoal roundtrip');
     assert(goals.length === 1, 'listGoals finds the goal');
     assert(goals[0].text === 'test goal text', 'listGoals returns correct text');
 
-    const resolved = resolveGoal(g.id, 'done', dir);
+    const resolved = resolveGoal(g.id, 'done', dir, { source: 'behavioral-test' });
     assert(resolved.state === 'done', 'resolveGoal marks goal done');
+    assert(resolved.resolutionSource === 'behavioral-test', 'resolveGoal persists resolution source');
     assert(listGoals(dir)[0].state === 'done', 'resolved state persists');
+    assert(listGoals(dir)[0].resolutionSource === 'behavioral-test', 'resolution source persists to disk');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

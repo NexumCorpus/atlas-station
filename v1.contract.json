@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "id": "atlas-hermes-v1",
+  "version": "1.0.0",
+  "product": "ATLAS Station",
+  "identity": {
+    "organism": "Hermes",
+    "executiveSurface": "ATLAS",
+    "spine": "Station"
+  },
+  "inference": {
+    "provider": "codex-cli",
+    "orchestratorModel": "gpt-5.6-luna",
+    "authentication": "codex-subscription"
+  },
+  "requiredScripts": [
+    "test:full",
+    "test:providers",
+    "test:memory-continuity",
+    "test:autonomy-loop",
+    "test:fleet-lifecycle",
+    "test:wing",
+    "test:wing:d2",
+    "test:wing:felt",
+    "test:grader",
+    "test:mission",
+    "v1:status",
+    "v1:verify",
+    "v1:release"
+  ],
+  "requiredFiles": [
+    "providers/codex-cli.mjs",
+    "memcontext.cjs",
+    "session-log.cjs",
+    "continuity.cjs",
+    "wing-host.cjs",
+    "wings/director2/wing.json",
+    "grader.cjs",
+    "scripts/mission-run.mjs",
+    "scripts/spiral-receipt.cjs",
+    "AGENTS.md",
+    "docs/self-model/organism-rehearsal-crystal.md",
+    "docs/V1.md"
+  ],
+  "capabilities": [
+    "role-aware conversational continuity",
+    "deadline-bounded persistent autonomy",
+    "loss-aware context and byte-exact shard recovery",
+    "external wing lifecycle and persistent felt state",
+    "generator-independent claim grading",
+    "certified or honestly-null mission execution",
+    "sidecar-generation-aware transparent UI",
+    "evidence-gated recursive self-improvement"
+  ],
+  "releasePolicy": {
+    "failClosed": true,
+    "cleanTreeRequired": true,
+    "fullAcceptanceRequired": true,
+    "organismRehearsalRequired": true,
+    "outwardAutonomy": false
+  },
+  "spiralPolicy": {
+    "newVectorRequiresUniqueSubsystemCapabilityPair": true,
+    "duplicateEvidenceRejected": true,
+    "continuationsDoNotCountAsNewVectors": true
+  }
+}
