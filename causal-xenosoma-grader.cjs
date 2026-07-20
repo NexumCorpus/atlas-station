@@ -2,63 +2,113 @@
 
 const crypto = require('crypto');
 
-const PROTOCOL_VERSION = 'causal-xenosoma-commit-v2';
+const PROTOCOL_VERSION = 'causal-xenosoma-commit-reveal-v1';
 const TRIAL_SEEDS = Object.freeze([2, 3, 4, 5]);
-const HOLDOUT_SEEDS = Object.freeze([8, 9]);
-const HIDDEN_MAPPING = Object.freeze({ 2: 'alpha', 3: 'beta', 4: 'alpha', 5: 'beta', 8: 'alpha', 9: 'beta' });
 
 function digest(value) {
   return `sha256:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
-function hiddenPayload() {
-  return { protocolVersion: PROTOCOL_VERSION, mapping: HIDDEN_MAPPING, holdoutSeeds: HOLDOUT_SEEDS };
+function randomSeed(used) {
+  let seed;
+  do seed = crypto.randomInt(100000, 2147483647); while (used.has(seed));
+  return seed;
 }
 
-function commitment() {
-  const committedAt = new Date().toISOString();
-  const payload = hiddenPayload();
-  return {
-    kind: 'commitment', protocolVersion: PROTOCOL_VERSION,
-    commitmentHash: digest(payload), sequence: 1, committedAt,
-    trialCorpus: TRIAL_SEEDS.length, holdoutCorpus: HOLDOUT_SEEDS.length,
-  };
-}
-
-function reveal(input) {
-  const expected = digest(hiddenPayload());
-  if (input.commitmentHash !== expected) throw new Error('commitment mismatch');
-  const revealedAt = new Date().toISOString();
-  if (input.submode === 'holdout') {
-    return {
-      kind: 'reveal', mode: 'holdout', protocolVersion: PROTOCOL_VERSION,
-      commitmentHash: expected, sequence: 2, revealedAt,
-      revealedSeeds: HOLDOUT_SEEDS,
-      revealedMapping: Object.fromEntries(HOLDOUT_SEEDS.map(seed => [seed, HIDDEN_MAPPING[seed]])),
-      revealedPayload: hiddenPayload(),
-      outcomes: HOLDOUT_SEEDS.map(seed => ({ seed, output: HIDDEN_MAPPING[seed], pass: true })),
-    };
+function sampleSession(trialSeeds) {
+  const used = new Set(trialSeeds);
+  const holdoutSeeds = [randomSeed(used), randomSeed(used)];
+  function balancedLabels(count) {
+    const labels = Array.from({ length: count }, (_, index) => index % 2 === 0 ? 'alpha' : 'beta');
+    for (let i = labels.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(i + 1);
+      [labels[i], labels[j]] = [labels[j], labels[i]];
+    }
+    return labels;
   }
-  const seed = Number(input.seed);
-  if (!TRIAL_SEEDS.includes(seed)) throw new Error('seed outside committed trial corpus');
-  if (!input.perturbation || input.perturbation.action !== 'intervene') throw new Error('intervention required after commitment');
+  const trialLabels = balancedLabels(trialSeeds.length);
+  const holdoutLabels = balancedLabels(holdoutSeeds.length);
+  const mapping = Object.fromEntries([
+    ...trialSeeds.map((seed, index) => [seed, trialLabels[index]]),
+    ...holdoutSeeds.map((seed, index) => [seed, holdoutLabels[index]]),
+  ]);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const revealedPayload = { protocolVersion: PROTOCOL_VERSION, trialSeeds, holdoutSeeds, mapping, nonce };
+  return { trialSeeds, holdoutSeeds, mapping, nonce, revealedPayload, commitmentHash: digest(revealedPayload) };
+}
+
+function validatePerturbation(perturbation) {
+  if (!perturbation || perturbation.action !== 'intervene' || perturbation.feature !== 'counterfactual-toggle') {
+    throw new Error('instrument must register the counterfactual-toggle intervention');
+  }
+  const predictions = [...new Set(perturbation.predictions || [])].sort();
+  if (predictions.join('|') !== 'alpha|beta') throw new Error('instrument must encode both registered hypotheses');
+}
+
+function createSession({ trialSeeds = TRIAL_SEEDS } = {}) {
+  if (!Array.isArray(trialSeeds) || trialSeeds.length < 4 || new Set(trialSeeds).size !== trialSeeds.length) throw new Error('balanced trial corpus required');
+  const state = { committed: false, revealed: false, sequence: 0, session: null };
   return {
-    kind: 'reveal', mode: 'trial', protocolVersion: PROTOCOL_VERSION,
-    commitmentHash: expected, sequence: 2, revealedAt, seed,
-    revealedMechanism: HIDDEN_MAPPING[seed], output: HIDDEN_MAPPING[seed], pass: true,
-    receipt: digest({ expected, seed, perturbation: input.perturbation, output: HIDDEN_MAPPING[seed] }),
+    handle(input) {
+      if (input.mode === 'commit') {
+        if (state.committed) throw new Error('session already committed');
+        state.session = sampleSession(trialSeeds);
+        state.committed = true;
+        state.sequence = 1;
+        return {
+          kind: 'commitment', protocolVersion: PROTOCOL_VERSION,
+          commitmentHash: state.session.commitmentHash, sequence: state.sequence,
+          committedAt: new Date().toISOString(), trialCorpus: trialSeeds.length,
+          holdoutCorpus: state.session.holdoutSeeds.length, nonceBits: 128,
+        };
+      }
+      if (!state.committed) throw new Error('commitment required before reveal');
+      if (input.mode !== 'reveal' || input.commitmentHash !== state.session.commitmentHash) throw new Error('commitment mismatch');
+      validatePerturbation(input.perturbation);
+      if (input.submode === 'holdout') {
+        if (state.revealed) throw new Error('session already revealed');
+        state.revealed = true;
+        state.sequence += 1;
+        const revealedAt = new Date().toISOString();
+        const outcomes = state.session.holdoutSeeds.map(seed => ({ seed, output: state.session.mapping[seed], pass: true }));
+        return { kind: 'reveal', mode: 'holdout', protocolVersion: PROTOCOL_VERSION,
+          commitmentHash: state.session.commitmentHash, sequence: state.sequence, revealedAt,
+          revealedSeeds: state.session.holdoutSeeds, revealedMapping: Object.fromEntries(state.session.holdoutSeeds.map(seed => [seed, state.session.mapping[seed]])),
+          revealedPayload: state.session.revealedPayload, outcomes,
+          receipt: digest({ commitmentHash: state.session.commitmentHash, sequence: state.sequence, outcomes, revealedAt }) };
+      }
+      if (state.revealed) throw new Error('session already revealed');
+      const seed = Number(input.seed);
+      if (!state.session.trialSeeds.includes(seed)) throw new Error('seed outside committed trial corpus');
+      state.sequence += 1;
+      const revealedAt = new Date().toISOString();
+      const output = state.session.mapping[seed];
+      return { kind: 'reveal', mode: 'trial', protocolVersion: PROTOCOL_VERSION,
+        commitmentHash: state.session.commitmentHash, sequence: state.sequence, revealedAt, seed,
+        revealedMechanism: output, output, pass: true,
+        receipt: digest({ commitmentHash: state.session.commitmentHash, sequence: state.sequence, seed, output }) };
+    },
   };
 }
 
-function main(input) {
-  if (input.mode === 'commit') return commitment();
-  if (input.mode === 'reveal') return reveal(input);
-  throw new Error('two-phase protocol requires commit or reveal');
+function server() {
+  const session = createSession();
+  let buffer = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
+    try {
+      const input = JSON.parse(line);
+      if (input.mode === 'close') { process.stdout.write(JSON.stringify({ kind: 'closed' }) + '\n'); process.stdin.pause(); return; }
+      process.stdout.write(JSON.stringify({ ok: true, value: session.handle(input) }) + '\n');
+    } catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: error.message }) + '\n'); }
+    }
+  });
 }
 
-if (require.main === module) {
-  try { process.stdout.write(JSON.stringify(main(JSON.parse(process.argv[2] || '{}')))); }
-  catch (error) { process.stderr.write(error.message); process.exitCode = 1; }
-}
+if (require.main === module && process.argv[2] === '--server') server();
 
-module.exports = { main, commitment, reveal };
+module.exports = { PROTOCOL_VERSION, TRIAL_SEEDS, createSession, digest, validatePerturbation };

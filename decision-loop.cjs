@@ -64,7 +64,13 @@ function appendRecord(record, memDir) {
   fs.mkdirSync(memDir, { recursive: true });
   const body = { ...record, ts: new Date().toISOString() };
   body.recordHash = hash(body);
-  fs.appendFileSync(ledgerPath(memDir), `${JSON.stringify(body)}\n`, 'utf8');
+  const fd = fs.openSync(ledgerPath(memDir), 'a');
+  try {
+    fs.writeSync(fd, `${JSON.stringify(body)}\n`, null, 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   return body;
 }
 

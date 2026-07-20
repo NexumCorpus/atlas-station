@@ -3476,7 +3476,7 @@ async function orchestrate(userText, source = 'user') {
   // never runs or promotes an ecology experiment implicitly.
   if (_causalXenosoma && /\bXENOSOMA_EXPERIMENT\b/i.test(String(userText || ''))) {
     try {
-      const result = _causalXenosoma.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [2, 3, 4, 5] });
+      const result = await _causalXenosoma.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [2, 3, 4, 5], memDir: path.join(REPO, 'memory') });
       const receipt = _causalXenosoma.persistCandidate(result, path.join(REPO, 'memory'));
       send('xenosoma', { status: receipt.status, experimentHash: result.experimentHash, metrics: result.metrics, genome: result.genome });
     } catch (error) { send('xenosoma', { status: 'failed', reason: error.message }); }
