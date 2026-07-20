@@ -1,11 +1,21 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 function clean(value) { return String(value == null ? '' : value).trim(); }
 
 function hash(value) {
   return `sha256:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+function textAnchor(value) {
+  return `sha256:${crypto.createHash('sha256').update(Buffer.from(String(value), 'utf8')).digest('hex')}`;
+}
+
+function exactAnchor(anchor) {
+  return typeof anchor === 'string' && /^sha256:[0-9a-f]{64}$/.test(anchor);
 }
 
 function requireText(value, name) {
@@ -18,7 +28,7 @@ function createDecisionPacket(input = {}) {
   const context = Array.isArray(input.context) ? input.context : [];
   const hypotheses = Array.isArray(input.hypotheses) ? input.hypotheses : [];
   if (context.length < 1) throw new Error('decision packet requires selected context');
-  if (context.some(item => !item || !item.anchor || !String(item.anchor).startsWith('sha256:'))) {
+  if (context.some(item => !item || !exactAnchor(item.anchor))) {
     throw new Error('every context item requires an exact sha256 anchor');
   }
   if (hypotheses.length < 2) throw new Error('decision packet requires at least two rival hypotheses');
@@ -46,6 +56,26 @@ function createDecisionPacket(input = {}) {
   if (packet.hypotheses.some(h => !Number.isFinite(h.confidence) || h.confidence < 0 || h.confidence > 1)) throw new Error('hypothesis confidence must be between 0 and 1');
   packet.packetHash = hash(packet);
   return packet;
+}
+
+function ledgerPath(memDir) { return path.join(memDir, 'decision-loop.ndjson'); }
+
+function appendRecord(record, memDir) {
+  fs.mkdirSync(memDir, { recursive: true });
+  const body = { ...record, ts: new Date().toISOString() };
+  body.recordHash = hash(body);
+  fs.appendFileSync(ledgerPath(memDir), `${JSON.stringify(body)}\n`, 'utf8');
+  return body;
+}
+
+function readRecords(memDir) {
+  const file = ledgerPath(memDir);
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+}
+
+function loadPromotedPolicy(memDir) {
+  return readRecords(memDir).filter(r => r.status === 'promoted' && r.nextPolicy).at(-1)?.nextPolicy || null;
 }
 
 function measureDecision(packet, result = {}) {
@@ -91,4 +121,4 @@ function promoteDecision(packet, measurements, thresholds = {}) {
   };
 }
 
-module.exports = { createDecisionPacket, measureDecision, promoteDecision };
+module.exports = { createDecisionPacket, measureDecision, promoteDecision, textAnchor, exactAnchor, appendRecord, readRecords, loadPromotedPolicy };

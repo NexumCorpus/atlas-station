@@ -123,6 +123,8 @@ let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 let _predict = null;
 try { _predict = _require('./predict.cjs'); } catch { _predict = null; }
+let _decisionLoop = null;
+try { _decisionLoop = _require('./decision-loop.cjs'); } catch { _decisionLoop = null; }
 let _continuity = null;
 try { _continuity = _require('./continuity.cjs'); } catch { _continuity = null; }
 
@@ -3466,6 +3468,35 @@ async function orchestrate(userText, source = 'user') {
   } else {
     enriched = userText;
   }
+  // Executive decision loop: this is the live admission seam, not a test-only
+  // library. Packets persist exact context anchors before execution; promoted
+  // policy is reloaded on every turn so a sidecar restart carries the policy.
+  let _decisionPacket = null;
+  if (_decisionLoop) {
+    try {
+      const memDir = path.join(REPO, 'memory');
+      const policy = _decisionLoop.loadPromotedPolicy(memDir);
+      if (policy) {
+        enriched = `${enriched}\n\n[Promoted executive policy]\n${JSON.stringify(policy)}`;
+      }
+      _decisionPacket = _decisionLoop.createDecisionPacket({
+        packetId: `decision:${Date.now()}:${process.pid}`,
+        decision: policy ? 'apply-promoted-policy-to-next-decision' : 'select-minimum-sufficient-executive-context',
+        context: [{ ref: `orchestrate:${Date.now()}`, anchor: _decisionLoop.textAnchor(enriched) }],
+        hypotheses: [
+          { id: 'minimum-sufficient-context', claim: 'A compact anchored context can preserve decision quality.', confidence: policy ? 0.7 : 0.5 },
+          { id: 'full-context', claim: 'Full carried context is safer until measured otherwise.', confidence: policy ? 0.3 : 0.5 },
+        ],
+        intervention: { name: policy ? 'apply-promoted-policy' : 'record-context-policy', reversible: true },
+        prediction: { metric: 'successful executive turn', target: 1, failureCondition: 'query result is not successful' },
+        authorized: true,
+        sourceStatus: 'fresh',
+      });
+      _decisionLoop.appendRecord({ kind: 'packet', status: 'pending', packet: _decisionPacket }, memDir);
+    } catch (error) {
+      send('decision_loop', { status: 'blocked', reason: error.message });
+    }
+  }
   if (_ctxStats) {
     send('context_budget', { stats: _ctxStats });
     // Persist context telemetry for historical analysis
@@ -3553,6 +3584,29 @@ async function orchestrate(userText, source = 'user') {
         set("ATLAS", patch);
       } else if (m.type === "result") {
         const full = String(m.result ?? "");
+        if (_decisionPacket && _decisionLoop) {
+          try {
+            const memDir = path.join(REPO, 'memory');
+            const measurements = _decisionLoop.measureDecision(_decisionPacket, {
+              selectedEvidence: [_decisionPacket.context[0].ref],
+              usedEvidence: [_decisionPacket.context[0].ref],
+              relevantEvidence: [_decisionPacket.context[0].ref],
+              verificationAttempts: 1,
+              verificationPasses: m.subtype === 'success' ? 1 : 0,
+              predicted: 1,
+              actual: m.subtype === 'success' ? 1 : 0,
+              novelty: _decisionPacket.decision.includes('promoted') ? 1 : 0.5,
+              cost: Number(m.total_cost_usd || 0),
+              rollback: { beforeHash: _decisionPacket.packetHash, afterHash: _decisionPacket.packetHash, restoredHash: _decisionPacket.packetHash },
+            });
+            const outcome = _decisionLoop.promoteDecision(_decisionPacket, measurements);
+            _decisionLoop.appendRecord({ kind: 'measurement', status: outcome.status, packetHash: _decisionPacket.packetHash, measurements, nextPolicy: outcome.nextPolicy, rejectedPath: outcome.rejectedPath }, memDir);
+            if (outcome.nextPolicy && _crystals) {
+              _crystals.appendCrystal(`Promoted executive policy ${JSON.stringify(outcome.nextPolicy)} from ${_decisionPacket.packetHash}; next decisions must carry the policy directive and exact context anchor.`, [orchTurnCount + 1, orchTurnCount + 1], memDir);
+            }
+            send('decision_loop', { status: outcome.status, packetHash: _decisionPacket.packetHash, measurements });
+          } catch (error) { send('decision_loop', { status: 'record-failed', reason: error.message }); }
+        }
         send("execution", {
           state: m.subtype === "success" ? "done" : "failed",
           provider: ACTIVE_PROVIDER,

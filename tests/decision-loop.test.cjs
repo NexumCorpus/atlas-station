@@ -1,10 +1,10 @@
 'use strict';
 const assert = require('assert');
-const { createDecisionPacket, measureDecision, promoteDecision } = require('../decision-loop.cjs');
+const { createDecisionPacket, measureDecision, promoteDecision, textAnchor } = require('../decision-loop.cjs');
 
 const base = {
   packetId: 'DL-1', decision: 'choose local retrieval policy',
-  context: [{ ref: 'facts', anchor: 'sha256:facts' }, { ref: 'tests', anchor: 'sha256:tests' }],
+  context: [{ ref: 'facts', anchor: textAnchor('facts') }, { ref: 'tests', anchor: textAnchor('tests') }],
   hypotheses: [
     { id: 'h1', claim: 'minimum sufficient context lowers cost', confidence: 0.7 },
     { id: 'h2', claim: 'full context improves verification yield', confidence: 0.3 },
