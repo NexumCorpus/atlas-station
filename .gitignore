@@ -29,6 +29,7 @@ _*.log
 verify*.mjs
 verify*.cjs
 .atlas/sidecar-lease.json*
+.atlas/ingress*.ndjson
 orch_test.mjs
 gui.mjs
 upgrade1.mjs
