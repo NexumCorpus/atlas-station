@@ -29,6 +29,8 @@ _*.log
 verify*.mjs
 verify*.cjs
 .atlas/sidecar-lease.json*
+.atlas/sidecar-lease-history.ndjson
+.atlas/sidecar-lease-fence-error.ndjson
 .atlas/ingress*.ndjson
 orch_test.mjs
 gui.mjs

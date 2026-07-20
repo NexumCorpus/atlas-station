@@ -30,6 +30,8 @@
 // trivial "list the files" task therefore exercises exactly the read path.
 
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -46,11 +48,12 @@ const AGENT_ID = "T-1";
 const TASK = "List the files here in one sentence.";
 
 async function run() {
+  const isolatedIngress = fs.mkdtempSync(path.join(os.tmpdir(), "atlas-fleet-ingress-"));
   // Spawn exactly like main.cjs: plain node + a 4th 'ipc' stdio slot so that
   // process.send / 'message' work across the boundary.
   const child = spawn(NODE, [HOST], {
     cwd: ROOT,
-    env: process.env,
+    env: { ...process.env, ATLAS_INGRESS_DIR: isolatedIngress },
     stdio: ["pipe", "pipe", "pipe", "ipc"],
   });
 

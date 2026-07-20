@@ -3508,7 +3508,7 @@ async function orchestrate(userText, source = 'user') {
         authorized: true,
         sourceStatus: 'fresh',
       });
-      _decisionLoop.appendRecord({ kind: 'packet', status: 'pending', packet: _decisionPacket }, memDir);
+      _decisionLoop.appendFencedRecord({ kind: 'packet', status: 'pending', packet: _decisionPacket }, memDir, { root: INGRESS_DIR, token: _sidecarLease?.token, epoch: _sidecarLease?.owner?.epoch });
     } catch (error) {
       send('decision_loop', { status: 'blocked', reason: error.message });
     }
@@ -3605,10 +3605,10 @@ async function orchestrate(userText, source = 'user') {
             const memDir = path.join(REPO, 'memory');
             // Ordinary dialogue is observation only. Its evidence and metrics
             // are intentionally unknown; a model success is not a verifier.
-            _decisionLoop.appendRecord({ kind: 'observation', status: 'observed', packetHash: _decisionPacket.packetHash,
+            _decisionLoop.appendFencedRecord({ kind: 'observation', status: 'observed', packetHash: _decisionPacket.packetHash,
               grader: null, holdout: null, metrics: { retrievalUtility: null, verificationYield: null,
                 decisionRegret: null, novelty: null, cost: Number.isFinite(Number(m.total_cost_usd)) ? Number(m.total_cost_usd) : null,
-                rollbackIntegrity: null }, promotion: 'forbidden-without-named-experiment' }, memDir);
+                rollbackIntegrity: null }, promotion: 'forbidden-without-named-experiment' }, memDir, { root: INGRESS_DIR, token: _sidecarLease?.token, epoch: _sidecarLease?.owner?.epoch });
             send('decision_loop', { status: 'observed-not-promoted', packetHash: _decisionPacket.packetHash });
           } catch (error) { send('decision_loop', { status: 'record-failed', reason: error.message }); }
         }
@@ -3913,13 +3913,13 @@ async function replyAgent(id, text) {
 // unless the inbox has content, so it costs nothing in normal use.
 const _sfs = _require('fs');
 try { _sfs.mkdirSync(path.join(REPO, '.atlas'), { recursive: true }); } catch {}
-const SAY_INBOX = path.join(REPO, '.atlas', 'say-inbox');
-const SAY_OUTBOX = path.join(REPO, '.atlas', 'say-outbox.jsonl');
-const INGRESS_DIR = path.join(REPO, '.atlas');
+const INGRESS_DIR = process.env.ATLAS_INGRESS_DIR || path.join(REPO, '.atlas');
+const SAY_INBOX = path.join(INGRESS_DIR, 'say-inbox');
+const SAY_OUTBOX = path.join(INGRESS_DIR, 'say-outbox.jsonl');
 try {
   const lease = _require('./sidecar-lease.cjs');
   _sidecarLease = lease.acquire(INGRESS_DIR, 15000);
-  send('lease', { state: 'acquired', epoch: _sidecarLease.owner.epoch, pid: process.pid, fencingToken: _sidecarLease.fencingToken });
+  send('lease', { state: 'acquired', epoch: _sidecarLease.owner.epoch, pid: process.pid, generation: process.env.ATLAS_SUPERVISOR_GENERATION || null, fencingToken: _sidecarLease.fencingToken, tokenFingerprint: _sidecarLease.fencingToken.slice(-16) });
 } catch (error) {
   send('lease', { state: 'blocked', reason: String(error.message || error) });
   setTimeout(() => process.exit(17), 20);
@@ -3969,6 +3969,7 @@ async function gracefulDrain(reason = 'shutdown') {
 }
 process.on('SIGTERM', () => { gracefulDrain('SIGTERM'); });
 process.on('SIGINT', () => { gracefulDrain('SIGINT'); });
+process.on('disconnect', () => { gracefulDrain('supervisor-disconnected'); });
 process.on('exit', () => { try { _sidecarLease?.release(); } catch {} });
 process.on('uncaughtException', error => { try { _ingress?.appendError(INGRESS_DIR, error, { pid: process.pid }); } catch {} gracefulDrain('uncaught-exception'); });
 process.on('unhandledRejection', error => { try { _ingress?.appendError(INGRESS_DIR, error, { pid: process.pid, kind: 'unhandled-rejection' }); } catch {} });

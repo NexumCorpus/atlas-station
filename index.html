@@ -1142,10 +1142,10 @@ input:focus-visible{outline:none}
     if(!m)return;
     if(m.type==="lease"||m.type==="ingress"){
       if(m.state==='telemetry'){
-        addTimelineEvent('↻','journal '+(m.queueDepth||0)+' pending · depth '+(m.journalDepth||0)+' · replay '+(m.replayCount||0)+' · quarantine '+(m.quarantineBytes||0)+' bytes · lease '+(m.leaseEpoch||''),'');
+        addTimelineEvent('↻','journal '+(m.queueDepth||0)+' pending · depth '+(m.journalDepth||0)+' · replay '+(m.replayCount||0)+' · quarantine '+(m.quarantineBytes||0)+' bytes · lease '+(m.leaseEpoch||'')+' · active '+(m.activeClaimExpiry||'none'),'');
         return;
       }
-      var _estate = m.type === 'lease' ? ('sidecar lease · '+(m.state||'')+' · epoch '+(m.epoch||'')+' · pid '+(m.pid||'')) : ('ingress '+(m.state||'')+' · '+(m.directiveId||'')+' · seq '+(m.seq||''));
+      var _estate = m.type === 'lease' ? ('sidecar lease · '+(m.state||'')+' · generation '+(m.generation||'')+' · epoch '+(m.epoch||'')+' · pid '+(m.pid||'')+' · token '+(m.tokenFingerprint||m.fencingToken||'')) : ('ingress '+(m.state||'')+' · '+(m.directiveId||'')+' · seq '+(m.seq||''));
       addTimelineEvent(m.state==='failed'||m.state==='blocked'?'⚠':'↳',_estate,m.state==='failed'||m.state==='blocked'?'evfailed':'');
       return;
     }
@@ -1163,6 +1163,7 @@ input:focus-visible{outline:none}
           ? 'fleet sidecar start failed · generation '+m.generation+' · retrying'
         : 'fleet sidecar exited · generation '+m.generation+' · '+(m.restarting?'restarting':'stopped');
       thread.push({role:'system',text:_lifeText,error:m.state==='failed'||(m.state==='exited'&&!m.restarting),ts:Date.now()});
+      addTimelineEvent(m.state==='started'?'↻':m.state==='exited'?'⚠':'×',_lifeText,m.state==='failed'||(m.state==='exited'&&!m.restarting)?'evfailed':'');
       renderThread();
       return;
     }

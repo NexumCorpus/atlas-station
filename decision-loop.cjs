@@ -74,6 +74,12 @@ function appendRecord(record, memDir) {
   return body;
 }
 
+function appendFencedRecord(record, memDir, authority) {
+  if (!authority || !authority.root || !authority.token || !Number.isFinite(Number(authority.epoch))) throw new Error('decision ledger mutation requires supervisor fencing authority');
+  require('./sidecar-lease.cjs').validate(authority.root, authority.token, authority.epoch);
+  return appendRecord({ ...record, authority: { epoch: Number(authority.epoch), tokenFingerprint: textAnchor(authority.token).slice(0, 23) } }, memDir);
+}
+
 function readRecords(memDir) {
   const file = ledgerPath(memDir);
   if (!fs.existsSync(file)) return [];
@@ -187,4 +193,4 @@ function promoteDecision(packet, measurements, thresholds = {}) {
   };
 }
 
-module.exports = { createDecisionPacket, measureDecision, promoteDecision, createExperiment, addTrial, evaluateExperiment, promoteExperiment, revokePolicy, quarantineRecords, textAnchor, exactAnchor, appendRecord, readRecords, loadPromotedPolicy };
+module.exports = { createDecisionPacket, measureDecision, promoteDecision, createExperiment, addTrial, evaluateExperiment, promoteExperiment, revokePolicy, quarantineRecords, textAnchor, exactAnchor, appendRecord, appendFencedRecord, readRecords, loadPromotedPolicy };

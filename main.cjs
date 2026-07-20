@@ -55,6 +55,7 @@ function startFleet() {
   const generation = ++fleetGeneration;
   const startedAt = new Date().toISOString();
   try {
+    sweepStaleFleetGenerations();
     // Atlas is the operator's local organism. Its Codex provider must not
     // silently fall back to read-only after a restart; set the explicit
     // unrestricted route here so every Atlas mode receives the same local
@@ -63,10 +64,12 @@ function startFleet() {
     const fleetEnv = {
       ...process.env,
       ATLAS_CODEX_UNRESTRICTED: process.env.ATLAS_CODEX_UNRESTRICTED === "0" ? "0" : "1",
+      ATLAS_SUPERVISOR_GENERATION: String(generation),
     };
     fleet = spawn(NODE, [path.join(__dirname, "fleethost.mjs")], {
       cwd: __dirname, env: fleetEnv, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
+    appendSupervisorReceipt({ kind: 'supervisor-start', generation, pid: fleet.pid, startedAt });
     if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "started", generation, pid: fleet.pid, startedAt });
   } catch (e) {
     if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "failed", generation, startedAt, error: String((e && e.message) || e), restarting: true });
@@ -83,9 +86,11 @@ function startFleet() {
   if (fleet.stderr) fleet.stderr.on("data", () => {});
   fleet.on("exit", (code) => {
     const generation = fleetGeneration;
+    const exitedPid = fleet?.pid || null;
     const exitedAt = new Date().toISOString();
     if (code !== 0 && code !== null) { try { ingressJournal.appendError(path.join(__dirname, '.atlas'), new Error(`supervised fleethost exit code=${code}`), { generation, code, exitedAt, owner: 'electron-supervisor' }); } catch (_) {} }
     fleet = null;
+    appendSupervisorReceipt({ kind: 'supervisor-exit', generation, pid: exitedPid, code, exitedAt });
     settleStaleAgents(generation, exitedAt);
     if (win) {
       const restarting = code !== 0 && code !== null;
@@ -100,7 +105,17 @@ function stopFleet() {
   const current = fleet;
   if (!current) return;
   try { current.send({ t: "shutdown" }); } catch (_) {}
-  setTimeout(() => { try { if (fleet === current) current.kill(); } catch (_) {} }, 15000);
+  setTimeout(() => { try { if (fleet === current) terminateFleetTree(current.pid); } catch (_) {} }, 15000);
+}
+
+function supervisorRegistryPath() { return path.join(__dirname, '.atlas', 'supervisor-registry.ndjson'); }
+function appendSupervisorReceipt(record) { try { fs.mkdirSync(path.dirname(supervisorRegistryPath()), { recursive: true }); fs.appendFileSync(supervisorRegistryPath(), JSON.stringify({ ...record, ts: new Date().toISOString() }) + '\n', 'utf8'); } catch (_) {} }
+function terminateFleetTree(pid) { if (!pid) return; if (process.platform === 'win32') { try { require('child_process').execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch (_) {} } else { try { process.kill(pid, 'SIGTERM'); } catch (_) {} } }
+function sweepStaleFleetGenerations() {
+  const registry = supervisorRegistryPath(); if (!fs.existsSync(registry)) return;
+  let rows = []; try { rows = fs.readFileSync(registry, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)); } catch (_) { return; }
+  const exited = new Set(rows.filter(row => row.kind === 'supervisor-exit').map(row => Number(row.generation)));
+  for (const row of rows.filter(row => row.kind === 'supervisor-start' && !exited.has(Number(row.generation)))) { if (row.pid && row.pid !== process.pid) terminateFleetTree(row.pid); appendSupervisorReceipt({ kind: 'supervisor-sweep', generation: row.generation, pid: row.pid }); }
 }
 
 function settleStaleAgents(generation, exitedAt) {

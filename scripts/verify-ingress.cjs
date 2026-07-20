@@ -21,7 +21,9 @@ function child(code, args) { return new Promise((resolve, reject) => { const p =
   const second = j.appendIngress(dir, 'same-bytes', 'intentional');
   assert.notEqual(first.eventId, second.eventId, 'identical intentional events get unique ids');
   const retry = j.appendIngress(dir, 'same-bytes', 'intentional', { idempotencyKey: 'retry-1' });
-  assert.equal(j.appendIngress(dir, 'changed-bytes', 'intentional', { idempotencyKey: 'retry-1' }).eventId, retry.eventId, 'explicit retry key is idempotent');
+  assert.equal(j.appendIngress(dir, 'same-bytes', 'intentional', { idempotencyKey: 'retry-1' }).eventId, retry.eventId, 'explicit retry key is idempotent');
+  assert.throws(() => j.appendIngress(dir, 'changed-bytes', 'intentional', { idempotencyKey: 'retry-1' }), /idempotency key content conflict/);
+  assert.throws(() => j.appendIngress(dir, 'different', 'intentional', { eventId: first.eventId }), /event id content conflict/);
 
   const claimA = j.claimNext(dir, lease, lease.owner.epoch, lease.token, 30000);
   const claimB = j.claimNext(dir, lease, lease.owner.epoch, lease.token, 30000);
@@ -40,6 +42,9 @@ function child(code, args) { return new Promise((resolve, reject) => { const p =
   assert.equal(repaired.length, 1, 'outbox-before-ack repairs exactly one journal ack');
   assert.equal(j.repairPublication(dir, outbox, lease, lease.owner.epoch, lease.token).length, 0, 'repaired publication is idempotent');
   const ackB = j.ack(dir, claimB.eventId, JSON.stringify({ reply: 'ack-first' }), lease, lease.owner.epoch, lease.token);
+  const duplicateAck = j.ack(dir, claimB.eventId, JSON.stringify({ reply: 'late-model-result' }), lease, lease.owner.epoch, lease.token);
+  assert.equal(duplicateAck.recordHash, ackB.recordHash, 'first valid terminal wins');
+  assert.equal(j.entries ? j.entries(dir).byId.get(claimB.eventId).terminal.recordHash : j.terminal(dir, claimB.eventId).recordHash, ackB.recordHash);
   j.repairPublication(dir, outbox, lease, lease.owner.epoch, lease.token);
   assert(fs.readFileSync(outbox, 'utf8').includes(claimB.eventId), 'ack result can repair publication');
 
@@ -49,7 +54,12 @@ function child(code, args) { return new Promise((resolve, reject) => { const p =
   const orphan = `${legacy}.claim.crash-boundary`; fs.writeFileSync(orphan, 'orphan bytes');
   const orphanRecord = j.reconcileLegacy(dir, legacy, 'legacy-say-inbox'); assert.equal(j.getIngress(dir, orphanRecord.eventId).text, 'orphan bytes');
 
-  const journalPath = j.paths(dir).journal; fs.appendFileSync(journalPath, '{"kind":"corrupt-middle"}\n{"kind":"suffix"}\n');
+  const journalPath = j.paths(dir).journal;
+  const salvage = { kind: 'ingress', eventId: 'event:migration-salvage', directiveId: 'event:migration-salvage', contentHash: j.bytesHash('migration payload'), source: 'migration', text: 'migration payload', seq: 999, priorHash: null, ts: new Date().toISOString() }; salvage.recordHash = j.hash(salvage);
+  fs.appendFileSync(journalPath, JSON.stringify(salvage) + '\n');
+  j.appendIngress(dir, 'post-migration', 'migration');
+  assert.equal(j.getIngress(dir, 'event:migration-salvage').text, 'migration payload', 'valid ingress suffix is salvaged and re-ingested');
+  fs.appendFileSync(journalPath, '{"kind":"corrupt-middle"}\n{"kind":"suffix"}\n');
   const recovered = j.readJournal(dir); const raw = fs.readFileSync(journalPath); assert.equal(raw[raw.length - 1], 0x0a); assert(!recovered.some(record => record.kind === 'corrupt-middle')); assert(fs.existsSync(j.paths(dir).quarantine));
   lease.release();
   console.log(JSON.stringify({ ok: true, dir, writers: 100, uniqueIdenticalEvents: [first.eventId, second.eventId], retryEventId: retry.eventId, claimEvents: [claimA.eventId, claimB.eventId], repairedResult: published.recordHash, repairedAck: repaired[0].recordHash, ackFirst: ackB.recordHash, recoveredBytes: 3060, corruptSuffixQuarantined: true }));

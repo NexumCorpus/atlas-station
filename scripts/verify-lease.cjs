@@ -33,6 +33,11 @@ Promise.all([run(), run()]).then(async results => {
   await new Promise(resolve => setTimeout(resolve, 10));
   const newer = require('../sidecar-lease.cjs').acquire(dir, 2000);
   assert.throws(() => old.heartbeat(), /stale lease fence/);
+  const releasedEpoch = newer.owner.epoch;
   newer.release();
-  console.log(JSON.stringify({ ok: true, dir, results, staleTakeoverEpoch: 42, fencingTokenLengths: results.filter(r => r.acquired).map(r => r.fencingToken.length) }));
+  const reacquired = require('../sidecar-lease.cjs').acquire(dir, 2000);
+  assert(reacquired.owner.epoch > releasedEpoch, 'release is a tombstone and epochs never reset');
+  assert(require('../sidecar-lease.cjs').readHistory(dir).some(row => row.kind === 'release' && row.epoch === releasedEpoch), 'release is durable in lease history');
+  reacquired.release();
+  console.log(JSON.stringify({ ok: true, dir, results, staleTakeoverEpoch: 42, monotonicReacquireEpoch: reacquired.owner.epoch, fencingTokenLengths: results.filter(r => r.acquired).map(r => r.fencingToken.length) }));
 }).catch(error => { console.error(error); process.exitCode = 1; });
