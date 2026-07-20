@@ -31,7 +31,7 @@ assert.equal(new Set(ingress.map(record => record.directiveId)).size, 100);
 
 const legacy = path.join(dir, 'say-inbox'); fs.writeFileSync(legacy, 'legacy-3060-' + 'z'.repeat(3048));
 const legacyRecord = journal.reconcileLegacy(dir, legacy, 'legacy-say-inbox');
-assert.equal(Buffer.byteLength(journal.getIngress(dir, legacyRecord.directiveId).text), 3062);
+assert.equal(Buffer.byteLength(journal.getIngress(dir, legacyRecord.directiveId).text), 3060);
 assert.equal(fs.existsSync(legacy), true);
 
 const direct = journal.appendIngress(dir, 'journal-directive', 'direct-journal');
