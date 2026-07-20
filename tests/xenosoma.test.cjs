@@ -1,0 +1,23 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const x = require('../xenosoma.cjs');
+const grader = require('../xenosoma-grader.cjs');
+
+const result = x.runInstrument({ name: 'contrastive-omission-v1', seeds: [2, 7, 13], holdoutSeeds: [19, 23] });
+assert.equal(result.trials.length, 3);
+assert.equal(result.holdout.length, 2);
+assert.equal(result.metrics.distinguishes, true);
+assert.ok(result.metrics.informationGain >= 0);
+assert.ok(result.metrics.contextBytes < result.metrics.baselineContextBytes);
+assert.equal(result.genome.calibration.grader, 'xenosoma-independent-seed-grader');
+assert.notEqual(require.resolve('../xenosoma.cjs'), require.resolve('../xenosoma-grader.cjs'));
+assert.equal(typeof grader.grade, 'function');
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xenosoma-'));
+const receipt = x.persistCandidate(result, dir);
+assert.equal(receipt.kind, 'xenosoma-experiment');
+assert.equal(receipt.hermes.authority.mutation_allowed, false);
+assert.equal(receipt.hermes.falsifiers[0].independent, true);
+console.log('xenosoma instrument: ALL PASS');

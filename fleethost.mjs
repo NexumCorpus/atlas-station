@@ -125,6 +125,8 @@ let _predict = null;
 try { _predict = _require('./predict.cjs'); } catch { _predict = null; }
 let _decisionLoop = null;
 try { _decisionLoop = _require('./decision-loop.cjs'); } catch { _decisionLoop = null; }
+let _xenosoma = null;
+try { _xenosoma = _require('./xenosoma.cjs'); } catch { _xenosoma = null; }
 let _continuity = null;
 try { _continuity = _require('./continuity.cjs'); } catch { _continuity = null; }
 
@@ -3467,6 +3469,15 @@ async function orchestrate(userText, source = 'user') {
     }
   } else {
     enriched = userText;
+  }
+  // Named instrument execution is explicit and bounded. Ordinary dialogue
+  // never runs or promotes an ecology experiment implicitly.
+  if (_xenosoma && /\bXENOSOMA_EXPERIMENT\b/i.test(String(userText || ''))) {
+    try {
+      const result = _xenosoma.runInstrument({ name: 'contrastive-omission-v1', seeds: [2, 7, 13], holdoutSeeds: [19, 23] });
+      const receipt = _xenosoma.persistCandidate(result, path.join(REPO, 'memory'));
+      send('xenosoma', { status: receipt.status, experimentHash: result.experimentHash, metrics: result.metrics, genome: result.genome });
+    } catch (error) { send('xenosoma', { status: 'failed', reason: error.message }); }
   }
   // Executive decision loop: this is the live admission seam, not a test-only
   // library. Packets persist exact context anchors before execution; promoted
