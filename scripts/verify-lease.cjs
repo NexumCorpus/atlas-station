@@ -29,5 +29,10 @@ Promise.all([run(), run()]).then(async results => {
   assert.equal(typeof lease.owner.token, 'string');
   assert(lease.owner.token.length >= 32, 'fencing token source is high entropy');
   lease.release();
+  const old = require('../sidecar-lease.cjs').acquire(dir, 1);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const newer = require('../sidecar-lease.cjs').acquire(dir, 2000);
+  assert.throws(() => old.heartbeat(), /stale lease fence/);
+  newer.release();
   console.log(JSON.stringify({ ok: true, dir, results, staleTakeoverEpoch: 42, fencingTokenLengths: results.filter(r => r.acquired).map(r => r.fencingToken.length) }));
 }).catch(error => { console.error(error); process.exitCode = 1; });

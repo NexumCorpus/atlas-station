@@ -8,6 +8,7 @@ const path = require("path");
 
 const fs = require("fs");
 const goalStore = require("./goal-store.cjs");
+const ingressJournal = require("./ingress-journal.cjs");
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
 let fleetGeneration = 0;
@@ -83,6 +84,7 @@ function startFleet() {
   fleet.on("exit", (code) => {
     const generation = fleetGeneration;
     const exitedAt = new Date().toISOString();
+    if (code !== 0 && code !== null) { try { ingressJournal.appendError(path.join(__dirname, '.atlas'), new Error(`supervised fleethost exit code=${code}`), { generation, code, exitedAt, owner: 'electron-supervisor' }); } catch (_) {} }
     fleet = null;
     settleStaleAgents(generation, exitedAt);
     if (win) {

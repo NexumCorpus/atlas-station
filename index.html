@@ -1141,6 +1141,10 @@ input:focus-visible{outline:none}
   window.atlas.onFleet(function(m){
     if(!m)return;
     if(m.type==="lease"||m.type==="ingress"){
+      if(m.state==='telemetry'){
+        addTimelineEvent('↻','journal '+(m.queueDepth||0)+' pending · depth '+(m.journalDepth||0)+' · replay '+(m.replayCount||0)+' · quarantine '+(m.quarantineBytes||0)+' bytes · lease '+(m.leaseEpoch||''),'');
+        return;
+      }
       var _estate = m.type === 'lease' ? ('sidecar lease · '+(m.state||'')+' · epoch '+(m.epoch||'')+' · pid '+(m.pid||'')) : ('ingress '+(m.state||'')+' · '+(m.directiveId||'')+' · seq '+(m.seq||''));
       addTimelineEvent(m.state==='failed'||m.state==='blocked'?'⚠':'↳',_estate,m.state==='failed'||m.state==='blocked'?'evfailed':'');
       return;
