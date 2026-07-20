@@ -75,7 +75,65 @@ function readRecords(memDir) {
 }
 
 function loadPromotedPolicy(memDir) {
-  return readRecords(memDir).filter(r => r.status === 'promoted' && r.nextPolicy).at(-1)?.nextPolicy || null;
+  const records = readRecords(memDir);
+  const revoked = new Set(records.filter(r => r.status === 'revoked').map(r => r.policyHash));
+  const quarantined = new Set(records.filter(r => r.status === 'quarantined').map(r => r.targetRecordHash));
+  return records.filter(r => r.status === 'promoted' && r.policy && !revoked.has(r.policy.policyHash) && !quarantined.has(r.recordHash)).at(-1)?.policy || null;
+}
+
+function createExperiment(input = {}) {
+  const name = requireText(input.name, 'experiment name');
+  const generator = requireText(input.generator, 'experiment generator');
+  const grader = requireText(input.grader, 'experiment grader');
+  if (generator === grader) throw new Error('experiment generator and grader must be distinct');
+  const holdout = Array.isArray(input.holdout) ? input.holdout : [];
+  if (holdout.length < 1) throw new Error('experiment requires a holdout');
+  const experiment = { schema: 2, experimentId: requireText(input.experimentId, 'experimentId'), name, generator, grader, holdout, trials: [], status: 'candidate' };
+  experiment.experimentHash = hash(experiment);
+  return experiment;
+}
+
+function addTrial(experiment, trial) {
+  if (!experiment || !experiment.experimentHash) throw new Error('experiment is required');
+  if (!trial || !trial.trialId || !exactAnchor(trial.evidenceAnchor)) throw new Error('trial requires exact evidence anchor');
+  const metrics = trial.metrics || {};
+  experiment.trials.push({ trialId: trial.trialId, evidenceAnchor: trial.evidenceAnchor, metrics, graderReceipt: requireText(trial.graderReceipt, 'graderReceipt') });
+  return experiment;
+}
+
+function evaluateExperiment(experiment, holdout) {
+  if (experiment.generator === experiment.grader) return { status: 'rejected', reason: 'generator=grader' };
+  if (experiment.trials.length < 3) return { status: 'candidate', reason: 'at least three trials required' };
+  if (!holdout || holdout.passed !== true || !exactAnchor(holdout.evidenceAnchor)) return { status: 'candidate', reason: 'independent holdout required' };
+  const required = ['retrievalUtility', 'verificationYield', 'decisionRegret', 'novelty', 'cost', 'rollbackIntegrity'];
+  const known = experiment.trials.every(t => required.every(k => t.metrics[k] !== null && t.metrics[k] !== undefined && (typeof t.metrics[k] !== 'number' || Number.isFinite(t.metrics[k]))));
+  if (!known) return { status: 'candidate', reason: 'unknown trial metrics block promotion' };
+  const pass = experiment.trials.every(t => t.metrics.retrievalUtility >= 0.5 && t.metrics.verificationYield >= 0.5 && t.metrics.decisionRegret <= 0.25 && t.metrics.rollbackIntegrity === true);
+  return { status: pass ? 'eligible' : 'rejected', reason: pass ? 'trials and holdout passed' : 'trial threshold failed', holdout };
+}
+
+function promoteExperiment(experiment, evaluation, input = {}) {
+  if (!evaluation || evaluation.status !== 'eligible') return { status: 'candidate', reason: evaluation?.reason || 'experiment not eligible' };
+  const policy = {
+    policyId: requireText(input.policyId, 'policyId'), version: 1, parentHash: input.parentHash || null,
+    lineage: [experiment.experimentHash], scope: requireText(input.scope, 'policy scope'),
+    expiry: requireText(input.expiry, 'policy expiry'), rollbackTarget: input.parentHash || null,
+    falsifiers: Array.isArray(input.falsifiers) && input.falsifiers.length ? input.falsifiers : [requireText(input.falsifier, 'falsifier')],
+    killCondition: requireText(input.killCondition, 'killCondition'), decision: requireText(input.decision, 'policy decision'),
+  };
+  policy.policyHash = hash(policy);
+  return { status: 'promoted', policy, evaluation };
+}
+
+function revokePolicy(policyHash, reason, rollbackTarget, memDir) {
+  if (!exactAnchor(policyHash)) throw new Error('policyHash must be exact');
+  return appendRecord({ kind: 'policy', status: 'revoked', policyHash, reason: requireText(reason, 'revocation reason'), rollbackTarget: rollbackTarget || null }, memDir);
+}
+
+function quarantineRecords(memDir, predicate, reason) {
+  const records = readRecords(memDir);
+  const targets = records.filter(predicate);
+  return targets.map(r => appendRecord({ kind: 'quarantine', status: 'quarantined', targetRecordHash: r.recordHash, reason }, memDir));
 }
 
 function measureDecision(packet, result = {}) {
@@ -108,17 +166,11 @@ function measureDecision(packet, result = {}) {
 }
 
 function promoteDecision(packet, measurements, thresholds = {}) {
-  const minUtility = Number.isFinite(thresholds.minUtility) ? thresholds.minUtility : 0.5;
-  const minVerification = Number.isFinite(thresholds.minVerification) ? thresholds.minVerification : 0.5;
-  const maxRegret = Number.isFinite(thresholds.maxRegret) ? thresholds.maxRegret : 0.25;
-  const promote = measurements.retrievalUtility >= minUtility && measurements.verificationYield >= minVerification && measurements.decisionRegret <= maxRegret && measurements.rollbackIntegrity;
   return {
     packetHash: packet.packetHash,
-    status: promote ? 'promoted' : 'rejected',
-    reason: promote ? 'utility, verification, regret, and rollback thresholds passed' : 'one or more promotion thresholds failed',
-    nextPolicy: promote ? { decision: packet.decision, intervention: packet.intervention.name, thresholds: { minUtility, minVerification, maxRegret } } : null,
-    rejectedPath: promote ? null : { packetHash: packet.packetHash, measurements },
+    status: 'candidate', reason: 'ordinary decision observations cannot promote policy', nextPolicy: null,
+    rejectedPath: { packetHash: packet.packetHash, measurements },
   };
 }
 
-module.exports = { createDecisionPacket, measureDecision, promoteDecision, textAnchor, exactAnchor, appendRecord, readRecords, loadPromotedPolicy };
+module.exports = { createDecisionPacket, measureDecision, promoteDecision, createExperiment, addTrial, evaluateExperiment, promoteExperiment, revokePolicy, quarantineRecords, textAnchor, exactAnchor, appendRecord, readRecords, loadPromotedPolicy };

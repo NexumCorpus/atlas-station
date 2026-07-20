@@ -3587,24 +3587,13 @@ async function orchestrate(userText, source = 'user') {
         if (_decisionPacket && _decisionLoop) {
           try {
             const memDir = path.join(REPO, 'memory');
-            const measurements = _decisionLoop.measureDecision(_decisionPacket, {
-              selectedEvidence: [_decisionPacket.context[0].ref],
-              usedEvidence: [_decisionPacket.context[0].ref],
-              relevantEvidence: [_decisionPacket.context[0].ref],
-              verificationAttempts: 1,
-              verificationPasses: m.subtype === 'success' ? 1 : 0,
-              predicted: 1,
-              actual: m.subtype === 'success' ? 1 : 0,
-              novelty: _decisionPacket.decision.includes('promoted') ? 1 : 0.5,
-              cost: Number(m.total_cost_usd || 0),
-              rollback: { beforeHash: _decisionPacket.packetHash, afterHash: _decisionPacket.packetHash, restoredHash: _decisionPacket.packetHash },
-            });
-            const outcome = _decisionLoop.promoteDecision(_decisionPacket, measurements);
-            _decisionLoop.appendRecord({ kind: 'measurement', status: outcome.status, packetHash: _decisionPacket.packetHash, measurements, nextPolicy: outcome.nextPolicy, rejectedPath: outcome.rejectedPath }, memDir);
-            if (outcome.nextPolicy && _crystals) {
-              _crystals.appendCrystal(`Promoted executive policy ${JSON.stringify(outcome.nextPolicy)} from ${_decisionPacket.packetHash}; next decisions must carry the policy directive and exact context anchor.`, [orchTurnCount + 1, orchTurnCount + 1], memDir);
-            }
-            send('decision_loop', { status: outcome.status, packetHash: _decisionPacket.packetHash, measurements });
+            // Ordinary dialogue is observation only. Its evidence and metrics
+            // are intentionally unknown; a model success is not a verifier.
+            _decisionLoop.appendRecord({ kind: 'observation', status: 'observed', packetHash: _decisionPacket.packetHash,
+              grader: null, holdout: null, metrics: { retrievalUtility: null, verificationYield: null,
+                decisionRegret: null, novelty: null, cost: Number.isFinite(Number(m.total_cost_usd)) ? Number(m.total_cost_usd) : null,
+                rollbackIntegrity: null }, promotion: 'forbidden-without-named-experiment' }, memDir);
+            send('decision_loop', { status: 'observed-not-promoted', packetHash: _decisionPacket.packetHash });
           } catch (error) { send('decision_loop', { status: 'record-failed', reason: error.message }); }
         }
         send("execution", {
