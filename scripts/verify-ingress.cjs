@@ -29,7 +29,7 @@ assert.equal(ingress.length, 100);
 assert.deepEqual(ingress.map(record => record.seq), Array.from({ length: 100 }, (_, i) => i + 1));
 assert.equal(new Set(ingress.map(record => record.directiveId)).size, 100);
 
-const legacy = path.join(dir, 'say-inbox'); fs.writeFileSync(legacy, 'legacy-3060-' + 'z'.repeat(3050));
+const legacy = path.join(dir, 'say-inbox'); fs.writeFileSync(legacy, 'legacy-3060-' + 'z'.repeat(3048));
 const legacyRecord = journal.reconcileLegacy(dir, legacy, 'legacy-say-inbox');
 assert.equal(Buffer.byteLength(journal.getIngress(dir, legacyRecord.directiveId).text), 3062);
 assert.equal(fs.existsSync(legacy), true);
