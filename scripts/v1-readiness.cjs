@@ -91,7 +91,12 @@ async function main() {
     ));
   }
 
-  const gitStatus = run('git', ['status', '--porcelain'], { timeout: 30_000 });
+  const gitStatusArgs = ['status', '--porcelain'];
+  // The release receipt is an output of this command. Exclude only that
+  // generated path from the pre-write cleanliness check so --write cannot
+  // invalidate the gate it is producing.
+  if (args.has('--release')) gitStatusArgs.push('--', ':!release/v1-readiness.json');
+  const gitStatus = run('git', gitStatusArgs, { timeout: 30_000 });
   const dirty = Boolean(gitStatus.outputTail.trim());
   if (args.has('--release')) {
     checks.push(check('clean-tree', gitStatus.ok && !dirty, gitStatus.outputTail || 'clean'));
