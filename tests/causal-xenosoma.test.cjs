@@ -13,7 +13,7 @@ const childScript = `
   const fs = require('fs'), os = require('os'), path = require('path'), x = require(${JSON.stringify(require.resolve('../causal-xenosoma.cjs'))});
   (async () => {
     const memDir = fs.mkdtempSync(path.join(os.tmpdir(), 'causal-xenosoma-'));
-    const result = await x.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [2,3,4,5], memDir });
+    const result = await x.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [10,11,12,13], memDir });
     const crashDir = fs.mkdtempSync(path.join(os.tmpdir(), 'causal-crash-'));
     const crash = await x.commitOnly({ memDir: crashDir });
     process.stdout.write(JSON.stringify({ result, records: require(${JSON.stringify(require.resolve('../decision-loop.cjs'))}).readRecords(memDir), crash, crashRecords: require(${JSON.stringify(require.resolve('../decision-loop.cjs'))}).readRecords(crashDir) }));

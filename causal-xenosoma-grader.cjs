@@ -52,7 +52,8 @@ function createSession({ trialSeeds = TRIAL_SEEDS } = {}) {
     handle(input) {
       if (input.mode === 'commit') {
         if (state.committed) throw new Error('session already committed');
-        state.session = sampleSession(trialSeeds);
+        const requestedSeeds = Array.isArray(input.trialSeeds) ? input.trialSeeds : trialSeeds;
+        state.session = sampleSession(requestedSeeds);
         state.committed = true;
         state.sequence = 1;
         return {

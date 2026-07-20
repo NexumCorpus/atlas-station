@@ -73,7 +73,7 @@ async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2
   const session = createGraderSession();
   try {
     const started = Date.now();
-    const commitment = await session.request({ mode: 'commit' });
+    const commitment = await session.request({ mode: 'commit', trialSeeds: seeds });
     if (commitment.kind !== 'commitment' || !/^sha256:[0-9a-f]{64}$/.test(commitment.commitmentHash)) throw new Error('invalid grader commitment');
     const commitmentReceipt = loop.appendRecord({ kind: 'causal-xenosoma-commitment', status: 'committed', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir);
     const perturbation = derivePerturbation(hypotheses);
@@ -126,7 +126,7 @@ async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2
 async function commitOnly({ memDir = path.join(__dirname, 'memory'), seeds = [2, 3, 4, 5] } = {}) {
   const session = createGraderSession();
   try {
-    const commitment = await session.request({ mode: 'commit' });
+    const commitment = await session.request({ mode: 'commit', trialSeeds: seeds });
     return loop.appendRecord({ kind: 'causal-xenosoma-commitment', status: 'committed-crash-test', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir);
   } finally { session.child.kill(); }
 }
