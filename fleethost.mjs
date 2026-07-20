@@ -131,6 +131,9 @@ let _causalXenosoma = null;
 try { _causalXenosoma = _require('./causal-xenosoma.cjs'); } catch { _causalXenosoma = null; }
 let _continuity = null;
 try { _continuity = _require('./continuity.cjs'); } catch { _continuity = null; }
+let _ingress = null;
+try { _ingress = _require('./ingress-journal.cjs'); } catch { _ingress = null; }
+let _sidecarLease = null;
 
 // Debounced persist — fires at most once per second to avoid thrashing disk on
 // streaming updates (which call set() dozens of times per second).
@@ -3912,37 +3915,69 @@ const _sfs = _require('fs');
 try { _sfs.mkdirSync(path.join(REPO, '.atlas'), { recursive: true }); } catch {}
 const SAY_INBOX = path.join(REPO, '.atlas', 'say-inbox');
 const SAY_OUTBOX = path.join(REPO, '.atlas', 'say-outbox.jsonl');
+const INGRESS_DIR = path.join(REPO, '.atlas');
+try {
+  const lease = _require('./sidecar-lease.cjs');
+  _sidecarLease = lease.acquire(INGRESS_DIR, 15000);
+  send('lease', { state: 'acquired', epoch: _sidecarLease.owner.epoch, pid: process.pid, fencingToken: _sidecarLease.fencingToken });
+} catch (error) {
+  send('lease', { state: 'blocked', reason: String(error.message || error) });
+  setTimeout(() => process.exit(17), 20);
+}
 let _sayBusy = false;
-function _sayLog(o) { try { _sfs.appendFileSync(SAY_OUTBOX, JSON.stringify({ ts: new Date().toISOString(), ...o }) + '\n'); } catch {} }
+function _sayLog(o) { try { return _ingress.appendOutbox(SAY_OUTBOX, o); } catch { return null; } }
 async function pollSayInbox() {
   if (_sayBusy || autonomyBusy) return; // never run two ATLAS turns at once
-  let txt = '';
-  try { txt = _sfs.readFileSync(SAY_INBOX, 'utf8').trim(); } catch { return; }
-  if (!txt) return;
+  if (!_ingress || !_sidecarLease) return;
+  try { _ingress.reconcileLegacy(INGRESS_DIR, SAY_INBOX, 'legacy-say-inbox'); } catch (error) { send('ingress', { state: 'failed', reason: error.message }); return; }
+  const claim = _ingress.claimNext(INGRESS_DIR, `fleethost:${process.pid}`, _sidecarLease.owner.epoch);
+  if (!claim) return;
+  const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
+  const txt = item.text;
   _sayBusy = true;
-  try { _sfs.writeFileSync(SAY_INBOX, ''); } catch {}
+  send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
   // control commands: !autonomy <min> grants a window; !stop ends it
   const am = txt.match(/^!autonomy\s+(\d+)/i);
-  if (am) { startAutonomy(parseInt(am[1], 10)); _sayLog({ control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _sayBusy = false; return; }
-  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); _sayLog({ control: 'autonomy-stop' }); _sayBusy = false; return; }
+  if (am) { startAutonomy(parseInt(am[1], 10)); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), `fleethost:${process.pid}`, _sidecarLease.owner.epoch); _sayBusy = false; return; }
+  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), `fleethost:${process.pid}`, _sidecarLease.owner.epoch); _sayBusy = false; return; }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
     await enqueueOrchestrate(txt);
     const a = agents.get('ATLAS') || {};
-    _sayLog({ prompt: txt.slice(0, 300), reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
+    const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
+    const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), `fleethost:${process.pid}`, _sidecarLease.owner.epoch);
+    send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
   } catch (e) {
-    _sayLog({ prompt: txt.slice(0, 300), error: String((e && e.message) || e) });
+    const failure = String((e && e.message) || e);
+    const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, error: failure });
+    const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, `fleethost:${process.pid}`, _sidecarLease.owner.epoch);
+    send('ingress', { state: 'failed', directiveId: claim.directiveId, seq: fail.seq, outboxRecordHash: out && out.recordHash, reason: failure, timeline: 'fail' });
   }
   _sayBusy = false;
 }
 setInterval(pollSayInbox, 2500);
+let _draining = false;
+async function gracefulDrain(reason = 'shutdown') {
+  if (_draining) return; _draining = true;
+  send('lease', { state: 'draining', reason, epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
+  try { await _orchQueue; } catch {}
+  try { _sidecarLease?.release(); } catch {}
+  send('lease', { state: 'released', epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
+  process.exit(0);
+}
+process.on('SIGTERM', () => { gracefulDrain('SIGTERM'); });
+process.on('SIGINT', () => { gracefulDrain('SIGINT'); });
+process.on('exit', () => { try { _sidecarLease?.release(); } catch {} });
 
 process.on("message", (m) => {
   if (!m) return;
   // ATLAS turns are serialized; see enqueueOrchestrate above.
   if (m.t === "say") {
     if (autonomyEnabled) stopAutonomy("you're back — window ended early");
-    enqueueOrchestrate(m.text);
+    try {
+      const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say');
+      send('ingress', { state: 'journaled', directiveId: record.directiveId, seq: record.seq, timeline: 'journal' });
+    } catch (error) { send('ingress', { state: 'failed', reason: error.message }); }
     return;
   }
   else if (m.t === "autonomy") { if (m.on) startAutonomy(m.minutes); else stopAutonomy("stopped by you"); }
@@ -3954,6 +3989,7 @@ process.on("message", (m) => {
     const a = agents.get(m.id);
     if (a && a.state === "working") set(m.id, { state: "interrupted", summary: "cancelled by user" });
   }
+  else if (m.t === 'shutdown') gracefulDrain('ipc-shutdown');
 });
 
 // Restore persisted agents + the ATLAS conversation before signalling ready.

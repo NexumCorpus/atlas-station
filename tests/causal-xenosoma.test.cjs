@@ -50,4 +50,7 @@ assert.equal(observed.crashRecords.some(record => record.kind === 'causal-xenoso
 assert.equal(result.genome.calibration.grader, 'persistent-causal-xenosoma-grader');
 assert.equal(new Set(result.trials.map(t => t.evidenceAnchor)).size, 4);
 assert.equal(new Set(result.holdout.map(t => t.evidenceAnchor)).size, 2);
+const candidate = x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-candidate-')));
+assert.equal(candidate.status, 'candidate');
+assert.deepEqual(candidate.unknownGates.sort(), ['boundary', 'rde']);
 console.log('causal xenosoma commit-reveal instrument: ALL PASS');

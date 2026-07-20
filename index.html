@@ -1140,6 +1140,11 @@ input:focus-visible{outline:none}
   // ── fleet IPC listener ──────────────────────────────
   window.atlas.onFleet(function(m){
     if(!m)return;
+    if(m.type==="lease"||m.type==="ingress"){
+      var _estate = m.type === 'lease' ? ('sidecar lease · '+(m.state||'')+' · epoch '+(m.epoch||'')+' · pid '+(m.pid||'')) : ('ingress '+(m.state||'')+' · '+(m.directiveId||'')+' · seq '+(m.seq||''));
+      addTimelineEvent(m.state==='failed'||m.state==='blocked'?'⚠':'↳',_estate,m.state==='failed'||m.state==='blocked'?'evfailed':'');
+      return;
+    }
     if(m.type==="execution"){
       renderExecution(m);
       addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',

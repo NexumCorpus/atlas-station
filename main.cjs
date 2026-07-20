@@ -94,7 +94,12 @@ function startFleet() {
   });
 }
 
-function stopFleet() { try { if (fleet) fleet.kill(); } catch (_) {} fleet = null; }
+function stopFleet() {
+  const current = fleet;
+  if (!current) return;
+  try { current.send({ t: "shutdown" }); } catch (_) {}
+  setTimeout(() => { try { if (fleet === current) current.kill(); } catch (_) {} }, 15000);
+}
 
 function settleStaleAgents(generation, exitedAt) {
   for (const [id, agent] of lastAgents) {
