@@ -127,6 +127,8 @@ let _decisionLoop = null;
 try { _decisionLoop = _require('./decision-loop.cjs'); } catch { _decisionLoop = null; }
 let _xenosoma = null;
 try { _xenosoma = _require('./xenosoma.cjs'); } catch { _xenosoma = null; }
+let _causalXenosoma = null;
+try { _causalXenosoma = _require('./causal-xenosoma.cjs'); } catch { _causalXenosoma = null; }
 let _continuity = null;
 try { _continuity = _require('./continuity.cjs'); } catch { _continuity = null; }
 
@@ -3472,10 +3474,10 @@ async function orchestrate(userText, source = 'user') {
   }
   // Named instrument execution is explicit and bounded. Ordinary dialogue
   // never runs or promotes an ecology experiment implicitly.
-  if (_xenosoma && /\bXENOSOMA_EXPERIMENT\b/i.test(String(userText || ''))) {
+  if (_causalXenosoma && /\bXENOSOMA_EXPERIMENT\b/i.test(String(userText || ''))) {
     try {
-      const result = _xenosoma.runInstrument({ name: 'contrastive-omission-v1', seeds: [2, 7, 13], holdoutSeeds: [19, 23] });
-      const receipt = _xenosoma.persistCandidate(result, path.join(REPO, 'memory'));
+      const result = _causalXenosoma.runCausalExperiment({ name: 'causal-perturbation-v1', seeds: [2, 4, 6] });
+      const receipt = _causalXenosoma.persistCandidate(result, path.join(REPO, 'memory'));
       send('xenosoma', { status: receipt.status, experimentHash: result.experimentHash, metrics: result.metrics, genome: result.genome });
     } catch (error) { send('xenosoma', { status: 'failed', reason: error.message }); }
   }

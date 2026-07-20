@@ -43,4 +43,7 @@ assert.equal(evaluation.status, 'eligible');
 const promoted = promoteExperiment(experiment, evaluation, { policyId: 'policy-1', scope: 'local-context', expiry: '2099-01-01', falsifier: 'holdout fails', killCondition: 'regression', decision: 'minimum-context' });
 assert.equal(promoted.status, 'promoted');
 assert.equal(promoted.policy.parentHash, null);
+const unknown = createExperiment({ experimentId: 'exp-unknown', name: 'unknown-metrics', generator: 'atlas-generator', grader: 'independent-grader', holdout: ['holdout-unknown'] });
+for (let i = 0; i < 3; i++) addTrial(unknown, { trialId: `u${i}`, evidenceAnchor: textAnchor(`unknown-${i}`), graderReceipt: `grader-u${i}`, metrics: { retrievalUtility: null, verificationYield: 1, decisionRegret: 0, novelty: 1, cost: 1, rollbackIntegrity: true } });
+assert.equal(evaluateExperiment(unknown, { passed: true, evidenceAnchor: textAnchor('holdout-unknown') }).status, 'candidate');
 console.log('decision loop: ALL PASS');

@@ -46,6 +46,15 @@ const child = spawnSync(process.execPath, ['-e', `
 `], { encoding: 'utf8' });
 assert.equal(child.status, 0, child.stderr);
 assert.deepEqual(JSON.parse(child.stdout), { decision: 'minimum-context' });
+assert.equal(loop.loadPromotedPolicy(dir).policyId, 'restart-policy');
+const parent = { policyId: 'parent-policy', policyHash: loop.textAnchor('parent-policy'), decision: 'parent-decision' };
+loop.appendRecord({ kind: 'policy', status: 'promoted', policy: parent }, dir);
+const childPolicy = { policyId: 'child-policy', policyHash: loop.textAnchor('child-policy'), parentHash: parent.policyHash, decision: 'child-decision' };
+loop.appendRecord({ kind: 'policy', status: 'promoted', policy: childPolicy }, dir);
+loop.revokePolicy(childPolicy.policyHash, 'regression', parent.policyHash, dir);
+assert.equal(loop.loadPromotedPolicy(dir).policyId, 'parent-policy');
+const parentRecord = loop.readRecords(dir).find(r => r.status === 'promoted' && r.policy && r.policy.policyId === 'parent-policy');
+loop.appendRecord({ kind: 'quarantine', status: 'quarantined', targetRecordHash: parentRecord.recordHash }, dir);
 loop.appendRecord({ kind: 'quarantine', status: 'quarantined', targetRecordHash: 'sha256:contaminated' }, dir);
 loop.revokePolicy(promoted.policy.policyHash, 'holdout regression', promoted.policy.parentHash, dir);
 assert.equal(loop.loadPromotedPolicy(dir), null);

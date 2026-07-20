@@ -76,9 +76,17 @@ function readRecords(memDir) {
 
 function loadPromotedPolicy(memDir) {
   const records = readRecords(memDir);
-  const revoked = new Set(records.filter(r => r.status === 'revoked').map(r => r.policyHash));
+  const revokedRecords = records.filter(r => r.status === 'revoked');
+  const revoked = new Set(revokedRecords.map(r => r.policyHash));
   const quarantined = new Set(records.filter(r => r.status === 'quarantined').map(r => r.targetRecordHash));
-  return records.filter(r => r.status === 'promoted' && r.policy && !revoked.has(r.policy.policyHash) && !quarantined.has(r.recordHash)).at(-1)?.policy || null;
+  const promoted = records.filter(r => r.status === 'promoted' && r.policy && !quarantined.has(r.recordHash));
+  const active = promoted.filter(r => !revoked.has(r.policy.policyHash));
+  const latest = promoted.at(-1);
+  if (latest && revoked.has(latest.policy.policyHash)) {
+    const rollback = revokedRecords.at(-1)?.rollbackTarget;
+    return active.find(r => r.policy.policyHash === rollback)?.policy || active.at(-1)?.policy || null;
+  }
+  return active.at(-1)?.policy || null;
 }
 
 function createExperiment(input = {}) {
