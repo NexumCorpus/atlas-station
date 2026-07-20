@@ -28,6 +28,7 @@ _rebuild.log
 _*.log
 verify*.mjs
 verify*.cjs
+.atlas/sidecar-lease.json*
 orch_test.mjs
 gui.mjs
 upgrade1.mjs
