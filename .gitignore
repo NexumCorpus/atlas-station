@@ -36,6 +36,7 @@ _shim.log*
 _rde_campaign.log*
 _peer_reply1.*
 .cache/
+.agentplug-kv/
 
 # Session worktrees
 .claude/worktrees/
