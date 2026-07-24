@@ -8,6 +8,9 @@ const loop = require('./decision-loop.cjs');
 const circulation = require('./circulation.cjs');
 
 function hash(value) { return `sha256:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`; }
+function appendReceipt(record, memDir, authority) {
+  return authority ? loop.appendFencedRecord(record, memDir, authority) : loop.appendRecord(record, memDir);
+}
 function publicSurface(seed) { return { seed, observation: 'stable', bytes: 32 }; }
 function derivePerturbation(hypotheses) {
   const predictions = new Set(hypotheses.map(h => h.counterfactual));
@@ -64,7 +67,7 @@ function ledgerOrdering(memDir, commitmentRecordHash, perturbationRecordHash) {
     Number(commitment.sequence) < Number(perturbation.sequence) && Date.parse(commitment.ts) <= Date.parse(perturbation.ts));
 }
 
-async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2, 3, 4, 5], memDir = path.join(__dirname, 'memory') } = {}) {
+async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2, 3, 4, 5], memDir = path.join(__dirname, 'memory'), authority = null } = {}) {
   if (!Array.isArray(seeds) || seeds.length < 4 || new Set(seeds).size !== seeds.length) throw new Error('causal instrument requires >=4 distinct trials');
   const hypotheses = [
     { id: 'mechanism-alpha', observational: 'stable', counterfactual: 'alpha' },
@@ -75,9 +78,9 @@ async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2
     const started = Date.now();
     const commitment = await session.request({ mode: 'commit', trialSeeds: seeds });
     if (commitment.kind !== 'commitment' || !/^sha256:[0-9a-f]{64}$/.test(commitment.commitmentHash)) throw new Error('invalid grader commitment');
-    const commitmentReceipt = loop.appendRecord({ kind: 'causal-xenosoma-commitment', status: 'committed', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir);
+    const commitmentReceipt = appendReceipt({ kind: 'causal-xenosoma-commitment', status: 'committed', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir, authority);
     const perturbation = derivePerturbation(hypotheses);
-    const perturbationReceipt = loop.appendRecord({ kind: 'causal-xenosoma-perturbation', status: 'submitted', perturbation, commitmentRecordHash: commitmentReceipt.recordHash, commitmentHash: commitment.commitmentHash, sequence: commitment.sequence + 1 }, memDir);
+    const perturbationReceipt = appendReceipt({ kind: 'causal-xenosoma-perturbation', status: 'submitted', perturbation, commitmentRecordHash: commitmentReceipt.recordHash, commitmentHash: commitment.commitmentHash, sequence: commitment.sequence + 1 }, memDir, authority);
     const trials = [];
     for (const seed of seeds) {
       const surface = publicSurface(seed);
@@ -129,11 +132,11 @@ async function commitOnly({ memDir = path.join(__dirname, 'memory'), seeds = [2,
   const session = createGraderSession();
   try {
     const commitment = await session.request({ mode: 'commit', trialSeeds: seeds });
-    return loop.appendRecord({ kind: 'causal-xenosoma-commitment', status: 'committed-crash-test', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir);
+    return appendReceipt({ kind: 'causal-xenosoma-commitment', status: 'committed-crash-test', commitment, sequence: commitment.sequence, commitmentHash: commitment.commitmentHash }, memDir, arguments[0]?.authority);
   } finally { session.child.kill(); }
 }
 
-function persistCandidate(result, memDir) {
+function persistCandidate(result, memDir, authority = result.authority || null) {
   const anchors = result.trials.map(t => t.evidenceAnchor);
   const externalGate = (gate) => {
     const status = gate?.status;
@@ -156,11 +159,11 @@ function persistCandidate(result, memDir) {
   const prior = loop.readRecords(memDir);
   const quarantinedTargets = new Set(prior.filter(record => record.kind === 'quarantine').map(record => record.targetRecordHash));
   for (const old of prior.filter(record => record.kind === 'causal-xenosoma-experiment' && record.status === 'eligible-candidate' && !quarantinedTargets.has(record.recordHash))) {
-    loop.appendRecord({ kind: 'quarantine', status: 'quarantined', targetRecordHash: old.recordHash, reason: 'candidate gate hardening: prior record lacked independent external gates' }, memDir);
+    appendReceipt({ kind: 'quarantine', status: 'quarantined', targetRecordHash: old.recordHash, reason: 'candidate gate hardening: prior record lacked independent external gates' }, memDir, authority);
   }
   const circulationReceipt = circulation.envelope({ v: 1, flow_id: `xenosoma:${result.experimentHash}`, parent_flow_id: null, stage: 'verification', actor: 'persistent-causal-xenosoma-grader', provenance: anchors.map(sha256 => ({ sha256 })), completeness: { scope: 'selected', read_bytes: result.metrics.contextBytes, unread_bytes: 0, status: 'complete' }, authority: { level: 'verify', human_grant: null, mutation_allowed: false }, loss: { kind: 'none', input_bytes: result.metrics.contextBytes, output_bytes: result.metrics.contextBytes, status: 'measured' }, falsifiers: [{ ref: 'causal-holdout', independent: true, status: result.metrics.distinguishes ? 'pass' : 'fail' }], confidence: result.metrics.distinguishes ? 'inferred' : 'unknown' }, 'verification', 'persistent-causal-xenosoma-grader');
   const status = failed.length ? 'quarantined' : unknown.length ? 'candidate' : 'eligible-candidate';
-  return loop.appendRecord({ kind: 'causal-xenosoma-experiment', status, experimentHash: result.experimentHash, genome: result.genome, metrics: result.metrics, gates, failedGates: failed, unknownGates: unknown, evidenceAnchors: anchors, holdoutAnchors: result.holdout.map(t => t.evidenceAnchor), commitmentRecordHash: result.commitmentRecordHash, perturbationRecordHash: result.perturbationRecordHash, circulation: circulationReceipt, generator: 'causal-xenosoma-instrument', grader: 'persistent-causal-xenosoma-grader' }, memDir);
+  return appendReceipt({ kind: 'causal-xenosoma-experiment', status, experimentHash: result.experimentHash, genome: result.genome, metrics: result.metrics, gates, failedGates: failed, unknownGates: unknown, evidenceAnchors: anchors, holdoutAnchors: result.holdout.map(t => t.evidenceAnchor), commitmentRecordHash: result.commitmentRecordHash, perturbationRecordHash: result.perturbationRecordHash, circulation: circulationReceipt, generator: 'causal-xenosoma-instrument', grader: 'persistent-causal-xenosoma-grader' }, memDir, authority);
 }
 
 module.exports = { publicSurface, derivePerturbation, runCausalExperiment, commitOnly, persistCandidate, ledgerOrdering };

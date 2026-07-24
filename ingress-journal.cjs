@@ -48,6 +48,15 @@ function parseJournal(dir, repair = true) {
     if (!anchored && record.priorHash != null) { anchored = true; migrationAnchor = { seq: record.seq, recordHash: record.recordHash, priorHash: record.priorHash }; if (repair && !fs.existsSync(paths(dir).migration)) { const anchor = { schema: 1, kind: 'migration-anchor', ...migrationAnchor, signedHash: hash(migrationAnchor), createdAt: new Date().toISOString() }; const afd = fs.openSync(paths(dir).migration, 'w'); try { fs.writeSync(afd, JSON.stringify(anchor), null, 'utf8'); fs.fsyncSync(afd); } finally { fs.closeSync(afd); } } }
     records.push(record); priorHash = record.recordHash; expectedSeq++; offset = end + 1;
   }
+  if (migrationAnchor && fs.existsSync(paths(dir).migration)) {
+    try {
+      const anchor = JSON.parse(fs.readFileSync(paths(dir).migration, 'utf8'));
+      const signed = { seq: anchor.seq, recordHash: anchor.recordHash, priorHash: anchor.priorHash };
+      if (anchor.kind !== 'migration-anchor' || anchor.signedHash !== hash(signed) || hash(signed) !== hash(migrationAnchor)) throw new Error('migration anchor mismatch');
+    } catch (error) {
+      throw new Error(`migration anchor verification failed: ${error.message}`);
+    }
+  }
   if (invalid && repair) withLock(dir, () => {
     const fresh = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
     const suffix = fresh.subarray(invalid.offset).toString('utf8'); quarantine(dir, [{ reason: invalid.reason, byteOffset: invalid.offset, suffixHash: bytesHash(fresh.subarray(invalid.offset)), suffixBytes: suffix.slice(0, 8192) }]); salvageIngress(dir, suffix);
@@ -58,22 +67,35 @@ function parseJournal(dir, repair = true) {
 
 function readJournal(dir, repair = false) { return parseJournal(dir, repair).records; }
 
-function appendUnlocked(dir, record) {
+function appendBodyUnlocked(dir, record) {
   const state = parseJournal(dir, false);
+  if (state.invalid) throw new Error(`journal requires repair before append: ${state.invalid.reason}`);
+  if (state.migrationAnchor && !fs.existsSync(paths(dir).migration)) {
+    const anchor = { schema: 1, kind: 'migration-anchor', ...state.migrationAnchor, signedHash: hash(state.migrationAnchor), createdAt: new Date().toISOString() };
+    const afd = fs.openSync(paths(dir).migration, 'wx'); try { fs.writeSync(afd, JSON.stringify(anchor), null, 'utf8'); fs.fsyncSync(afd); } finally { fs.closeSync(afd); }
+  }
+  const body = { ...record, seq: state.records.length + 1, epoch: record.epoch || 1, priorHash: state.lastHash, ts: new Date().toISOString() };
+  body.recordHash = hash(body);
+  appendFileSync(paths(dir).journal, JSON.stringify(body) + '\n');
+  return body;
+}
+
+function appendUnlocked(dir, record) {
+  let state = parseJournal(dir, false);
   if (state.invalid) {
     const raw = fs.readFileSync(paths(dir).journal); const suffix = raw.subarray(state.invalid.offset).toString('utf8'); quarantine(dir, [{ reason: state.invalid.reason, byteOffset: state.invalid.offset, suffixHash: bytesHash(raw.subarray(state.invalid.offset)), suffixBytes: suffix.slice(0, 8192) }]); salvageIngress(dir, suffix);
     const fd = fs.openSync(paths(dir).journal, 'r+'); try { fs.ftruncateSync(fd, state.validBytes); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    state = parseJournal(dir, false);
   }
   const salvageFile = path.join(dir, 'ingress-salvage.ndjson');
   if (fs.existsSync(salvageFile)) {
     const salvageRows = readJsonLines(salvageFile); try { fs.unlinkSync(salvageFile); } catch {}
     for (const row of salvageRows) {
       const existing = parseJournal(dir, false).records.find(r => r.kind === 'ingress' && ((row.idempotencyKey && r.idempotencyKey === row.idempotencyKey) || (row.eventId && (r.eventId === row.eventId || r.directiveId === row.directiveId))));
-      if (!existing) appendUnlocked(dir, { kind: 'ingress', eventId: row.eventId || `event:${crypto.randomUUID()}`, directiveId: row.directiveId || row.eventId, idempotencyKey: row.idempotencyKey || null, contentHash: row.contentHash || bytesHash(row.text), source: row.source, text: row.text, createdAt: new Date().toISOString(), salvaged: true });
+      if (!existing) appendBodyUnlocked(dir, { kind: 'ingress', eventId: row.eventId || `event:${crypto.randomUUID()}`, directiveId: row.directiveId || row.eventId, idempotencyKey: row.idempotencyKey || null, contentHash: row.contentHash || bytesHash(row.text), source: row.source, text: row.text, createdAt: new Date().toISOString(), salvaged: true });
     }
   }
-  const body = { ...record, seq: state.records.length + 1, epoch: record.epoch || 1, priorHash: state.lastHash, ts: new Date().toISOString() }; body.recordHash = hash(body);
-  appendFileSync(paths(dir).journal, JSON.stringify(body) + '\n'); return body;
+  return appendBodyUnlocked(dir, record);
 }
 function append(dir, record) { return withLock(dir, () => appendUnlocked(dir, record)); }
 

@@ -55,12 +55,30 @@ function child(code, args) { return new Promise((resolve, reject) => { const p =
   const orphanRecord = j.reconcileLegacy(dir, legacy, 'legacy-say-inbox'); assert.equal(j.getIngress(dir, orphanRecord.eventId).text, 'orphan bytes');
 
   const journalPath = j.paths(dir).journal;
+  function assertPhysicalChain(label) {
+    const physical = fs.readFileSync(journalPath, 'utf8').split(/\n/).filter(Boolean).map(line => JSON.parse(line));
+    const parsed = j.readJournal(dir);
+    assert.equal(physical.length, parsed.length, `${label}: physical rows equal parsed rows`);
+    let prior = null;
+    physical.forEach((record, index) => {
+      const copy = { ...record }; delete copy.recordHash;
+      assert.equal(record.recordHash, j.hash(copy), `${label}: record hash ${index + 1}`);
+      assert.equal(record.seq, index + 1, `${label}: contiguous seq ${index + 1}`);
+      assert.equal(record.priorHash ?? null, prior, `${label}: prior hash ${index + 1}`);
+      prior = record.recordHash;
+    });
+  }
   const salvage = { kind: 'ingress', eventId: 'event:migration-salvage', directiveId: 'event:migration-salvage', contentHash: j.bytesHash('migration payload'), source: 'migration', text: 'migration payload', seq: 999, priorHash: null, ts: new Date().toISOString() }; salvage.recordHash = j.hash(salvage);
   fs.appendFileSync(journalPath, JSON.stringify(salvage) + '\n');
   j.appendIngress(dir, 'post-migration', 'migration');
   assert.equal(j.getIngress(dir, 'event:migration-salvage').text, 'migration payload', 'valid ingress suffix is salvaged and re-ingested');
+  assert(fs.existsSync(j.paths(dir).migration), 'migration anchor is durable');
+  assertPhysicalChain('after salvage');
+  j.appendIngress(dir, 'append-after-recovery', 'migration');
+  assertPhysicalChain('after append-after-recovery');
   fs.appendFileSync(journalPath, '{"kind":"corrupt-middle"}\n{"kind":"suffix"}\n');
-  const recovered = j.readJournal(dir); const raw = fs.readFileSync(journalPath); assert.equal(raw[raw.length - 1], 0x0a); assert(!recovered.some(record => record.kind === 'corrupt-middle')); assert(fs.existsSync(j.paths(dir).quarantine));
+  const recovered = j.readJournal(dir, true); const raw = fs.readFileSync(journalPath); assert.equal(raw[raw.length - 1], 0x0a); assert(!recovered.some(record => record.kind === 'corrupt-middle')); assert(fs.existsSync(j.paths(dir).quarantine)); assertPhysicalChain('after corrupt-tail repair');
+  const anchor = fs.readFileSync(j.paths(dir).migration, 'utf8'); fs.writeFileSync(j.paths(dir).migration, anchor.replace('migration-anchor', 'tampered-anchor')); assert.throws(() => j.readJournal(dir), /migration anchor verification failed/); fs.writeFileSync(j.paths(dir).migration, anchor);
   lease.release();
   console.log(JSON.stringify({ ok: true, dir, writers: 100, uniqueIdenticalEvents: [first.eventId, second.eventId], retryEventId: retry.eventId, claimEvents: [claimA.eventId, claimB.eventId], repairedResult: published.recordHash, repairedAck: repaired[0].recordHash, ackFirst: ackB.recordHash, recoveredBytes: 3060, corruptSuffixQuarantined: true }));
 })().catch(error => { try { lease.release(); } catch {} console.error(error); process.exitCode = 1; });

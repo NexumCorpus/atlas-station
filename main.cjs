@@ -3,7 +3,8 @@
 // harness renderer, and dispatches new agents on request. The window is the
 // oversight surface for many agents — the station, not a single cell.
 const { app, BrowserWindow, ipcMain, screen } = require("electron");
-const { spawn, execFile } = require("child_process");
+const { spawn, execFile, execFileSync } = require("child_process");
+const crypto = require("crypto");
 const path = require("path");
 
 const fs = require("fs");
@@ -69,7 +70,7 @@ function startFleet() {
     fleet = spawn(NODE, [path.join(__dirname, "fleethost.mjs")], {
       cwd: __dirname, env: fleetEnv, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
-    appendSupervisorReceipt({ kind: 'supervisor-start', generation, pid: fleet.pid, startedAt });
+    appendSupervisorReceipt({ kind: 'supervisor-start', generation, pid: fleet.pid, startedAt, processIdentity: processIdentity(fleet.pid) });
     if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "started", generation, pid: fleet.pid, startedAt });
   } catch (e) {
     if (win) win.webContents.send("fleet", { type: "fleet_lifecycle", state: "failed", generation, startedAt, error: String((e && e.message) || e), restarting: true });
@@ -109,13 +110,34 @@ function stopFleet() {
 }
 
 function supervisorRegistryPath() { return path.join(__dirname, '.atlas', 'supervisor-registry.ndjson'); }
-function appendSupervisorReceipt(record) { try { fs.mkdirSync(path.dirname(supervisorRegistryPath()), { recursive: true }); fs.appendFileSync(supervisorRegistryPath(), JSON.stringify({ ...record, ts: new Date().toISOString() }) + '\n', 'utf8'); } catch (_) {} }
+function processIdentity(pid) {
+  if (!pid) return null;
+  try {
+    const script = `$p=Get-CimInstance Win32_Process -Filter 'ProcessId = ${Number(pid)}'; if($p){[pscustomobject]@{pid=[int]$p.ProcessId;creation=[string]$p.CreationDate;command=[string]$p.CommandLine}|ConvertTo-Json -Compress}`;
+    return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true }).trim());
+  } catch (_) { return null; }
+}
+function appendSupervisorReceipt(record) {
+  try {
+    fs.mkdirSync(path.dirname(supervisorRegistryPath()), { recursive: true });
+    const file = supervisorRegistryPath(); const prior = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).at(-1) : null;
+    const priorRecord = prior ? JSON.parse(prior) : null;
+    const body = { ...record, ts: new Date().toISOString(), priorHash: priorRecord?.recordHash || null };
+    body.recordHash = `sha256:${crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex')}`;
+    const fd = fs.openSync(file, 'a'); try { fs.writeSync(fd, JSON.stringify(body) + '\n', null, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  } catch (_) {}
+}
 function terminateFleetTree(pid) { if (!pid) return; if (process.platform === 'win32') { try { require('child_process').execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch (_) {} } else { try { process.kill(pid, 'SIGTERM'); } catch (_) {} } }
 function sweepStaleFleetGenerations() {
   const registry = supervisorRegistryPath(); if (!fs.existsSync(registry)) return;
   let rows = []; try { rows = fs.readFileSync(registry, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)); } catch (_) { return; }
   const exited = new Set(rows.filter(row => row.kind === 'supervisor-exit').map(row => Number(row.generation)));
-  for (const row of rows.filter(row => row.kind === 'supervisor-start' && !exited.has(Number(row.generation)))) { if (row.pid && row.pid !== process.pid) terminateFleetTree(row.pid); appendSupervisorReceipt({ kind: 'supervisor-sweep', generation: row.generation, pid: row.pid }); }
+  for (const row of rows.filter(row => row.kind === 'supervisor-start' && !exited.has(Number(row.generation)))) {
+    const live = row.processIdentity && processIdentity(row.pid);
+    const sameProcess = live && live.pid === row.processIdentity.pid && live.creation === row.processIdentity.creation && /fleethost\.mjs/i.test(live.command || '');
+    if (sameProcess && row.pid !== process.pid) terminateFleetTree(row.pid);
+    appendSupervisorReceipt({ kind: 'supervisor-sweep', generation: row.generation, pid: row.pid, processIdentity: live, action: sameProcess ? 'terminated' : 'not-terminated-identity-mismatch' });
+  }
 }
 
 function settleStaleAgents(generation, exitedAt) {

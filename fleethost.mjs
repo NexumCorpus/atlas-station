@@ -3479,8 +3479,9 @@ async function orchestrate(userText, source = 'user') {
   // never runs or promotes an ecology experiment implicitly.
   if (_causalXenosoma && /\bXENOSOMA_EXPERIMENT\b/i.test(String(userText || ''))) {
     try {
-      const result = await _causalXenosoma.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [2, 3, 4, 5], memDir: path.join(REPO, 'memory') });
-      const receipt = _causalXenosoma.persistCandidate(result, path.join(REPO, 'memory'));
+      const causalAuthority = { root: INGRESS_DIR, token: _sidecarLease?.token, epoch: _sidecarLease?.owner?.epoch };
+      const result = await _causalXenosoma.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [2, 3, 4, 5], memDir: path.join(REPO, 'memory'), authority: causalAuthority });
+      const receipt = _causalXenosoma.persistCandidate({ ...result, authority: causalAuthority }, path.join(REPO, 'memory'), causalAuthority);
       send('xenosoma', { status: receipt.status, experimentHash: result.experimentHash, metrics: result.metrics, genome: result.genome });
     } catch (error) { send('xenosoma', { status: 'failed', reason: error.message }); }
   }
@@ -4203,6 +4204,19 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         const dreamId = 'DREAM-' + pulseCount;
         const dreamOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'reflection' }, MODEL_SONNET);
         set(dreamId, { id: dreamId, state: 'working', mode: 'read', task: `dream protocol (pulse ${pulseCount})`, model: dreamOptions.atlasAssignedModel || MODEL_SONNET });
+        if (_dream.writeDreamReceipt) {
+          try {
+            _dream.writeDreamReceipt({
+              dreamId,
+              pulseCount,
+              event: 'started',
+              state: 'working',
+              task: `dream protocol (pulse ${pulseCount})`,
+              input: dreamPrompt,
+              exit: { state: 'working', code: null, signal: null },
+            }, memDir);
+          } catch {}
+        }
         const dreamCtrl = new AbortController();
         abortControllers.set(dreamId, dreamCtrl);
         let dreamText = '';
@@ -4219,10 +4233,58 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
           dreamText = await consume(dreamId, iter, false, null);
         } catch (e) {
           set(dreamId, { state: 'failed', summary: `dream failed: ${e.message}` });
+          if (_dream.writeDreamReceipt) {
+            try {
+              _dream.writeDreamReceipt({
+                dreamId,
+                pulseCount,
+                event: 'terminal',
+                state: 'failed',
+                task: `dream protocol (pulse ${pulseCount})`,
+                input: dreamPrompt,
+                output: '',
+                error: { name: e.name || 'Error', message: e.message || String(e), stack: e.stack || null },
+                exit: { state: 'failed', code: e.code ?? e.status ?? null, signal: e.signal ?? null },
+              }, memDir);
+            } catch {}
+          }
           abortControllers.delete(dreamId);
           return;
         }
         abortControllers.delete(dreamId);
+        const dreamTerminal = agents.get(dreamId) || {};
+        if (dreamTerminal.state !== 'done') {
+          if (_dream.writeDreamReceipt) {
+            try {
+              _dream.writeDreamReceipt({
+                dreamId,
+                pulseCount,
+                event: 'terminal',
+                state: dreamTerminal.state || 'failed',
+                task: `dream protocol (pulse ${pulseCount})`,
+                input: dreamPrompt,
+                output: dreamText,
+                error: { name: 'DreamRunFailed', message: dreamText || dreamTerminal.summary || 'dream run failed' },
+                exit: { state: dreamTerminal.state || 'failed', code: null, signal: null },
+              }, memDir);
+            } catch {}
+          }
+          return;
+        }
+        if (_dream.writeDreamReceipt) {
+          try {
+            _dream.writeDreamReceipt({
+              dreamId,
+              pulseCount,
+              event: 'terminal',
+              state: 'done',
+              task: `dream protocol (pulse ${pulseCount})`,
+              input: dreamPrompt,
+              output: dreamText,
+              exit: { state: 'done', code: 0, signal: null },
+            }, memDir);
+          } catch {}
+        }
 
         // Parse the dream output
         let dreamReport = { patterns: [], insights: [], proposals: [], mood: 'processing' };
