@@ -110,6 +110,7 @@ function append(dir, record) { return withLock(dir, () => appendUnlocked(dir, re
 
 function leaseParts(leaseOrOwner, token, epoch) {
   if (leaseOrOwner && leaseOrOwner.owner) return { owner: `fleethost:${leaseOrOwner.owner.pid}`, token: token || leaseOrOwner.token || leaseOrOwner.owner.token, epoch: epoch || leaseOrOwner.owner.epoch };
+  if (leaseOrOwner && leaseOrOwner.pid && leaseOrOwner.token) return { owner: `fleethost:${leaseOrOwner.pid}`, token: token || leaseOrOwner.token, epoch: epoch || leaseOrOwner.epoch };
   return { owner: String(leaseOrOwner), token, epoch };
 }
 function assertLease(root, leaseOrOwner, token, epoch) {
@@ -149,24 +150,132 @@ function reconcileLegacy(dir, inbox, source = 'legacy-say-inbox') {
   return first;
 }
 
-function entries(dir) { dir = canonicalDir(dir); const state = parseJournal(dir, false); const records = state.invalid?.record ? [...state.records, { ...state.invalid.record, __quarantined: true }] : state.records; const byId = new Map(); for (const record of records) { if (!record.eventId && !record.directiveId) continue; const id = record.eventId || record.directiveId; const item = byId.get(id) || { ingress: null, claims: [], terminal: null, terminalConflicts: [], lateResults: [] }; if (record.kind === 'ingress') item.ingress ||= record; else if (record.kind === 'claim') item.claims.push(record); else if (record.kind === 'ack' || record.kind === 'fail') { if (!item.terminal) item.terminal = record; else { item.terminalConflicts.push(record); if (record.kind === 'ack') item.lateResults.push(record); } } byId.set(id, item); } return { records: state.records, byId }; }
+function entries(dir) {
+  dir = canonicalDir(dir); const state = parseJournal(dir, false);
+  const records = state.invalid?.record ? [...state.records, { ...state.invalid.record, __quarantined: true }] : state.records;
+  const byId = new Map();
+  for (const record of records) {
+    if (!record.eventId && !record.directiveId) continue;
+    const id = record.eventId || record.directiveId;
+    const item = byId.get(id) || { ingress: null, claims: [], renewals: [], terminal: null, terminalConflicts: [], lateResults: [], adjudications: [] };
+    if (record.kind === 'ingress') item.ingress ||= record;
+    else if (record.kind === 'claim') item.claims.push(record);
+    else if (record.kind === 'claim-renewal') item.renewals.push(record);
+    else if (record.kind === 'adjudication' || record.kind === 'supersession') item.adjudications.push(record);
+    else if (record.kind === 'ack' || record.kind === 'fail') {
+      if (!item.terminal) item.terminal = record;
+      else item.terminalConflicts.push(record);
+    } else if (record.kind === 'late-result') item.lateResults.push(record);
+    byId.set(id, item);
+  }
+  for (const item of byId.values()) {
+    item.lateResults.push(...item.terminalConflicts.filter(record => record.kind === 'ack' || record.kind === 'fail' && record.resultHash));
+  }
+  return { records: state.records, byId };
+}
 function getIngress(dir, eventId) { return entries(dir).byId.get(eventId)?.ingress || null; }
-function terminal(dir, eventId) { return entries(dir).byId.get(eventId)?.terminal || null; }
+function latestAttempt(item) {
+  if (!item) return null;
+  const claims = [...item.claims].sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+  const claim = claims.at(-1); if (!claim) return null;
+  const renewals = item.renewals.filter(r => r.attemptId === claim.attemptId).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+  return renewals.at(-1) || claim;
+}
+function activeAttempt(item, now = Date.now()) {
+  const attempt = latestAttempt(item); return attempt && Number(attempt.expiresAt || 0) > now ? attempt : null;
+}
+function workerStillAlive(attempt, now = Date.now()) {
+  if (!attempt || Number(attempt.expiresAt || 0) > now || !attempt.workerPid) return false;
+  try { process.kill(Number(attempt.workerPid), 0); return true; } catch { return false; }
+}
+function authoritativeTerminal(dir, eventId) {
+  const item = entries(dir).byId.get(eventId); if (!item?.terminal) return null;
+  let result = item.terminal;
+  for (const adjudication of item.adjudications.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
+    if (adjudication.rejectedTerminalHash === result.recordHash && adjudication.replacementTerminalHash) {
+      const replacement = [...item.terminalConflicts, ...item.lateResults].find(r => r.recordHash === adjudication.replacementTerminalHash);
+      const proofMatches = adjudication.proof?.eventId === eventId && (adjudication.proof?.replacementAttemptId === replacement.attemptId || (replacement.attemptId == null && adjudication.proof?.legacyFossil === true && adjudication.proof?.replacementResultHash === replacement.resultHash));
+      if (replacement && proofMatches) result = replacement;
+    }
+  }
+  return result;
+}
+function terminal(dir, eventId) { return authoritativeTerminal(dir, eventId); }
 
-function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxReplays = 3) {
+function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxReplays = 3, attemptMeta = {}) {
   dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
-    const candidate = [...snapshot.byId.values()].find(item => item.ingress && !item.terminal && !item.claims.some(c => Number(c.expiresAt || 0) > now)); if (!candidate) return null;
+    const candidate = [...snapshot.byId.values()].find(item => item.ingress && !item.terminal && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
     const priorClaim = candidate.claims[candidate.claims.length - 1];
-    if (candidate.claims.length >= maxReplays) { appendUnlocked(dir, { kind: 'fail', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId, reason: `replay-limit-${maxReplays}`, owner: l.owner, token: l.token, epoch: l.epoch, replayCount: candidate.claims.length }); return null; }
-    return appendUnlocked(dir, { kind: 'claim', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId, contentHash: candidate.ingress.contentHash, owner: l.owner, token: l.token, epoch: l.epoch, expiresAt: now + claimTtlMs, replay: Boolean(priorClaim), claimCount: candidate.claims.length + 1 });
+    if (candidate.claims.length >= maxReplays) { appendUnlocked(dir, { kind: 'replay-limit', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId, reason: `replay-limit-${maxReplays}`, owner: l.owner, token: l.token, epoch: l.epoch, replayCount: candidate.claims.length }); return null; }
+    const eventId = candidate.ingress.eventId || candidate.ingress.directiveId;
+    return appendUnlocked(dir, { kind: 'claim', eventId, directiveId: candidate.ingress.directiveId, contentHash: candidate.ingress.contentHash,
+      attemptId: `attempt:${crypto.randomUUID()}`, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
+      workerPid: attemptMeta.workerPid || process.pid, workerStartIdentity: attemptMeta.workerStartIdentity || null,
+      providerSessionId: attemptMeta.providerSessionId || null, providerModel: attemptMeta.providerModel || null,
+      expiresAt: now + claimTtlMs, replay: Boolean(priorClaim), claimCount: candidate.claims.length + 1 });
   });
 }
 
-function terminalAppend(dir, kind, eventId, result, leaseOrOwner, epoch, token, extra = {}) { return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const existing = terminal(dir, eventId); if (existing) { appendUnlocked(dir, { kind: 'terminal-conflict', eventId, directiveId: eventId, firstTerminalHash: existing.recordHash, attemptedKind: kind, owner: l.owner, token: l.token, epoch: l.epoch }); if (kind === 'ack') appendUnlocked(dir, { kind: 'late-result', eventId, directiveId: eventId, resultHash: bytesHash(result), result: String(result), firstTerminalHash: existing.recordHash, owner: l.owner, token: l.token, epoch: l.epoch }); return existing; } let canonical; try { canonical = JSON.parse(String(result)); } catch { canonical = { reply: String(result) }; } return appendUnlocked(dir, { kind, eventId, directiveId: eventId, resultHash: bytesHash(result), result: String(result), publication: { reply: canonical.reply ?? null, error: canonical.error ?? null, control: canonical.control ?? null }, owner: l.owner, token: l.token, epoch: l.epoch, ...extra }); }); }
-function ack(dir, eventId, result, leaseOrOwner, epoch, token, extra) { return terminalAppend(dir, 'ack', eventId, result, leaseOrOwner, epoch, token, extra); }
-function fail(dir, eventId, reason, leaseOrOwner, epoch, token) { return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const existing = terminal(dir, eventId); if (existing) { appendUnlocked(dir, { kind: 'terminal-conflict', eventId, directiveId: eventId, firstTerminalHash: existing.recordHash, attemptedKind: 'fail', reason: String(reason), owner: l.owner, token: l.token, epoch: l.epoch }); return existing; } return appendUnlocked(dir, { kind: 'fail', eventId, directiveId: eventId, reason: String(reason), owner: l.owner, token: l.token, epoch: l.epoch }); }); }
+function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlMs = 30000) {
+  return withLock(dir, () => {
+    const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); const current = latestAttempt(item);
+    if (!current || current.attemptId !== attempt.attemptId || current.recordHash !== attempt.claimRecordHash || current.contentHash !== attempt.contentHash) throw new Error('claim renewal authority mismatch');
+    return appendUnlocked(dir, { kind: 'claim-renewal', eventId, directiveId: item.ingress.directiveId, attemptId: current.attemptId, claimRecordHash: current.recordHash,
+      contentHash: current.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
+      workerPid: attempt.workerPid, workerStartIdentity: attempt.workerStartIdentity, providerSessionId: attempt.providerSessionId, providerModel: attempt.providerModel,
+      expiresAt: Date.now() + claimTtlMs });
+  });
+}
+
+function validateAttempt(item, eventId, extra, kind) {
+  const attempt = item && item.claims.find(c => c.attemptId === extra.attemptId && c.recordHash === extra.claimRecordHash);
+  if (!attempt || attempt.contentHash !== item.ingress.contentHash || extra.contentHash !== item.ingress.contentHash) throw new Error('terminal attempt/content authority mismatch');
+  if (extra.workerPid != null && Number(extra.workerPid) !== Number(attempt.workerPid)) throw new Error('terminal worker pid mismatch');
+  if (extra.workerStartIdentity && extra.workerStartIdentity !== attempt.workerStartIdentity) throw new Error('terminal process identity mismatch');
+  if (extra.executionPath === 'model' && (!extra.providerModel || !attempt.providerModel)) throw new Error('model terminal missing provider authority');
+  if (!['model', 'deterministic-control', 'repair', 'operator-cancel'].includes(extra.executionPath)) throw new Error('terminal executionPath required');
+  if (extra.executionPath === 'deterministic-control' && !extra.parserRule) throw new Error('deterministic control requires parserRule');
+  return attempt;
+}
+function terminalAppend(dir, kind, eventId, result, leaseOrOwner, epoch, token, extra = {}) { return withLock(dir, () => {
+  const l = assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const item = snapshot.byId.get(eventId); if (!item?.ingress) throw new Error('unknown ingress event');
+  const existing = authoritativeTerminal(dir, eventId);
+  let attempt = null;
+  if (extra.executionPath === 'repair') { if (!extra.repairProof) throw new Error('repair terminal requires repairProof'); }
+  else attempt = validateAttempt(item, eventId, extra, kind);
+  if (attempt && Number(attempt.epoch) !== Number(l.epoch)) throw new Error('terminal epoch no longer current');
+  if (attempt && extra.tokenFingerprint && extra.tokenFingerprint !== attempt.tokenFingerprint) throw new Error('terminal token fingerprint mismatch');
+  if (attempt && extra.executionPath === 'model' && (!extra.workerStartIdentity || extra.workerStartIdentity !== attempt.workerStartIdentity)) throw new Error('model process identity required');
+  if (existing) {
+    const conflict = appendUnlocked(dir, { kind: 'terminal-conflict', eventId, directiveId: eventId, firstTerminalHash: existing.recordHash, attemptedKind: kind,
+      attemptId: extra.attemptId || null, resultHash: bytesHash(result), executionPath: extra.executionPath || null, owner: l.owner, token: l.token, epoch: l.epoch });
+    if (kind === 'ack') appendUnlocked(dir, { kind: 'late-result', eventId, directiveId: eventId, resultHash: bytesHash(result), result: String(result), firstTerminalHash: existing.recordHash,
+      attemptId: extra.attemptId || null, claimRecordHash: extra.claimRecordHash || null, contentHash: extra.contentHash || null, executionPath: extra.executionPath || null,
+      workerPid: extra.workerPid || null, workerStartIdentity: extra.workerStartIdentity || null, providerSessionId: extra.providerSessionId || null, providerModel: extra.providerModel || null,
+      owner: l.owner, token: l.token, epoch: l.epoch });
+    return { ...existing, conflictRecordHash: conflict.recordHash };
+  }
+  let canonical; try { canonical = JSON.parse(String(result)); } catch { canonical = { reply: String(result) }; }
+  return appendUnlocked(dir, { ...extra, kind, eventId, directiveId: eventId, resultHash: bytesHash(result), result: String(result), publication: { reply: canonical.reply ?? null, error: canonical.error ?? null, control: canonical.control ?? null },
+    owner: l.owner, token: l.token, epoch: l.epoch, attemptId: extra.attemptId, claimRecordHash: extra.claimRecordHash, contentHash: extra.contentHash,
+    executionPath: extra.executionPath, parserRule: extra.parserRule || null, workerPid: extra.workerPid || attempt?.workerPid || null, workerStartIdentity: extra.workerStartIdentity || attempt?.workerStartIdentity || null,
+    providerSessionId: extra.providerSessionId || attempt?.providerSessionId || null, providerModel: extra.providerModel || attempt?.providerModel || null });
+}); }
+function ack(dir, eventId, result, leaseOrOwner, epoch, token, extra = {}) { return terminalAppend(dir, 'ack', eventId, result, leaseOrOwner, epoch, token, extra); }
+function fail(dir, eventId, reason, leaseOrOwner, epoch, token, extra = {}) { return terminalAppend(dir, 'fail', eventId, JSON.stringify({ error: String(reason) }), leaseOrOwner, epoch, token, { ...extra, reason: String(reason) }); }
+
+function adjudicateTerminal(dir, eventId, rejectedTerminalHash, replacementTerminalHash, proof, leaseOrOwner, epoch, token) {
+  return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const item = snapshot.byId.get(eventId);
+    if (!item?.terminal || item.terminal.recordHash !== rejectedTerminalHash) throw new Error('adjudication rejected terminal mismatch');
+    if (proof?.firstTerminalInvalid !== true && proof?.legacyFossil !== true) throw new Error('adjudication requires invalid-terminal proof');
+    const replacement = [...item.terminalConflicts, ...item.lateResults].find(r => r.recordHash === replacementTerminalHash);
+    const replacementProofOk = replacement && replacement.eventId === eventId && proof?.eventId === eventId && (proof?.replacementAttemptId === replacement.attemptId || (replacement.attemptId == null && proof?.legacyFossil === true && proof?.replacementResultHash === replacement.resultHash));
+    if (!replacementProofOk) throw new Error('adjudication causal proof mismatch');
+    return appendUnlocked(dir, { kind: 'adjudication', eventId, directiveId: eventId, rejectedTerminalHash, replacementTerminalHash, proof, owner: l.owner, token: l.token, epoch: l.epoch });
+  });
+}
 
 function appendOutbox(file, entry) {
   fs.mkdirSync(path.dirname(file), { recursive: true }); let rows; try { rows = readJsonLines(file); } catch { const raw = fs.readFileSync(file); const boundary = raw.lastIndexOf(0x0a); appendFileSync(`${file}.quarantine`, JSON.stringify({ reason: 'outbox-corrupt-tail', suffixHash: bytesHash(raw.subarray(Math.max(0, boundary + 1))) }) + '\n'); const fd = fs.openSync(file, 'r+'); try { fs.ftruncateSync(fd, Math.max(0, boundary + 1)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } rows = readJsonLines(file); }
@@ -177,16 +286,16 @@ function repairPublication(dir, outboxFile, leaseOrOwner, epoch, token) {
   dir = canonicalDir(dir);
   let rows = []; try { rows = readJsonLines(outboxFile); } catch {}
   const repaired = [];
-  for (const row of rows) { if (!row.directiveId || terminal(dir, row.directiveId)) continue; repaired.push(ack(dir, row.directiveId, JSON.stringify({ reply: row.reply ?? null, error: row.error ?? null, control: row.control ?? null }), leaseOrOwner, epoch, token, { repairedFromOutbox: true, outboxRecordHash: row.recordHash })); }
+  for (const row of rows) { if (!row.directiveId || terminal(dir, row.directiveId)) continue; repaired.push(ack(dir, row.directiveId, JSON.stringify({ reply: row.reply ?? null, error: row.error ?? null, control: row.control ?? null }), leaseOrOwner, epoch, token, { executionPath: 'repair', repairProof: { outboxRecordHash: row.recordHash }, repairedFromOutbox: true, outboxRecordHash: row.recordHash })); }
   for (const record of readJournal(dir)) { if (record.kind !== 'ack' || !record.result || rows.some(row => row.directiveId === record.directiveId)) continue; const publication = record.publication || (() => { try { const parsed = JSON.parse(record.result); return { reply: parsed.reply ?? null, error: parsed.error ?? null, control: parsed.control ?? null }; } catch { return { reply: record.result, error: null, control: null }; } })(); appendOutbox(outboxFile, { directiveId: record.directiveId, ...publication, resultHash: record.resultHash, repairedFromAck: true }); }
   return repaired;
 }
 function telemetry(dir) {
   dir = canonicalDir(dir);
   const snapshot = entries(dir); const now = Date.now(); const pending = [...snapshot.byId.values()].filter(item => item.ingress && !item.terminal);
-  const claims = pending.flatMap(item => item.claims); const active = claims.filter(claim => Number(claim.expiresAt || 0) > now);
-  return { journalDepth: snapshot.records.length, queueDepth: pending.length, oldestAgeMs: pending.length ? Math.max(0, now - Date.parse(pending[0].ingress.createdAt || now)) : 0, activeClaimExpiry: active.length ? Math.min(...active.map(claim => claim.expiresAt)) : null, replayCount: claims.filter(claim => claim.replay).length, quarantineBytes: fs.existsSync(paths(dir).quarantine) ? fs.statSync(paths(dir).quarantine).size : 0 };
+  const claims = pending.flatMap(item => item.claims); const active = pending.map(item => activeAttempt(item, now)).filter(Boolean);
+  return { journalDepth: snapshot.records.length, queueDepth: pending.length, oldestAgeMs: pending.length ? Math.max(0, now - Date.parse(pending[0].ingress.createdAt || now)) : 0, activeClaimExpiry: active.length ? Math.min(...active.map(claim => claim.expiresAt)) : null, replayCount: claims.filter(claim => claim.replay).length, renewalCount: pending.reduce((n, item) => n + item.renewals.length, 0), quarantineBytes: fs.existsSync(paths(dir).quarantine) ? fs.statSync(paths(dir).quarantine).size : 0 };
 }
 function appendError(dir, error, context = {}) { return append(canonicalDir(dir), { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
 
-module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
+module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };

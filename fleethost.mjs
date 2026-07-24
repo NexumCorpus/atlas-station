@@ -3933,30 +3933,38 @@ async function pollSayInbox() {
   try { _ingress.repairPublication(INGRESS_DIR, SAY_OUTBOX, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); } catch (error) { send('ingress', { state: 'repair-failed', reason: error.message }); }
   try { send('ingress', { state: 'telemetry', ..._ingress.telemetry(INGRESS_DIR), leaseEpoch: _sidecarLease.owner.epoch, fencingToken: _sidecarLease.fencingToken }); } catch {}
   try { _ingress.reconcileLegacy(INGRESS_DIR, SAY_INBOX, 'legacy-say-inbox'); } catch (error) { send('ingress', { state: 'failed', reason: error.message }); return; }
-  const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token);
+  const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000, 3, {
+    workerPid: process.pid, workerStartIdentity: _sidecarLease.owner.startIdentity,
+    providerSessionId: `codex:${process.pid}:${Date.now()}`, providerModel: MODEL,
+  });
   if (!claim) return;
   const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
   const txt = item.text;
   _sayBusy = true;
+  const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
+    workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: MODEL };
+  const renewalTimer = setInterval(() => { try { const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000); send('ingress', { state: 'renewed', directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt, timeline: 'claim-renewal' }); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
+  renewalTimer.unref?.();
+  const finish = () => { clearInterval(renewalTimer); _sayBusy = false; };
   send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
   // control commands: !autonomy <min> grants a window; !stop ends it
   const am = txt.match(/^!autonomy\s+(\d+)/i);
-  if (am) { startAutonomy(parseInt(am[1], 10)); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); _sayBusy = false; return; }
-  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); _sayBusy = false; return; }
+  if (am) { startAutonomy(parseInt(am[1], 10)); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!autonomy <minutes>' }); finish(); return; }
+  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!stop' }); finish(); return; }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
     await enqueueOrchestrate(txt);
     const a = agents.get('ATLAS') || {};
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
-    const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { outboxRecordHash: out && out.recordHash });
+    const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
     send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
   } catch (e) {
     const failure = String((e && e.message) || e);
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, error: failure });
-    const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token);
+    const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model' });
     send('ingress', { state: 'failed', directiveId: claim.directiveId, seq: fail.seq, outboxRecordHash: out && out.recordHash, reason: failure, timeline: 'fail' });
   }
-  _sayBusy = false;
+  finish();
 }
 setInterval(pollSayInbox, 2500);
 let _draining = false;
