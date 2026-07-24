@@ -9,7 +9,7 @@ const { execFileSync } = require('child_process');
 const REPO = __dirname;
 const VERIFIERS = {
   'boundary-xenosoma-v1': { repo: 'E:/boundary', script: 'tools/verify_xenosoma_receipt.py', protocol: 'boundary-xenosoma-receipt-v1' },
-  'rde-xenosoma-v1': { repo: 'E:/recursive-discovery-engine', script: 'scripts/verify_xenosoma_receipt.py', protocol: 'rde-frozen-bar-receipt-v2' },
+  'rde-xenosoma-v1': { repo: 'E:/recursive-discovery-engine', script: 'scripts/verify_xenosoma_receipt.py', protocol: 'rde-causal-xenosoma-v1' },
 };
 
 function sortValue(value) {
@@ -48,6 +48,8 @@ function validateReceipt(receipt, expected, now = Date.now()) {
     for (const key of ['frozenBarHash', 'claimCheckerHash', 'holdoutFamilyHash', 'auditBundleHash']) {
       if (!exactHash(receipt[key])) problems.push(`${key}-invalid`);
     }
+    if (!receipt.preregistrationCommit || !/^[0-9a-f]{40}$/.test(receipt.preregistrationCommit)) problems.push('preregistration-commit-invalid');
+    if (!exactHash(receipt.adapterSourceHash)) problems.push('adapter-source-hash-invalid');
     if (!receipt.rdeRunId || typeof receipt.rdeRunId !== 'string') problems.push('rde-run-id-missing');
     if (!receipt.frozenBarVersion || receipt.claimCheckerResult !== true) problems.push('claim-checker-failed');
     const measurements = JSON.stringify(receipt.measurements || {});
@@ -70,17 +72,34 @@ function runVerifier(verifier, bundle) {
   return JSON.parse(out.trim());
 }
 
+function rdeBundle(result, evidenceAnchors, holdoutAnchors) {
+  return {
+    causalArtifact: {
+      surface: { observation: 'stable', bytes: 32 },
+      toggle: { feature: 'counterfactual-toggle', states: ['alpha', 'beta'] },
+    },
+    experimentHash: result.experimentHash,
+    commitmentRecordHash: result.commitmentRecordHash,
+    perturbationRecordHash: result.perturbationRecordHash,
+    evidenceAnchors: [...evidenceAnchors].sort(),
+    holdoutAnchors: [...holdoutAnchors].sort(),
+    generator: 'causal-xenosoma-instrument',
+    grader: 'persistent-causal-xenosoma-grader',
+  };
+}
+
 function verifyBundle(result, options = {}) {
   const evidenceAnchors = result.evidenceAnchors || result.trials.map(t => t.evidenceAnchor);
   const holdoutAnchors = result.holdoutAnchors || result.holdout.map(t => t.evidenceAnchor);
   const bundle = { ...result, evidenceAnchors, holdoutAnchors, generator: 'causal-xenosoma-instrument', grader: 'persistent-causal-xenosoma-grader' };
-  const expected = { experimentHash: result.experimentHash, commitmentRecordHash: result.commitmentRecordHash, perturbationRecordHash: result.perturbationRecordHash, evidenceAnchors, holdoutAnchors, artifactHash: recordHash(artifactValue(bundle)) };
+  const rde = rdeBundle(result, evidenceAnchors, holdoutAnchors);
+  const expected = { experimentHash: result.experimentHash, commitmentRecordHash: result.commitmentRecordHash, perturbationRecordHash: result.perturbationRecordHash, evidenceAnchors, holdoutAnchors, artifactHash: recordHash(artifactValue(rde)) };
   const receipts = {};
   for (const verifier of ['boundary-xenosoma-v1', 'rde-xenosoma-v1']) {
-    const receipt = options.receipts?.[verifier] || runVerifier(verifier, bundle);
+    const receipt = options.receipts?.[verifier] || runVerifier(verifier, verifier === 'rde-xenosoma-v1' ? rde : bundle);
     receipts[verifier] = validateReceipt(receipt, expected);
   }
   return { receipts, expected };
 }
 
-module.exports = { canonical, recordHash, validateReceipt, runVerifier, verifyBundle, VERIFIERS };
+module.exports = { canonical, recordHash, validateReceipt, runVerifier, verifyBundle, VERIFIERS, rdeBundle };
