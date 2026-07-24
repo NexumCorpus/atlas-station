@@ -51,10 +51,10 @@ assert.equal(result.genome.calibration.grader, 'persistent-causal-xenosoma-grade
 assert.equal(new Set(result.trials.map(t => t.evidenceAnchor)).size, 4);
 assert.equal(new Set(result.holdout.map(t => t.evidenceAnchor)).size, 2);
 const candidate = x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-candidate-')), null, { allowUnfencedTest: true });
-assert.equal(candidate.status, 'candidate');
-assert.deepEqual(candidate.unknownGates.sort(), ['rde']);
+assert.equal(candidate.status, 'eligible-candidate');
+assert.deepEqual(candidate.unknownGates.sort(), []);
 assert.equal(candidate.gates.boundary, true);
-assert.equal(candidate.gates.rde, 'unknown');
+assert.equal(candidate.gates.rde, true);
 assert.throws(() => x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-production-'))), /supervisor fencing authority/);
 assert.throws(() => x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-stale-')), { root: fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-lease-')), token: 'stale', epoch: 7 }), /lease|fence/);
 console.log('causal xenosoma commit-reveal instrument: ALL PASS');
