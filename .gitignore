@@ -62,6 +62,7 @@ docs/Atlas-Capstone.pdf
 .gm/turn-state.json
 .atlas/*.log
 .atlas/*.done.json
+.atlas/gm-content-crystal.txt
 .gm/*
 !.gm/disciplines/
 !.gm/disciplines/**
