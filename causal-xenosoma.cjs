@@ -6,6 +6,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const loop = require('./decision-loop.cjs');
 const circulation = require('./circulation.cjs');
+const independentReceipts = require('./independent-receipts.cjs');
 
 function hash(value) { return `sha256:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`; }
 function appendReceipt(record, memDir, authority, options = {}) {
@@ -71,7 +72,7 @@ function ledgerOrdering(memDir, commitmentRecordHash, perturbationRecordHash) {
     Number(commitment.sequence) < Number(perturbation.sequence) && Date.parse(commitment.ts) <= Date.parse(perturbation.ts));
 }
 
-async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2, 3, 4, 5], memDir = path.join(__dirname, 'memory'), authority = null, allowUnfencedTest = false } = {}) {
+async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2, 3, 4, 5], memDir = path.join(__dirname, 'memory'), authority = null, allowUnfencedTest = false, verifyIndependent = true } = {}) {
   if (!Array.isArray(seeds) || seeds.length < 4 || new Set(seeds).size !== seeds.length) throw new Error('causal instrument requires >=4 distinct trials');
   const hypotheses = [
     { id: 'mechanism-alpha', observational: 'stable', counterfactual: 'alpha' },
@@ -126,9 +127,12 @@ async function runCausalExperiment({ name = 'causal-perturbation-v4', seeds = [2
       falsifiers: ['trial or holdout class diversity below two', 'baseline gains information', 'commitment is post-hoc or unverifiable', 'hidden secret appears before reveal', 'holdout outcome is not reproduced'],
       holdout: { count: holdout.length, ownedBy: 'persistent-causal-xenosoma-grader' }, killCondition: 'apoptose on class collapse, commitment mismatch, ordering failure, or hidden-mechanism leakage', expiry: '2099-01-01', apoptosis: false,
     };
-    return { genome, hypotheses, perturbation, commitment, commitmentRecordHash: commitmentReceipt.recordHash, perturbationRecordHash: perturbationReceipt.recordHash, trials, holdout, metrics,
-      independentGates: { boundary: { status: 'missing', reason: 'no callable Boundary verifier attached to this route' }, rde: { status: 'missing', reason: 'no bounded RDE verifier receipt attached to this route' } },
-      experimentHash: hash({ genome, hypotheses, perturbation, commitment, trials, holdout, metrics }) };
+    const result = { genome, hypotheses, perturbation, commitment, commitmentRecordHash: commitmentReceipt.recordHash, perturbationRecordHash: perturbationReceipt.recordHash, trials, holdout, metrics,
+      generator: 'causal-xenosoma-instrument', grader: 'persistent-causal-xenosoma-grader', experimentHash: hash({ genome, hypotheses, perturbation, commitment, trials, holdout, metrics }) };
+    const bridge = verifyIndependent ? independentReceipts.verifyBundle(result) : null;
+    result.independentReceipts = bridge?.receipts || {};
+    result.independentGates = Object.fromEntries(Object.entries(result.independentReceipts).map(([verifier, checked]) => [verifier, { status: checked.receipt?.verdict || 'unknown', reason: checked.problems.join(',') || null, recordHash: checked.receipt?.recordHash, verifierSourceHead: checked.receipt?.verifierSourceHead }]));
+    return result;
   } finally { await session.close(); }
 }
 
@@ -142,10 +146,14 @@ async function commitOnly({ memDir = path.join(__dirname, 'memory'), seeds = [2,
 
 function persistCandidate(result, memDir, authority = result.authority || null, options = {}) {
   const anchors = result.trials.map(t => t.evidenceAnchor);
-  const externalGate = (gate) => {
-    const status = gate?.status;
-    if (status === 'pass' || status === 'verified' || status === 'certified') return true;
-    if (status === 'missing' || status === 'unknown' || status == null) return 'unknown';
+  const expected = { experimentHash: result.experimentHash, commitmentRecordHash: result.commitmentRecordHash, perturbationRecordHash: result.perturbationRecordHash, evidenceAnchors: anchors, holdoutAnchors: result.holdout.map(t => t.evidenceAnchor) };
+  const externalGate = (verifier) => {
+    const checked = result.independentReceipts?.[verifier];
+    if (!checked) return 'unknown';
+    const validated = checked.ok ? checked : independentReceipts.validateReceipt(checked.receipt, expected);
+    if (!validated.ok) return false;
+    if (validated.receipt.verdict === 'pass') return true;
+    if (validated.receipt.verdict === 'unknown') return 'unknown';
     return false;
   };
   const gates = {
@@ -155,8 +163,8 @@ function persistCandidate(result, memDir, authority = result.authority || null, 
     informationGain: Number.isFinite(result.metrics.informationGain) && result.metrics.informationGain > 0,
     baselineZero: result.metrics.baselineInformationGain === 0,
     holdout: result.metrics.verificationYield === 1,
-    boundary: externalGate(result.independentGates?.boundary),
-    rde: externalGate(result.independentGates?.rde),
+    boundary: externalGate('boundary-xenosoma-v1'),
+    rde: externalGate('rde-xenosoma-v1'),
   };
   const failed = Object.entries(gates).filter(([, value]) => value === false).map(([key]) => key);
   const unknown = Object.entries(gates).filter(([, value]) => value === 'unknown' || value === 'missing').map(([key]) => key);
