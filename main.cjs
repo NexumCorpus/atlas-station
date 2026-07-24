@@ -201,6 +201,7 @@ ipcMain.handle("activate-candidate", async (_e, manifest) => {
     const active = () => [...lastAgents.values()].some(a => a && ['working', 'needs-you'].includes(a.state));
     const checked = selfModification.requestActivation(__dirname, manifest, active);
     if (!checked.ok) return checked;
+    if (checked.idempotent) return { ...checked, restart: 'already-applied' };
     const candidate = String(manifest.candidateHead || '');
     execFileSync('git', ['-C', __dirname, 'merge', '--ff-only', candidate], { encoding: 'utf8', windowsHide: true });
     const applied = selfModification.appendActivationRecord(__dirname, { kind: 'activation-applied', activationId: manifest.activationId, manifestHash: manifest.recordHash, candidateHead: candidate });
