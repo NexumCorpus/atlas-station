@@ -3935,14 +3935,14 @@ async function pollSayInbox() {
   try { _ingress.reconcileLegacy(INGRESS_DIR, SAY_INBOX, 'legacy-say-inbox'); } catch (error) { send('ingress', { state: 'failed', reason: error.message }); return; }
   const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000, 3, {
     workerPid: process.pid, workerStartIdentity: _sidecarLease.owner.startIdentity,
-    providerSessionId: `codex:${process.pid}:${Date.now()}`, providerModel: MODEL,
+    providerSessionId: `codex:${process.pid}:${Date.now()}`, providerModel: ACTIVE_PROVIDER === 'codex-cli' ? ORCHESTRATOR_MODEL_DIRECTIVE : MODEL,
   });
   if (!claim) return;
   const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
   const txt = item.text;
   _sayBusy = true;
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
-    workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: MODEL };
+    workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel };
   const renewalTimer = setInterval(() => { try { const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000); send('ingress', { state: 'renewed', directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt, timeline: 'claim-renewal' }); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
   renewalTimer.unref?.();
   const finish = () => { clearInterval(renewalTimer); _sayBusy = false; };

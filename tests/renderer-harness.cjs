@@ -92,6 +92,8 @@ app.whenReady().then(async () => {
       window.atlas.emitFleet({ type: 'autonomy_progress', rested: true, idleStreak: 4, discovery: true, nextDelay: 4000 });
       if (!document.body.innerText.includes('autonomy forced discovery')) throw new Error('autonomy discovery progress was not visible');
       window.atlas.emitFleet({ type: 'fleet_lifecycle', state: 'started', generation: 7, pid: 12345, startedAt: new Date().toISOString() });
+      window.atlas.emitFleet({ type: 'ingress', state: 'renewed', directiveId: 'event:test', attemptId: 'attempt:test', seq: 9, expiresAt: Date.now() + 30000 });
+      if (!document.getElementById('timeline').innerText.includes('claim-renewal') || !document.getElementById('timeline').innerText.includes('attempt:test')) throw new Error('claim provenance was not visible');
       if (!document.body.innerText.includes('fleet sidecar started · generation 7 · pid 12345')) throw new Error('fleet generation was not visible');
 
       return { enterSent: true, shiftEnterPreserved: true, buildMode: 'build', readMode: 'read', cancelRouted: true, failureVisible: true, autonomyProgressVisible: true, fleetGenerationVisible: true };

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("atlas", {
   dispatch: (task, cwd, mode) => ipcRenderer.send("dispatch", { task, cwd, mode }),
   replyAgent: (id, text) => ipcRenderer.send("reply", { id, text }),
   selfBuild: () => ipcRenderer.send("self-build"),
+  activateCandidate: (manifest) => ipcRenderer.invoke("activate-candidate", manifest),
   cancel: (id) => ipcRenderer.send("cancel", { id }),
   readMemory: () => ipcRenderer.send("read-memory"),
   readRuns: () => ipcRenderer.send("read-runs"),

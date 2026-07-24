@@ -37,6 +37,18 @@ const recoveryAuth = { ...meta, workerPid: 502, workerStartIdentity: '502:boot-b
 const secondTerminal = journal.ack(root, second.eventId, JSON.stringify({ reply: 'separate' }), lease, epoch, token, recoveryAuth);
 assert.equal(secondTerminal.eventId, second.eventId);
 
+const blockedIngress = journal.appendIngress(root, 'replay bounded directive', 'test', { idempotencyKey: 'attempt-three' });
+for (let i = 0; i < 3; i++) { const c = journal.claimNext(root, lease, epoch, token, 1, 3, { ...meta, workerPid: 700 + i, workerStartIdentity: `700:${i}` }); assert.equal(c.eventId, blockedIngress.eventId); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3); }
+assert.equal(journal.claimNext(root, lease, epoch, token, 1, 3, meta), null);
+const blockedItem = journal.entries(root).byId.get(blockedIngress.eventId);
+assert.equal(blockedItem.terminal.blocked, true);
+assert.equal(blockedItem.terminal.reason, 'replay-limit-3');
+assert.equal(journal.entries(root).records.filter(r => r.eventId === blockedIngress.eventId && r.kind === 'fail').length, 1);
+const recoveryRecord = journal.repairReplayLimit(root, blockedIngress.eventId, 'operator-retry-after-worker-death', lease, epoch, token);
+assert.equal(recoveryRecord.kind, 'replay-recovery');
+const reopened = journal.claimNext(root, lease, epoch, token, 1000, 3, { ...meta, workerPid: 701, workerStartIdentity: '701:recovery' });
+assert.equal(reopened.eventId, blockedIngress.eventId);
+
 const events = journal.entries(root);
 assert.equal(events.byId.get(first.eventId).claims.length, 1);
 assert.equal(events.byId.get(first.eventId).renewals.length, 1);

@@ -10,9 +10,11 @@ const path = require("path");
 const fs = require("fs");
 const goalStore = require("./goal-store.cjs");
 const ingressJournal = require("./ingress-journal.cjs");
+const selfModification = require("./self-modification.cjs");
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
 let fleetGeneration = 0;
+let pendingActivationRestart = false;
 let lastHistory = null; const lastAgents = new Map(); let reloadTimer = null;
 
 function createWindow() {
@@ -95,9 +97,11 @@ function startFleet() {
     settleStaleAgents(generation, exitedAt);
     if (win) {
       const restarting = code !== 0 && code !== null;
+      const activationRestart = pendingActivationRestart;
+      pendingActivationRestart = false;
       win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, restarting });
       win.webContents.send("fleet", { type: "error", m: "fleet engine exited (generation " + generation + ", code " + (code ?? "?") + ")" });
-      if (restarting) setTimeout(() => { if (!fleet) startFleet(); }, 2000);
+      if (restarting || activationRestart) setTimeout(() => { if (!fleet) startFleet(); }, 2000);
     }
   });
 }
@@ -190,6 +194,22 @@ ipcMain.on("resolve-goal", (_e, p) => {
 ipcMain.on("cancel", (_e, p) => {
   if (!fleet || !p || !p.id) return;
   try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}
+});
+
+ipcMain.handle("activate-candidate", async (_e, manifest) => {
+  try {
+    const active = () => [...lastAgents.values()].some(a => a && ['working', 'needs-you'].includes(a.state));
+    const checked = selfModification.requestActivation(__dirname, manifest, active);
+    if (!checked.ok) return checked;
+    const candidate = String(manifest.candidateHead || '');
+    execFileSync('git', ['-C', __dirname, 'merge', '--ff-only', candidate], { encoding: 'utf8', windowsHide: true });
+    const applied = selfModification.appendActivationRecord(__dirname, { kind: 'activation-applied', activationId: manifest.activationId, manifestHash: manifest.recordHash, candidateHead: candidate });
+    pendingActivationRestart = true;
+    try { fleet?.send({ t: 'shutdown' }); } catch (_) {}
+    return { ...checked, applied, restart: 'supervisor' };
+  } catch (error) {
+    try { const rejected = selfModification.appendActivationRecord(__dirname, { kind: 'activation-rejected', activationId: manifest?.activationId || null, manifestHash: manifest?.recordHash || null, reasons: [String(error.message || error)] }); return { ok: false, rejected }; } catch (_) { return { ok: false, reasons: [String(error.message || error)] }; }
+  }
 });
 
 ipcMain.on("read-memory", async (_e) => {

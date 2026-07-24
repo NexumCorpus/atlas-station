@@ -1141,6 +1141,7 @@ input:focus-visible{outline:none}
   window.atlas.onFleet(function(m){
     if(!m)return;
     if(m.type==="lease"||m.type==="ingress"){
+      if(m.type==='ingress' && m.state==='renewed') addTimelineEvent('↻','claim-renewal · '+(m.directiveId||'')+' · attempt '+(m.attemptId||'')+' · seq '+(m.seq||'')+' · expires '+(m.expiresAt||''),'');
       if(m.state==='telemetry'){
         if(m.renewalCount) addTimelineEvent('↻','claim renewals '+m.renewalCount+' · active '+(m.activeClaimExpiry||'none'),'');
         addTimelineEvent('↻','journal '+(m.queueDepth||0)+' pending · depth '+(m.journalDepth||0)+' · replay '+(m.replayCount||0)+' · quarantine '+(m.quarantineBytes||0)+' bytes · lease '+(m.leaseEpoch||'')+' · active '+(m.activeClaimExpiry||'none'),'');

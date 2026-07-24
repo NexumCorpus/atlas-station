@@ -1,0 +1,24 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const sm = require('../self-modification.cjs');
+
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-shadow-activation-'));
+execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repo });
+execFileSync('git', ['config', 'user.name', 'test'], { cwd: repo });
+fs.writeFileSync(path.join(repo, 'body.txt'), 'base\n');
+execFileSync('git', ['add', '.'], { cwd: repo }); execFileSync('git', ['commit', '-qm', 'base'], { cwd: repo });
+const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+const manifest = sm.createManifest(repo, { baseHead: base, candidateHead: base, branch: 'main', testReceipts: [{ name: 'shadow', verdict: 'pass', receiptHash: sm.sha('pass') }], rollbackTarget: base });
+assert.equal(sm.verifyManifest(repo, manifest).ok, true);
+const applied = sm.requestActivation(repo, manifest);
+assert.equal(applied.ok, true); assert.equal(applied.verified.kind, 'activation-verified');
+const blocked = sm.requestActivation(repo, manifest, () => true);
+assert.equal(blocked.ok, false); assert(blocked.verification.reasons.includes('active-turn'));
+const records = fs.readFileSync(path.join(repo, '.atlas', 'ingress.ndjson'), 'utf8').trim().split(/\n/).map(JSON.parse);
+assert.deepEqual(records.map(r => r.kind), ['activation-request', 'activation-verified', 'activation-request', 'activation-rejected']);
+console.log(JSON.stringify({ ok: true, activationId: manifest.activationId, manifestHash: manifest.recordHash, records: records.map(r => ({ kind: r.kind, recordHash: r.recordHash })) }));

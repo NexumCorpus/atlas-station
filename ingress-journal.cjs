@@ -111,6 +111,7 @@ function append(dir, record) { return withLock(dir, () => appendUnlocked(dir, re
 function leaseParts(leaseOrOwner, token, epoch) {
   if (leaseOrOwner && leaseOrOwner.owner) return { owner: `fleethost:${leaseOrOwner.owner.pid}`, token: token || leaseOrOwner.token || leaseOrOwner.owner.token, epoch: epoch || leaseOrOwner.owner.epoch };
   if (leaseOrOwner && leaseOrOwner.pid && leaseOrOwner.token) return { owner: `fleethost:${leaseOrOwner.pid}`, token: token || leaseOrOwner.token, epoch: epoch || leaseOrOwner.epoch };
+  if (leaseOrOwner && leaseOrOwner.pid && leaseOrOwner.token) return { owner: `fleethost:${leaseOrOwner.pid}`, token: token || leaseOrOwner.token, epoch: epoch || leaseOrOwner.epoch };
   return { owner: String(leaseOrOwner), token, epoch };
 }
 function assertLease(root, leaseOrOwner, token, epoch) {
@@ -157,13 +158,16 @@ function entries(dir) {
   for (const record of records) {
     if (!record.eventId && !record.directiveId) continue;
     const id = record.eventId || record.directiveId;
-    const item = byId.get(id) || { ingress: null, claims: [], renewals: [], terminal: null, terminalConflicts: [], lateResults: [], adjudications: [] };
+    const item = byId.get(id) || { ingress: null, claims: [], renewals: [], replayLimits: [], replayRecoveries: [], terminal: null, terminalConflicts: [], lateResults: [], adjudications: [] };
     if (record.kind === 'ingress') item.ingress ||= record;
     else if (record.kind === 'claim') item.claims.push(record);
     else if (record.kind === 'claim-renewal') item.renewals.push(record);
+    else if (record.kind === 'replay-limit') item.replayLimits.push(record);
+    else if (record.kind === 'replay-recovery') item.replayRecoveries.push(record);
     else if (record.kind === 'adjudication' || record.kind === 'supersession') item.adjudications.push(record);
     else if (record.kind === 'ack' || record.kind === 'fail') {
       if (!item.terminal) item.terminal = record;
+      else if (item.terminal.blocked && item.replayRecoveries.length) { item.terminalConflicts.push(item.terminal); item.terminal = record; }
       else item.terminalConflicts.push(record);
     } else if (record.kind === 'late-result') item.lateResults.push(record);
     byId.set(id, item);
@@ -190,6 +194,7 @@ function workerStillAlive(attempt, now = Date.now()) {
 }
 function authoritativeTerminal(dir, eventId) {
   const item = entries(dir).byId.get(eventId); if (!item?.terminal) return null;
+  if (item.terminal.blocked && item.replayRecoveries.length) return null;
   let result = item.terminal;
   for (const adjudication of item.adjudications.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
     if (adjudication.rejectedTerminalHash === result.recordHash && adjudication.replacementTerminalHash) {
@@ -206,9 +211,15 @@ function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxRepla
   dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
-    const candidate = [...snapshot.byId.values()].find(item => item.ingress && !item.terminal && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
+    const candidate = [...snapshot.byId.values()].find(item => item.ingress && (!item.terminal || (item.terminal.blocked && item.replayRecoveries.length)) && !item.replayLimits.length && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
     const priorClaim = candidate.claims[candidate.claims.length - 1];
-    if (candidate.claims.length >= maxReplays) { appendUnlocked(dir, { kind: 'replay-limit', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId, reason: `replay-limit-${maxReplays}`, owner: l.owner, token: l.token, epoch: l.epoch, replayCount: candidate.claims.length }); return null; }
+    if (candidate.claims.length >= maxReplays && !candidate.replayRecoveries.length) {
+      const prior = candidate.claims.at(-1); appendUnlocked(dir, { kind: 'fail', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId,
+        reason: `replay-limit-${maxReplays}`, blocked: true, recoverable: true, executionPath: 'deterministic-control', parserRule: 'claimNext replay limit',
+        attemptId: prior?.attemptId || null, claimRecordHash: prior?.recordHash || null, contentHash: candidate.ingress.contentHash,
+        workerPid: prior?.workerPid || null, workerStartIdentity: prior?.workerStartIdentity || null, providerSessionId: prior?.providerSessionId || null, providerModel: prior?.providerModel || null,
+        owner: l.owner, token: l.token, epoch: l.epoch, replayCount: candidate.claims.length }); return null;
+    }
     const eventId = candidate.ingress.eventId || candidate.ingress.directiveId;
     return appendUnlocked(dir, { kind: 'claim', eventId, directiveId: candidate.ingress.directiveId, contentHash: candidate.ingress.contentHash,
       attemptId: `attempt:${crypto.randomUUID()}`, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
@@ -226,6 +237,12 @@ function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlM
       contentHash: current.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attempt.workerPid, workerStartIdentity: attempt.workerStartIdentity, providerSessionId: attempt.providerSessionId, providerModel: attempt.providerModel,
       expiresAt: Date.now() + claimTtlMs });
+  });
+}
+
+function repairReplayLimit(dir, eventId, reason, leaseOrOwner, epoch, token) {
+  return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); if (!item?.terminal?.blocked) throw new Error('no replay-limit state');
+    return appendUnlocked(dir, { kind: 'replay-recovery', eventId, directiveId: item.ingress.directiveId, reason: String(reason || 'operator-recovery'), blockedRecordHash: item.terminal.recordHash, owner: l.owner, token: l.token, epoch: l.epoch });
   });
 }
 
@@ -298,4 +315,4 @@ function telemetry(dir) {
 }
 function appendError(dir, error, context = {}) { return append(canonicalDir(dir), { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
 
-module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
+module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, repairReplayLimit, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
