@@ -49,6 +49,17 @@ assert.equal(recoveryRecord.kind, 'replay-recovery');
 const reopened = journal.claimNext(root, lease, epoch, token, 1000, 3, { ...meta, workerPid: 701, workerStartIdentity: '701:recovery' });
 assert.equal(reopened.eventId, blockedIngress.eventId);
 
+// Legacy repeated replay-limit fossils migrate to one visible blocked terminal.
+const legacy = journal.appendIngress(root, 'legacy replay poison', 'test', { idempotencyKey: 'legacy-replay' });
+for (let i = 0; i < 3; i++) { const c = journal.claimNext(root, lease, epoch, token, 1, 3, { ...meta, workerPid: 800 + i, workerStartIdentity: `800:${i}` }); assert(c && c.eventId); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3); }
+const legacyClaim = journal.entries(root).byId.get(legacy.eventId).claims.at(-1);
+journal.append(root, { kind: 'replay-limit', eventId: legacy.eventId, directiveId: legacy.eventId, reason: 'legacy-replay-limit', replayCount: 3, owner: lease.owner, token, epoch });
+journal.append(root, { kind: 'replay-limit', eventId: legacy.eventId, directiveId: legacy.eventId, reason: 'legacy-replay-limit', replayCount: 3, owner: lease.owner, token, epoch });
+const migrated = journal.repairReplayLimit(root, legacy.eventId, 'migration-repair', lease, epoch, token);
+assert.equal(migrated.kind, 'replay-recovery');
+assert.equal(journal.entries(root).byId.get(legacy.eventId).terminal.blocked, true);
+assert.equal(journal.entries(root).records.filter(r => r.eventId === legacy.eventId && r.kind === 'fail').length, 1);
+
 const events = journal.entries(root);
 assert.equal(events.byId.get(first.eventId).claims.length, 1);
 assert.equal(events.byId.get(first.eventId).renewals.length, 1);

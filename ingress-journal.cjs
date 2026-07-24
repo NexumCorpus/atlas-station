@@ -211,7 +211,7 @@ function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxRepla
   dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
-    const candidate = [...snapshot.byId.values()].find(item => item.ingress && (!item.terminal || (item.terminal.blocked && item.replayRecoveries.length)) && !item.replayLimits.length && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
+    const candidate = [...snapshot.byId.values()].find(item => item.ingress && (!item.terminal || (item.terminal.blocked && item.replayRecoveries.length)) && (!item.replayLimits.length || (item.terminal?.blocked && item.replayRecoveries.length)) && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
     const priorClaim = candidate.claims[candidate.claims.length - 1];
     if (candidate.claims.length >= maxReplays && !candidate.replayRecoveries.length) {
       const prior = candidate.claims.at(-1); appendUnlocked(dir, { kind: 'fail', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId,
@@ -241,8 +241,10 @@ function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlM
 }
 
 function repairReplayLimit(dir, eventId, reason, leaseOrOwner, epoch, token) {
-  return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); if (!item?.terminal?.blocked) throw new Error('no replay-limit state');
-    return appendUnlocked(dir, { kind: 'replay-recovery', eventId, directiveId: item.ingress.directiveId, reason: String(reason || 'operator-recovery'), blockedRecordHash: item.terminal.recordHash, owner: l.owner, token: l.token, epoch: l.epoch });
+  return withLock(dir, () => { const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); if (!item?.terminal?.blocked && !item?.replayLimits?.length) throw new Error('no replay-limit state');
+    if (!item.terminal?.blocked) appendUnlocked(dir, { kind: 'fail', eventId, directiveId: item.ingress.directiveId, reason: String(reason || 'replay-limit-migrated'), blocked: true, recoverable: true, executionPath: 'deterministic-control', parserRule: 'replay-limit migration repair', contentHash: item.ingress.contentHash, replayCount: item.claims.length, owner: l.owner, token: l.token, epoch: l.epoch });
+    const repaired = entries(dir).byId.get(eventId); if (repaired.replayRecoveries.length) return repaired.replayRecoveries.at(-1);
+    return appendUnlocked(dir, { kind: 'replay-recovery', eventId, directiveId: item.ingress.directiveId, reason: String(reason || 'operator-recovery'), blockedRecordHash: repaired.terminal.recordHash, owner: l.owner, token: l.token, epoch: l.epoch });
   });
 }
 
