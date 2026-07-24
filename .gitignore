@@ -63,6 +63,7 @@ docs/Atlas-Capstone.pdf
 .atlas/*.log
 .atlas/*.done.json
 .atlas/gm-content-crystal.txt
+.atlas/activation-manifests/
 .gm/*
 !.gm/disciplines/
 !.gm/disciplines/**
