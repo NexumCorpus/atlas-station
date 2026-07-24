@@ -33,6 +33,7 @@ verify*.cjs
 .atlas/sidecar-lease-fence-error.ndjson
 .atlas/supervisor-registry.ndjson
 .atlas/ingress*.ndjson
+.atlas/ingress-migration-anchor.json
 orch_test.mjs
 gui.mjs
 upgrade1.mjs

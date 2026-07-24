@@ -16,6 +16,10 @@ const writer = `const j=require(${JSON.stringify(modulePath)}); j.appendIngress(
 function child(code, args) { return new Promise((resolve, reject) => { const p = spawn(process.execPath, ['-e', code, ...args], { stdio: ['ignore', 'ignore', 'pipe'] }); let error = ''; p.stderr.on('data', chunk => { error += chunk; }); p.once('error', reject); p.once('exit', status => status === 0 ? resolve() : reject(new Error(`child exit ${status}: ${error}`))); }); }
 
 (async () => {
+  const repoRoot = path.join(__dirname, '..');
+  assert.equal(j.canonicalDir(repoRoot), path.join(repoRoot, '.atlas'), 'repository root canonicalizes to .atlas');
+  assert.equal(j.paths(repoRoot).journal, path.join(repoRoot, '.atlas', 'ingress.ndjson'), 'repository root cannot select a competing journal');
+  assert(!fs.existsSync(path.join(repoRoot, 'ingress.ndjson')), 'repository root has no competing journal');
   await Promise.all(Array.from({ length: 100 }, (_, i) => child(writer, [dir, `directive-${i}-${'x'.repeat(i % 17)}`])));
   const first = j.appendIngress(dir, 'same-bytes', 'intentional');
   const second = j.appendIngress(dir, 'same-bytes', 'intentional');

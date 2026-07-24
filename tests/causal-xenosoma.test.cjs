@@ -13,9 +13,9 @@ const childScript = `
   const fs = require('fs'), os = require('os'), path = require('path'), x = require(${JSON.stringify(require.resolve('../causal-xenosoma.cjs'))});
   (async () => {
     const memDir = fs.mkdtempSync(path.join(os.tmpdir(), 'causal-xenosoma-'));
-    const result = await x.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [10,11,12,13], memDir });
+    const result = await x.runCausalExperiment({ name: 'causal-perturbation-v4', seeds: [10,11,12,13], memDir, allowUnfencedTest: true });
     const crashDir = fs.mkdtempSync(path.join(os.tmpdir(), 'causal-crash-'));
-    const crash = await x.commitOnly({ memDir: crashDir });
+    const crash = await x.commitOnly({ memDir: crashDir, allowUnfencedTest: true });
     process.stdout.write(JSON.stringify({ result, records: require(${JSON.stringify(require.resolve('../decision-loop.cjs'))}).readRecords(memDir), crash, crashRecords: require(${JSON.stringify(require.resolve('../decision-loop.cjs'))}).readRecords(crashDir) }));
   })().catch(error => { process.stderr.write(error.stack || error.message); process.exitCode = 1; });
 `;
@@ -50,7 +50,9 @@ assert.equal(observed.crashRecords.some(record => record.kind === 'causal-xenoso
 assert.equal(result.genome.calibration.grader, 'persistent-causal-xenosoma-grader');
 assert.equal(new Set(result.trials.map(t => t.evidenceAnchor)).size, 4);
 assert.equal(new Set(result.holdout.map(t => t.evidenceAnchor)).size, 2);
-const candidate = x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-candidate-')));
+const candidate = x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-candidate-')), null, { allowUnfencedTest: true });
 assert.equal(candidate.status, 'candidate');
 assert.deepEqual(candidate.unknownGates.sort(), ['boundary', 'rde']);
+assert.throws(() => x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-production-'))), /supervisor fencing authority/);
+assert.throws(() => x.persistCandidate(result, fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-stale-')), { root: fs.mkdtempSync(require('path').join(require('os').tmpdir(), 'causal-lease-')), token: 'stale', epoch: 7 }), /lease|fence/);
 console.log('causal xenosoma commit-reveal instrument: ALL PASS');

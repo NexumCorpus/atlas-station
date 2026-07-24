@@ -7,11 +7,16 @@ const path = require('path');
 function bytesHash(value) { return `sha256:${crypto.createHash('sha256').update(Buffer.from(String(value), 'utf8')).digest('hex')}`; }
 function hash(value) { return bytesHash(JSON.stringify(value)); }
 function sleep(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
-function paths(dir) { return { journal: path.join(dir, 'ingress.ndjson'), quarantine: path.join(dir, 'ingress-quarantine.ndjson'), migration: path.join(dir, 'ingress-migration-anchor.json'), lock: path.join(dir, 'ingress.lock'), errors: path.join(dir, 'sidecar-errors.ndjson') }; }
+function canonicalDir(dir) {
+  const resolved = path.resolve(dir || path.join(__dirname, '.atlas'));
+  return resolved === path.resolve(__dirname) ? path.join(resolved, '.atlas') : resolved;
+}
+function paths(dir) { const root = canonicalDir(dir); return { journal: path.join(root, 'ingress.ndjson'), quarantine: path.join(root, 'ingress-quarantine.ndjson'), migration: path.join(root, 'ingress-migration-anchor.json'), lock: path.join(root, 'ingress.lock'), errors: path.join(root, 'sidecar-errors.ndjson') }; }
 function readJsonLines(file) { if (!fs.existsSync(file)) return []; return fs.readFileSync(file, 'utf8').split(/\n/).filter(Boolean).map(line => JSON.parse(line)); }
 function appendFileSync(file, body) { fs.mkdirSync(path.dirname(file), { recursive: true }); const fd = fs.openSync(file, 'a'); try { fs.writeSync(fd, body, null, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
 
 function withLock(dir, fn) {
+  dir = canonicalDir(dir);
   fs.mkdirSync(dir, { recursive: true }); const lock = paths(dir).lock; let fd = null;
   for (let i = 0; i < 6000; i++) { try { fd = fs.openSync(lock, 'wx'); break; } catch (error) { if (!['EEXIST', 'EPERM', 'EBUSY'].includes(error.code)) throw error; try { if (Date.now() - fs.statSync(lock).mtimeMs > 60000) fs.unlinkSync(lock); } catch {} sleep(5); } }
   if (fd == null) throw new Error('ingress writer lock timeout');
@@ -25,6 +30,7 @@ function quarantine(dir, entries) {
 }
 
 function salvageIngress(dir, suffix) {
+  dir = canonicalDir(dir);
   const salvaged = [];
   for (const line of String(suffix || '').split(/\r?\n/).filter(Boolean)) {
     try { const row = JSON.parse(line); if (row.kind === 'ingress' && row.text != null) salvaged.push({ eventId: row.eventId || row.directiveId, directiveId: row.directiveId || row.eventId, idempotencyKey: row.idempotencyKey || null, source: row.source || 'salvaged', text: row.text, contentHash: row.contentHash || bytesHash(row.text) }); } catch {}
@@ -34,6 +40,7 @@ function salvageIngress(dir, suffix) {
 }
 
 function parseJournal(dir, repair = true) {
+  dir = canonicalDir(dir);
   const file = paths(dir).journal; if (!fs.existsSync(file)) return { records: [], lastHash: null, validBytes: 0 };
   const raw = fs.readFileSync(file); const records = []; let offset = 0; let expectedSeq = 1; let priorHash = null; let invalid = null; let anchored = false; let migrationAnchor = null;
   while (offset < raw.length) {
@@ -68,6 +75,7 @@ function parseJournal(dir, repair = true) {
 function readJournal(dir, repair = false) { return parseJournal(dir, repair).records; }
 
 function appendBodyUnlocked(dir, record) {
+  dir = canonicalDir(dir);
   const state = parseJournal(dir, false);
   if (state.invalid) throw new Error(`journal requires repair before append: ${state.invalid.reason}`);
   if (state.migrationAnchor && !fs.existsSync(paths(dir).migration)) {
@@ -81,6 +89,7 @@ function appendBodyUnlocked(dir, record) {
 }
 
 function appendUnlocked(dir, record) {
+  dir = canonicalDir(dir);
   let state = parseJournal(dir, false);
   if (state.invalid) {
     const raw = fs.readFileSync(paths(dir).journal); const suffix = raw.subarray(state.invalid.offset).toString('utf8'); quarantine(dir, [{ reason: state.invalid.reason, byteOffset: state.invalid.offset, suffixHash: bytesHash(raw.subarray(state.invalid.offset)), suffixBytes: suffix.slice(0, 8192) }]); salvageIngress(dir, suffix);
@@ -104,6 +113,7 @@ function leaseParts(leaseOrOwner, token, epoch) {
   return { owner: String(leaseOrOwner), token, epoch };
 }
 function assertLease(root, leaseOrOwner, token, epoch) {
+  root = canonicalDir(root);
   const p = path.join(root, 'sidecar-lease.json'); const l = leaseParts(leaseOrOwner, token, epoch); let current;
   try { current = JSON.parse(fs.readFileSync(p, 'utf8')); } catch { throw new Error('lease missing'); }
   if (current.token !== l.token || Number(current.epoch) !== Number(l.epoch) || current.status === 'released') throw new Error('stale lease fence rejected');
@@ -126,6 +136,7 @@ function appendIngress(dir, text, source = 'journal', options = {}) {
 
 function claimFiles(inbox) { return fs.existsSync(path.dirname(inbox)) ? fs.readdirSync(path.dirname(inbox)).filter(name => name.startsWith(path.basename(inbox) + '.claim.')).map(name => path.join(path.dirname(inbox), name)) : []; }
 function reconcileLegacy(dir, inbox, source = 'legacy-say-inbox') {
+  dir = canonicalDir(dir);
   fs.mkdirSync(path.dirname(inbox), { recursive: true }); let candidates = claimFiles(inbox);
   if (fs.existsSync(inbox)) { const claimPath = `${inbox}.claim.${process.pid}.${Date.now()}.${crypto.randomBytes(6).toString('hex')}`; try { fs.renameSync(inbox, claimPath); candidates.push(claimPath); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
   let first = null;
@@ -138,11 +149,12 @@ function reconcileLegacy(dir, inbox, source = 'legacy-say-inbox') {
   return first;
 }
 
-function entries(dir) { const state = parseJournal(dir, false); const records = state.invalid?.record ? [...state.records, { ...state.invalid.record, __quarantined: true }] : state.records; const byId = new Map(); for (const record of records) { if (!record.eventId && !record.directiveId) continue; const id = record.eventId || record.directiveId; const item = byId.get(id) || { ingress: null, claims: [], terminal: null, terminalConflicts: [], lateResults: [] }; if (record.kind === 'ingress') item.ingress ||= record; else if (record.kind === 'claim') item.claims.push(record); else if (record.kind === 'ack' || record.kind === 'fail') { if (!item.terminal) item.terminal = record; else { item.terminalConflicts.push(record); if (record.kind === 'ack') item.lateResults.push(record); } } byId.set(id, item); } return { records: state.records, byId }; }
+function entries(dir) { dir = canonicalDir(dir); const state = parseJournal(dir, false); const records = state.invalid?.record ? [...state.records, { ...state.invalid.record, __quarantined: true }] : state.records; const byId = new Map(); for (const record of records) { if (!record.eventId && !record.directiveId) continue; const id = record.eventId || record.directiveId; const item = byId.get(id) || { ingress: null, claims: [], terminal: null, terminalConflicts: [], lateResults: [] }; if (record.kind === 'ingress') item.ingress ||= record; else if (record.kind === 'claim') item.claims.push(record); else if (record.kind === 'ack' || record.kind === 'fail') { if (!item.terminal) item.terminal = record; else { item.terminalConflicts.push(record); if (record.kind === 'ack') item.lateResults.push(record); } } byId.set(id, item); } return { records: state.records, byId }; }
 function getIngress(dir, eventId) { return entries(dir).byId.get(eventId)?.ingress || null; }
 function terminal(dir, eventId) { return entries(dir).byId.get(eventId)?.terminal || null; }
 
 function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxReplays = 3) {
+  dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
     const candidate = [...snapshot.byId.values()].find(item => item.ingress && !item.terminal && !item.claims.some(c => Number(c.expiresAt || 0) > now)); if (!candidate) return null;
@@ -162,6 +174,7 @@ function appendOutbox(file, entry) {
   const body = { ...entry, resultHash: entry.resultHash || bytesHash(entry.reply || entry.error || JSON.stringify(entry)), ts: new Date().toISOString() }; body.recordHash = hash(body); appendFileSync(file, JSON.stringify(body) + '\n'); return body;
 }
 function repairPublication(dir, outboxFile, leaseOrOwner, epoch, token) {
+  dir = canonicalDir(dir);
   let rows = []; try { rows = readJsonLines(outboxFile); } catch {}
   const repaired = [];
   for (const row of rows) { if (!row.directiveId || terminal(dir, row.directiveId)) continue; repaired.push(ack(dir, row.directiveId, JSON.stringify({ reply: row.reply ?? null, error: row.error ?? null, control: row.control ?? null }), leaseOrOwner, epoch, token, { repairedFromOutbox: true, outboxRecordHash: row.recordHash })); }
@@ -169,10 +182,11 @@ function repairPublication(dir, outboxFile, leaseOrOwner, epoch, token) {
   return repaired;
 }
 function telemetry(dir) {
+  dir = canonicalDir(dir);
   const snapshot = entries(dir); const now = Date.now(); const pending = [...snapshot.byId.values()].filter(item => item.ingress && !item.terminal);
   const claims = pending.flatMap(item => item.claims); const active = claims.filter(claim => Number(claim.expiresAt || 0) > now);
   return { journalDepth: snapshot.records.length, queueDepth: pending.length, oldestAgeMs: pending.length ? Math.max(0, now - Date.parse(pending[0].ingress.createdAt || now)) : 0, activeClaimExpiry: active.length ? Math.min(...active.map(claim => claim.expiresAt)) : null, replayCount: claims.filter(claim => claim.replay).length, quarantineBytes: fs.existsSync(paths(dir).quarantine) ? fs.statSync(paths(dir).quarantine).size : 0 };
 }
-function appendError(dir, error, context = {}) { return append(dir, { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
+function appendError(dir, error, context = {}) { return append(canonicalDir(dir), { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
 
-module.exports = { hash, bytesHash, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
+module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
