@@ -255,6 +255,20 @@ export async function* codexCliQuery({ prompt, options = {} } = {}, config = {})
     yield { type: "result", subtype: "error", result: truncate(error.message), total_cost_usd: null };
     return;
   }
+  const spawnedAt = new Date().toISOString();
+  try {
+    options.onProviderSpawn?.({
+      pid: child.pid,
+      startIdentity: `${child.pid}:${spawnedAt}`,
+      providerSessionId: `codex-process:${child.pid}:${spawnedAt}`,
+      providerModel: spec.assignment.model,
+      provider: "codex-cli",
+    });
+  } catch (error) {
+    try { child.kill(); } catch { /* process already ended */ }
+    yield { type: "result", subtype: "error", result: truncate(`Provider authority binding failed: ${error.message}`), total_cost_usd: null };
+    return;
+  }
 
   const closed = new Promise((resolve) => {
     child.once("error", (error) => { spawnError = error; });

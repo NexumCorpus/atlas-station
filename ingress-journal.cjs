@@ -232,9 +232,10 @@ function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxRepla
 function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlMs = 30000) {
   return withLock(dir, () => {
     const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); const current = latestAttempt(item);
-    if (!current || current.attemptId !== attempt.attemptId || current.recordHash !== attempt.claimRecordHash || current.contentHash !== attempt.contentHash) throw new Error('claim renewal authority mismatch');
-    return appendUnlocked(dir, { kind: 'claim-renewal', eventId, directiveId: item.ingress.directiveId, attemptId: current.attemptId, claimRecordHash: current.recordHash,
-      contentHash: current.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
+    const claim = item?.claims?.find(record => record.attemptId === attempt.attemptId && record.recordHash === attempt.claimRecordHash);
+    if (!claim || !current || current.attemptId !== claim.attemptId || claim.contentHash !== attempt.contentHash || current.contentHash !== attempt.contentHash) throw new Error('claim renewal authority mismatch');
+    return appendUnlocked(dir, { kind: 'claim-renewal', eventId, directiveId: item.ingress.directiveId, attemptId: claim.attemptId, claimRecordHash: claim.recordHash,
+      contentHash: claim.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attempt.workerPid, workerStartIdentity: attempt.workerStartIdentity, providerSessionId: attempt.providerSessionId, providerModel: attempt.providerModel,
       expiresAt: Date.now() + claimTtlMs });
   });
@@ -249,8 +250,9 @@ function repairReplayLimit(dir, eventId, reason, leaseOrOwner, epoch, token) {
 }
 
 function validateAttempt(item, eventId, extra, kind) {
-  const attempt = item && item.claims.find(c => c.attemptId === extra.attemptId && c.recordHash === extra.claimRecordHash);
-  if (!attempt || attempt.contentHash !== item.ingress.contentHash || extra.contentHash !== item.ingress.contentHash) throw new Error('terminal attempt/content authority mismatch');
+  const claim = item && item.claims.find(c => c.attemptId === extra.attemptId && c.recordHash === extra.claimRecordHash);
+  const attempt = latestAttempt(item);
+  if (!claim || !attempt || attempt.attemptId !== claim.attemptId || claim.contentHash !== item.ingress.contentHash || attempt.contentHash !== item.ingress.contentHash || extra.contentHash !== item.ingress.contentHash) throw new Error('terminal attempt/content authority mismatch');
   if (extra.workerPid != null && Number(extra.workerPid) !== Number(attempt.workerPid)) throw new Error('terminal worker pid mismatch');
   if (extra.workerStartIdentity && extra.workerStartIdentity !== attempt.workerStartIdentity) throw new Error('terminal process identity mismatch');
   if (extra.executionPath === 'model' && (!extra.providerModel || !attempt.providerModel)) throw new Error('model terminal missing provider authority');

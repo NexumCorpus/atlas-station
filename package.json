@@ -30,7 +30,7 @@
     "test:xenosoma": "node tests/xenosoma.test.cjs",
     "test:causal-xenosoma": "node tests/causal-xenosoma.test.cjs",
     "test:independent-receipts": "node tests/independent-receipts.test.cjs",
-    "test:attempt-authority": "node tests/attempt-authority.test.cjs",
+    "test:attempt-authority": "node tests/attempt-authority.test.cjs && node tests/startup-deferred-serialization.test.cjs",
     "test:self-modification": "node tests/self-modification.test.cjs",
     "test:memcontext-async": "node tests/memcontext-async-contract.mjs",
     "test:memory-continuity": "node tests/memory-continuity-contract.cjs",

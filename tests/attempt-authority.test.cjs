@@ -19,13 +19,21 @@ assert.equal(claim.eventId, first.eventId);
 assert.match(claim.attemptId, /^attempt:/);
 const secondClaim = journal.claimNext(root, lease, epoch, token, 35, 3, { ...meta, workerPid: 502, workerStartIdentity: '502:boot-b' });
 assert.equal(secondClaim.eventId, second.eventId, 'second event may claim independently');
-const renewal = journal.renewClaim(root, first.eventId, { ...meta, attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash }, lease, epoch, token, 1000);
+const providerMeta = { ...meta, workerPid: 903, workerStartIdentity: '903:provider-boot', providerSessionId: 'codex-process:903' };
+const renewalAuth = { ...providerMeta, attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash };
+const renewal = journal.renewClaim(root, first.eventId, renewalAuth, lease, epoch, token, 1000);
 assert.equal(renewal.kind, 'claim-renewal');
+assert.equal(renewal.workerPid, 903, 'first renewal binds the actual provider worker');
+const secondRenewal = journal.renewClaim(root, first.eventId, renewalAuth, lease, epoch, token, 1000);
+assert.equal(secondRenewal.claimRecordHash, claim.recordHash, 'repeated renewals retain the original claim authority');
+assert.equal(secondRenewal.workerStartIdentity, '903:provider-boot');
 assert.equal(journal.claimNext(root, lease, epoch, token, 35, 3, meta), null, 'renewal must suppress replay while both attempts live');
 
 const wrong = { ...meta, attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: 'sha256:wrong', executionPath: 'model' };
 assert.throws(() => journal.ack(root, first.eventId, JSON.stringify({ reply: 'forged' }), lease, epoch, token, wrong), /authority mismatch/);
-const valid = { ...meta, attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, executionPath: 'model' };
+const staleController = { ...meta, attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, executionPath: 'model' };
+assert.throws(() => journal.ack(root, first.eventId, JSON.stringify({ reply: 'stale-controller' }), lease, epoch, token, staleController), /worker pid mismatch/);
+const valid = { ...renewalAuth, executionPath: 'model' };
 const firstTerminal = journal.ack(root, first.eventId, JSON.stringify({ reply: 'real' }), lease, epoch, token, valid);
 assert.equal(firstTerminal.executionPath, 'model');
 assert.throws(() => journal.ack(root, second.eventId, JSON.stringify({ reply: 'cross-event' }), lease, epoch, token, valid), /authority mismatch|unknown ingress/);
@@ -62,8 +70,8 @@ assert.equal(journal.entries(root).records.filter(r => r.eventId === legacy.even
 
 const events = journal.entries(root);
 assert.equal(events.byId.get(first.eventId).claims.length, 1);
-assert.equal(events.byId.get(first.eventId).renewals.length, 1);
+assert.equal(events.byId.get(first.eventId).renewals.length, 2);
 assert.equal(events.byId.get(first.eventId).terminal.recordHash, firstTerminal.recordHash);
 assert.equal(events.byId.get(second.eventId).terminal.recordHash, secondTerminal.recordHash);
 lease.release();
-console.log(JSON.stringify({ ok: true, claims: 2, renewals: 1, terminals: 2, root }));
+console.log(JSON.stringify({ ok: true, claims: 2, renewals: 2, terminals: 2, providerWorkerPid: 903, root }));

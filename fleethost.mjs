@@ -169,14 +169,14 @@ let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
 // the thread produced by the previous one.
 let _orchQueue = Promise.resolve();
-function enqueueOrchestrate(userText, source = 'user') {
+function enqueueOrchestrate(userText, source = 'user', executionHooks = {}) {
   const turn = _orchQueue.then(async () => {
     // Persist Daniel's words at the exact execution seam. Queueing elsewhere
     // would scramble dialogue order when several UI messages arrive together.
     if (source === 'user' && _sessionLog) {
       try { _sessionLog.appendTurn(String(userText || ''), path.join(REPO, 'memory'), null, 'user'); } catch {}
     }
-    return orchestrate(userText, source);
+    return orchestrate(userText, source, executionHooks);
   });
   _orchQueue = turn.catch(() => {});
   return turn;
@@ -3462,7 +3462,7 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
   } catch {} // fire-and-forget — crystallization failures are silent
 }
 
-async function orchestrate(userText, source = 'user') {
+async function orchestrate(userText, source = 'user', executionHooks = {}) {
   let enriched, _ctxStats = null;
   if (_memcontext) {
     const _injectResult = _memcontext.inject(userText, { tier: 'full', returnStats: true });
@@ -3572,6 +3572,7 @@ async function orchestrate(userText, source = 'user') {
         resume: resumedSession || undefined,
         model: MODEL,
         ...orchestrationRouting,
+        onProviderSpawn: executionHooks.onProviderSpawn,
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
@@ -3943,7 +3944,13 @@ async function pollSayInbox() {
   _sayBusy = true;
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
     workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel };
-  const renewalTimer = setInterval(() => { try { const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000); send('ingress', { state: 'renewed', directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt, timeline: 'claim-renewal' }); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
+  const renew = (state = 'renewed') => {
+    const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000);
+    send('ingress', { state, directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt,
+      workerPid: renewal.workerPid, workerStartIdentity: renewal.workerStartIdentity, providerSessionId: renewal.providerSessionId, timeline: 'claim-renewal' });
+    return renewal;
+  };
+  const renewalTimer = setInterval(() => { try { renew(); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
   renewalTimer.unref?.();
   const finish = () => { clearInterval(renewalTimer); _sayBusy = false; };
   send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
@@ -3953,7 +3960,15 @@ async function pollSayInbox() {
   if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!stop' }); finish(); return; }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
-    await enqueueOrchestrate(txt);
+    await enqueueOrchestrate(txt, 'user', {
+      onProviderSpawn(meta) {
+        attempt.workerPid = meta.pid;
+        attempt.workerStartIdentity = meta.startIdentity;
+        attempt.providerSessionId = meta.providerSessionId;
+        attempt.providerModel = meta.providerModel;
+        renew('worker-bound');
+      },
+    });
     const a = agents.get('ATLAS') || {};
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
     const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
@@ -4428,51 +4443,70 @@ try {
   }
 } catch (_) {}
 
-// Auto-execute deferred tasks from prior sessions
-async function runDeferredTasks() {
-  if (!_deferred) return;
-  const memDir = path.join(REPO, 'memory');
-  const MAX_DEFERRED = 3; // safety cap — don't auto-run more than 3 tasks at startup
+// Startup work enters the same ingress/Hermes queue as every operator turn.
+// It must never create a hidden second model process or mutate live main.
+function markDeferredProposalConsumed(entry, memDir) {
   try {
-    const pending = _deferred.popPending(memDir);
-    if (!pending || !pending.length) return;
-    const toRun = pending.slice(0, MAX_DEFERRED);
-    send('startup_tasks', { count: toRun.length, tasks: toRun.map(t => t.task.slice(0, 60)) });
-    for (let i = 0; i < toRun.length; i++) {
-      const entry = toRun[i];
+    const propFile = path.join(memDir, 'proposals.ndjson');
+    if (!_sfs.existsSync(propFile)) return;
+    const lines = _sfs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean);
+    const props = lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+    const taskSnippet = (entry.task || '').slice(0, 60).toLowerCase();
+    const updated = props.map(proposal => {
+      if (!['pending', 'deferred'].includes(proposal.state)) return proposal;
+      const description = (proposal.description || '').slice(0, 60).toLowerCase();
+      if (!description || !taskSnippet) return proposal;
+      const match = description.includes(taskSnippet.slice(0, 40)) || taskSnippet.includes(description.slice(0, 40));
+      return match
+        ? { ...proposal, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-ingress-terminal' }
+        : proposal;
+    });
+    _sfs.writeFileSync(propFile + '.tmp', updated.map(item => JSON.stringify(item)).join('\n') + '\n', 'utf8');
+    _sfs.renameSync(propFile + '.tmp', propFile);
+  } catch {}
+}
+
+function reconcileDeferredTasks() {
+  if (!_deferred || !_ingress) return [];
+  const memDir = path.join(REPO, 'memory');
+  const reconciled = [];
+  for (const entry of _deferred.listDeferred(memDir).filter(task => task.state === 'queued' && task.ingressEventId)) {
+    const terminal = _ingress.terminal(INGRESS_DIR, entry.ingressEventId);
+    if (!terminal) continue;
+    const updated = _deferred.markTerminal(entry.id, terminal, memDir);
+    if (terminal.kind === 'ack') markDeferredProposalConsumed(updated, memDir);
+    reconciled.push({ id: entry.id, eventId: entry.ingressEventId, state: updated.state, terminalRecordHash: terminal.recordHash });
+  }
+  if (reconciled.length) send('deferred_reconciled', { tasks: reconciled });
+  return reconciled;
+}
+
+function runDeferredTasks() {
+  if (!_deferred || !_ingress) return [];
+  const memDir = path.join(REPO, 'memory');
+  const MAX_DEFERRED = 3;
+  try {
+    reconcileDeferredTasks();
+    const toQueue = _deferred.peekPending(memDir).slice(0, MAX_DEFERRED);
+    if (!toQueue.length) return [];
+    const queued = [];
+    for (let i = 0; i < toQueue.length; i++) {
+      const entry = toQueue[i];
       const mode = entry.mode || 'read';
-      send('deferred_exec', { task: entry.task, mode, count: i + 1 });
-      await runSubagent(
-        `[DEFERRED TASK from prior session]\nCause: ${entry.cause || entry.reason || 'missing historical cause'}\nBlocker: ${entry.blocker || 'missing historical blocker'}\nNext action: ${entry.nextAction || 'missing historical next action'}\nValidation condition: ${entry.validationCondition || entry.retryCondition || 'missing historical validation condition'}\n\nTask:\n${entry.task}`,
-        mode,
-        20 * 60 * 1000,
-        null
-      );
-      // Mark matching proposals as 'consumed' so they don't re-trigger via auto_build
-      try {
-        const _fs = _require('fs');
-        const _path = _require('path');
-        const propFile = _path.join(memDir, 'proposals.ndjson');
-        if (_fs.existsSync(propFile)) {
-          const lines = _fs.readFileSync(propFile, 'utf8').trim().split('\n').filter(Boolean);
-          const props = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-          const taskSnippet = (entry.task || '').slice(0, 60).toLowerCase();
-          const updated = props.map(p => {
-            if (!['pending', 'deferred'].includes(p.state)) return p;
-            const descSnippet = (p.description || '').slice(0, 60).toLowerCase();
-            if (!descSnippet || !taskSnippet) return p;
-            // Bidirectional: either is a substring of the other
-            const match = descSnippet.includes(taskSnippet.slice(0, 40)) || taskSnippet.includes(descSnippet.slice(0, 40));
-            if (!match) return p;
-            return { ...p, state: 'consumed', consumedTs: new Date().toISOString(), consumedBy: 'deferred-task' };
-          });
-          _fs.writeFileSync(propFile + '.tmp', updated.map(p => JSON.stringify(p)).join('\n') + '\n', 'utf8');
-          _fs.renameSync(propFile + '.tmp', propFile);
-        }
-      } catch {}
+      const prompt = `[DEFERRED TASK from prior session]\nCause: ${entry.cause || entry.reason || 'missing historical cause'}\nBlocker: ${entry.blocker || 'missing historical blocker'}\nNext action: ${entry.nextAction || 'missing historical next action'}\nValidation condition: ${entry.validationCondition || entry.retryCondition || 'missing historical validation condition'}\nRequired mode: ${mode}. Build work must use the transactional shadow-worktree and activation-manifest path.\n\nTask:\n${entry.task}`;
+      const receipt = _ingress.appendIngress(INGRESS_DIR, prompt, 'startup-deferred', {
+        idempotencyKey: `startup-deferred:${entry.id}`,
+      });
+      const updated = _deferred.markQueued(entry.id, receipt, memDir);
+      const item = { id: entry.id, eventId: receipt.eventId, ingressRecordHash: receipt.recordHash, mode, state: updated.state };
+      queued.push(item);
+      send('deferred_exec', { ...item, task: entry.task, count: i + 1, executionPath: 'ingress-hermes' });
     }
+    send('startup_tasks', { count: queued.length, tasks: queued });
+    return queued;
   } catch (e) {
     send('deferred_error', { error: e.message });
+    return [];
   }
 }
 // Station nerve — estate wake digest to the GUI vitals strip + presence note
@@ -4487,8 +4521,9 @@ function stationBeat() {
 setTimeout(() => { stationBeat(); _nerve.note('fleet sidecar online'); }, 3000);
 setInterval(stationBeat, 5 * 60 * 1000);
 
-// Execute deferred tasks from previous sessions — fires 5s after startup to let briefing go first
-setTimeout(() => runDeferredTasks().catch(() => {}), 5000);
+// Queue deferred tasks after startup, then reconcile their ordinary ingress terminals.
+setTimeout(runDeferredTasks, 5000);
+setInterval(reconcileDeferredTasks, 10000);
 
 // Broadcast unread notifications from previous sessions
 try {

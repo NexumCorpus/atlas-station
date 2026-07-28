@@ -107,4 +107,73 @@ function peekPending(dir) {
   return _load(dir).filter(t => t.state === 'pending');
 }
 
-module.exports = { deferTask, popPending, listDeferred, peekPending, normalizeReason };
+function _updateTask(id, update, dir) {
+  dir = dir || path.join(__dirname, 'memory');
+  const tasks = _load(dir);
+  const index = tasks.findIndex(task => task.id === id);
+  if (index < 0) throw new Error(`Deferred task not found: ${id}`);
+  tasks[index] = update({ ...tasks[index] });
+  _save(tasks, dir);
+  return tasks[index];
+}
+
+function markQueued(id, receipt, dir) {
+  if (!receipt || !receipt.eventId || !receipt.recordHash) {
+    throw new Error('Deferred queue receipt requires eventId and recordHash');
+  }
+  return _updateTask(id, task => {
+    if (task.state === 'queued') {
+      if (task.ingressEventId !== receipt.eventId || task.ingressRecordHash !== receipt.recordHash) {
+        throw new Error(`Deferred task queue receipt conflict: ${id}`);
+      }
+      return task;
+    }
+    if (task.state !== 'pending') {
+      throw new Error(`Deferred task cannot be queued from state ${task.state}: ${id}`);
+    }
+    return {
+      ...task,
+      state: 'queued',
+      queuedTs: new Date().toISOString(),
+      ingressEventId: receipt.eventId,
+      ingressRecordHash: receipt.recordHash,
+    };
+  }, dir);
+}
+
+function markTerminal(id, terminal, dir) {
+  if (!terminal || !terminal.kind || !terminal.recordHash) {
+    throw new Error('Deferred terminal receipt requires kind and recordHash');
+  }
+  if (!['ack', 'fail'].includes(terminal.kind)) {
+    throw new Error(`Unsupported deferred terminal kind: ${terminal.kind}`);
+  }
+  return _updateTask(id, task => {
+    if (['consumed', 'failed'].includes(task.state)) {
+      if (task.terminalRecordHash !== terminal.recordHash) {
+        throw new Error(`Deferred task terminal receipt conflict: ${id}`);
+      }
+      return task;
+    }
+    if (task.state !== 'queued') {
+      throw new Error(`Deferred task cannot terminalize from state ${task.state}: ${id}`);
+    }
+    return {
+      ...task,
+      state: terminal.kind === 'ack' ? 'consumed' : 'failed',
+      terminalTs: new Date().toISOString(),
+      terminalKind: terminal.kind,
+      terminalRecordHash: terminal.recordHash,
+    };
+  }, dir);
+}
+
+module.exports = {
+  deferTask,
+  popPending,
+  listDeferred,
+  peekPending,
+  markQueued,
+  markTerminal,
+  normalizeReason,
+};
