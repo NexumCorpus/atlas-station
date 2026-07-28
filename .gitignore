@@ -64,6 +64,7 @@ docs/Atlas-Capstone.pdf
 .atlas/*.log
 .atlas/*.done.json
 .atlas/gm-content-crystal.txt
+.atlas/v1-readiness.json
 .atlas/activation-manifests/
 .atlas/context-mycelium/
 .gm/*

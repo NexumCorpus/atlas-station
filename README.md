@@ -52,7 +52,8 @@ npm run v1:release
 - `v1:status` checks contract shape, required organs, provider availability,
   model assignment, and documentation truth.
 - `v1:verify` runs the full deterministic/live acceptance surface and Station's
-  whole-organism rehearsal, then writes `release/v1-readiness.json`.
+  whole-organism rehearsal, then writes the runtime receipt
+  `.atlas/v1-readiness.json` without mutating the source tree it attests.
 - `v1:release` repeats those checks and additionally requires a clean worktree.
 
 The detailed contract and limitations are in [docs/V1.md](docs/V1.md). Testing
