@@ -338,7 +338,13 @@ class XenobioticEcology {
       for (const caste of casteSequence(gradient)) {
         if (cells.length >= this.limits.maxRecruitPerCycle) break;
         try { cells.push(this._recruitCell(gradient, caste, input.parentCellId || null)); } catch (error) {
-          this.append('recruitment-backpressure', { gradientId: gradient.gradientId, caste, reason: error.message });
+          const alreadyRecorded = this.projection().events.some(record =>
+            record.kind === 'recruitment-backpressure' &&
+            record.payload?.gradientId === gradient.gradientId &&
+            record.payload?.caste === caste &&
+            record.payload?.reason === error.message
+          );
+          if (!alreadyRecorded) this.append('recruitment-backpressure', { gradientId: gradient.gradientId, caste, reason: error.message });
         }
       }
       if (cells.length >= this.limits.maxRecruitPerCycle) break;

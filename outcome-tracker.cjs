@@ -1,8 +1,21 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const OUTCOMES_FILE = (dir) => path.join(dir, 'outcomes.ndjson');
+const DISPOSITIONS_FILE = (dir) => path.join(dir, 'outcome-dispositions.ndjson');
+
+function digest(value) {
+  return `sha256:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+function readNdjson(file) {
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean)
+    .map(line => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean);
+}
 
 function parseFailureMode(stderr) {
   const text = (stderr || '').toLowerCase();
@@ -26,10 +39,55 @@ function rateOutcome(agentId, rating, notes, memDir, failureMode, causalChain) {
 }
 
 function getOutcomes(memDir, limit) {
-  const f = OUTCOMES_FILE(memDir);
-  if (!fs.existsSync(f)) return [];
-  const lines = fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean);
-  return lines.slice(-(limit || 50)).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  return readNdjson(OUTCOMES_FILE(memDir)).slice(-(limit || 50));
+}
+
+function getOutcomeDispositions(memDir) {
+  return readNdjson(DISPOSITIONS_FILE(memDir));
+}
+
+function verifyDispositionLedger(memDir) {
+  const records = getOutcomeDispositions(memDir);
+  let previousHash = null;
+  const errors = [];
+  records.forEach((record, index) => {
+    const { hash, ...body } = record;
+    if (body.seq !== index + 1) errors.push({ index, reason: 'sequence' });
+    if (body.previousHash !== previousHash) errors.push({ index, reason: 'previousHash' });
+    if (digest(body) !== hash) errors.push({ index, reason: 'hash' });
+    previousHash = hash;
+  });
+  return { valid: errors.length === 0, records, errors, head: previousHash };
+}
+
+function dispositionOutcome(agentId, disposition, reason, evidence, memDir) {
+  if (!['retired', 'superseded'].includes(disposition)) throw new Error('unsupported outcome disposition');
+  if (!reason || String(reason).trim().length < 20) throw new Error('disposition reason requires specific evidence');
+  if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('disposition evidence is required');
+  const original = getOutcomes(memDir, 100000).find(entry => entry.agentId === agentId);
+  if (!original) throw new Error(`outcome not found: ${agentId}`);
+  const originalHash = digest(original);
+  const ledger = verifyDispositionLedger(memDir);
+  if (!ledger.valid) throw new Error('outcome disposition ledger is invalid');
+  const duplicate = ledger.records.find(entry =>
+    entry.agentId === agentId && entry.originalHash === originalHash && entry.disposition === disposition
+  );
+  if (duplicate) return duplicate;
+  const body = {
+    seq: ledger.records.length + 1,
+    agentId,
+    originalHash,
+    originalRating: original.rating,
+    originalFailureMode: original.failureMode || null,
+    disposition,
+    reason: String(reason),
+    evidence,
+    previousHash: ledger.head,
+    ts: new Date().toISOString(),
+  };
+  const entry = { ...body, hash: digest(body) };
+  fs.appendFileSync(DISPOSITIONS_FILE(memDir), JSON.stringify(entry) + '\n', 'utf8');
+  return entry;
 }
 
 function outcomeStats(memDir) {
@@ -77,4 +135,13 @@ function failureProfile(memDir, limit) {
     .sort((a, b) => b.count - a.count);
 }
 
-module.exports = { rateOutcome, getOutcomes, outcomeStats, parseFailureMode, failureProfile };
+module.exports = {
+  rateOutcome,
+  getOutcomes,
+  outcomeStats,
+  parseFailureMode,
+  failureProfile,
+  dispositionOutcome,
+  getOutcomeDispositions,
+  verifyDispositionLedger,
+};

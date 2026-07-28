@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'scripts', 'audit-goals.mjs'), 'utf8');
-assert.match(source, /goodRate > qualityTarget/);
+assert.match(source, /goodRate >= qualityTarget/);
 assert.match(source, /pendingHigh === 0/);
 assert.match(source, /stateMatchesEvidence/);
 assert.match(source, /strict && !report\.consistent/);

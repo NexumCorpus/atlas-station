@@ -159,6 +159,10 @@ try {
   const overflow = bounded.recruit({ contradictions: [{ statement: 'Another unknown', niche: 'origin', kind: 'unknown' }] });
   assert(overflow.snapshot.ledger.records > 0);
   assert(overflow.snapshot.counts.active <= 2);
+  const beforeRepeat = bounded.records().filter(record => record.kind === 'recruitment-backpressure').length;
+  bounded.recruit({ contradictions: [{ statement: 'Another unknown', niche: 'origin', kind: 'unknown' }] });
+  const afterRepeat = bounded.records().filter(record => record.kind === 'recruitment-backpressure').length;
+  assert.equal(afterRepeat, beforeRepeat, 'identical overflow pressure is recorded once, not on every pulse');
   assert.throws(() => bounded.recruit({ contradictions: [
     { statement: 'one' }, { statement: 'two' }, { statement: 'three' },
   ] }), /signal overflow/);

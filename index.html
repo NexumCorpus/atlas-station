@@ -630,7 +630,7 @@ input:focus-visible{outline:none}
         </div>
         <div class="eco-section">
           <div class="eco-title">spoor · births, experiments, deaths</div>
-          <div id="ecology-events"><div class="eco-event">no events</div></div>
+          <div id="ecology-spoor"><div class="eco-event">no events</div></div>
         </div>
       </div>
 
@@ -1205,9 +1205,15 @@ input:focus-visible{outline:none}
       var pct=Math.round((g.magnitude||0)*100);
       return '<div class="eco-gradient"><meter min="0" max="100" value="'+pct+'"></meter>'+pct+'% · '+esc(g.niche||'unknown')+'<small>'+esc(g.statement||'')+'</small></div>';
     }).join(''):'<div class="eco-event">no unresolved gradients</div>';
-    var events=$('ecology-events'), es=(s.latestEvents||[]).slice(-10).reverse();
+    var events=$('ecology-spoor'), es=(s.latestEvents||[]).slice(-10).reverse();
     if(events)events.innerHTML=es.length?es.map(function(e){
-      return '<div class="eco-event">'+esc(String(e.seq||''))+' · '+esc(e.kind||'event')+' · '+esc(String(e.recordHash||'').slice(0,18))+'…</div>';
+      var p=e.payload||{}, cell=p.cell||{}, detail='';
+      if(e.kind==='cell-recruited')detail=(cell.caste||'cell')+' '+String(cell.cellId||'').slice(0,18)+(cell.parentCellId?' ← '+String(cell.parentCellId).slice(0,12):' · root');
+      else if(e.kind==='experiment-evaluated')detail=(p.promoted?'promoted':'rejected')+' · gain '+Number(p.gain||0).toFixed(3)+' · '+String(p.candidatePolicyHash||'').slice(0,18);
+      else if(e.kind==='apoptosis')detail=String(p.cellId||'').slice(0,18)+' · '+String(p.reason||'quarantined');
+      else if(e.kind==='policy-revoked')detail=String(p.policyHash||'').slice(0,14)+' ↩ '+String(p.rollbackTarget||'').slice(0,14);
+      else detail=String(p.cellId||p.gradientId||p.experimentId||'').slice(0,36);
+      return '<div class="eco-event">'+esc(String(e.seq||''))+' · '+esc(e.kind||'event')+'<small>'+esc(detail)+' · '+esc(String(e.recordHash||'').slice(0,18))+'…</small></div>';
     }).join(''):'<div class="eco-event">no spoor</div>';
   }
 

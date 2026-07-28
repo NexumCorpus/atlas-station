@@ -4072,7 +4072,7 @@ try {
     if (_sfs.existsSync(proposalsFile)) {
       proposals = _sfs.readFileSync(proposalsFile, 'utf8').split(/\r?\n/).filter(Boolean)
         .map(line => { try { return JSON.parse(line); } catch { return null; } })
-        .filter(item => item && ['pending', 'deferred'].includes(item.state))
+        .filter(item => item && item.state === 'pending')
         .slice(0, _ecologyOrgan.limits.maxSignalsPerCycle)
         .map(item => ({
           statement: item.description || item.title,
