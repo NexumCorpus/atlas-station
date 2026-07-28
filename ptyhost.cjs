@@ -1,35 +1,78 @@
-// Plain-Node PTY host (sidecar). Runs the REAL `claude` CLI in a pseudo-
-// terminal using the prebuilt node-pty (Node-24 ABI — never the broken winpty
-// build, never an Electron-ABI rebuild), and bridges it to the Electron parent
-// over the process IPC channel. This is why the whole system ports in: it IS
-// the CLI, with a TTY, not a reimplementation.
-const pty = require("@homebridge/node-pty-prebuilt-multiarch");
+'use strict';
 
-const CLAUDE = process.env.CLAUDE_BIN || "C:\\Users\\dalea\\.local\\bin\\claude.exe";
-const CWD = process.env.ATLAS_CWD || "E:\\";
+const pty = require('@homebridge/node-pty-prebuilt-multiarch');
 
-let term = null;
-try {
-  term = pty.spawn(CLAUDE, [], {
-    name: "xterm-256color",
-    cols: 120, rows: 30,
-    cwd: CWD,
-    env: process.env,
-  });
-} catch (e) {
-  if (process.send) process.send({ t: "fatal", m: "could not start claude: " + (e && e.message ? e.message : e) });
-  process.exit(1);
+function providerCommand(env = process.env) {
+  const file = env.ATLAS_PTY_BIN || env.CODEX_BIN || 'codex';
+  let args = ['--model', env.ATLAS_MODEL || 'gpt-5.6-luna'];
+  if (env.ATLAS_PTY_ARGS) {
+    const parsed = JSON.parse(env.ATLAS_PTY_ARGS);
+    if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string')) {
+      throw new TypeError('ATLAS_PTY_ARGS must be a JSON array of strings');
+    }
+    args = parsed;
+  }
+  return { file, args, provider: env.ATLAS_PTY_PROVIDER || 'codex-cli' };
 }
 
-term.onData((d) => { if (process.send) process.send({ t: "d", d }); });
-term.onExit((ev) => {
-  if (process.send) process.send({ t: "exit", code: (ev && ev.exitCode) || 0 });
-  process.exit(0);
-});
+function startPtyHost(opts = {}) {
+  const env = opts.env || process.env;
+  const command = providerCommand(env);
+  const cwd = opts.cwd || env.ATLAS_CWD || 'E:\\';
+  let term;
+  try {
+    term = pty.spawn(command.file, command.args, {
+      name: 'xterm-256color',
+      cols: 120,
+      rows: 30,
+      cwd,
+      env
+    });
+  } catch (error) {
+    if (process.send) {
+      process.send({
+        t: 'fatal',
+        m: `could not start ${command.provider}: ${error?.message || error}`
+      });
+    }
+    throw error;
+  }
 
-process.on("message", (m) => {
-  if (!m || !term) return;
-  if (m.t === "i") { try { term.write(m.d); } catch (_) {} }
-  else if (m.t === "r") { try { term.resize(Math.max(2, m.cols | 0), Math.max(2, m.rows | 0)); } catch (_) {} }
-});
-process.on("disconnect", () => { try { term.kill(); } catch (_) {} process.exit(0); });
+  term.onData(data => {
+    if (process.send) process.send({ t: 'd', d: data });
+  });
+  term.onExit(event => {
+    if (process.send) process.send({ t: 'exit', code: event?.exitCode || 0 });
+    if (require.main === module) process.exit(0);
+  });
+
+  const onMessage = message => {
+    if (!message || !term) return;
+    if (message.t === 'i') term.write(message.d);
+    else if (message.t === 'r') term.resize(Math.max(2, message.cols | 0), Math.max(2, message.rows | 0));
+  };
+  const onDisconnect = () => {
+    try { term.kill(); } catch {}
+    if (require.main === module) process.exit(0);
+  };
+  process.on('message', onMessage);
+  process.on('disconnect', onDisconnect);
+  return {
+    provider: command.provider,
+    file: command.file,
+    args: command.args,
+    term,
+    close() {
+      process.off('message', onMessage);
+      process.off('disconnect', onDisconnect);
+      try { term.kill(); } catch {}
+    }
+  };
+}
+
+if (require.main === module) {
+  try { startPtyHost(); }
+  catch { process.exit(1); }
+}
+
+module.exports = { providerCommand, startPtyHost };
