@@ -102,6 +102,24 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
 .bub{max-width:84%;padding:10px 15px;border:1px solid var(--border);font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;animation:bubin .25s ease-out}
 
 #fleetstats{font-size:9px;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--border);flex:none;letter-spacing:.08em}
+#ecology-head{padding:10px 12px;border-bottom:1px solid var(--border);background:linear-gradient(90deg,rgba(60,255,168,.055),transparent)}
+#tab-ecology:target{display:block!important}
+body:has(#tab-ecology:target) #tab-fleet{display:none!important}
+body:has(#tab-ecology:target) .tab[data-tab="ecology"]{color:var(--fg);border-bottom-color:var(--violet)}
+body:has(#tab-ecology:target) .tab[data-tab="fleet"]{color:var(--dim);border-bottom-color:transparent}
+#ecology-state{font-size:11px;color:#69e6b0;letter-spacing:.14em;text-transform:uppercase}
+#ecology-counts{margin-top:5px;font-size:9px;color:var(--dim);line-height:1.6}
+#ecology-metabolism{height:4px;margin-top:8px;background:#111;border:1px solid var(--border);overflow:hidden}
+#ecology-metabolism>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#50d9a0,#9c6dff);transition:width .35s ease}
+.eco-section{padding:9px 10px;border-bottom:1px solid var(--border)}
+.eco-title{font-size:8px;color:var(--dim);letter-spacing:.16em;text-transform:uppercase;margin-bottom:6px}
+#ecology-castes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.eco-caste{border:1px solid #25252d;padding:5px 6px;background:#0b0b10;font-size:9px;color:var(--fg)}
+.eco-caste b{color:#8ceac1;font-weight:500}.eco-caste span{float:right;color:var(--dim)}
+.eco-gradient{padding:5px 0;border-bottom:1px solid #1b1b22;font-size:9px;line-height:1.45}
+.eco-gradient:last-child{border-bottom:0}.eco-gradient meter{width:52px;height:4px;vertical-align:middle;margin-right:5px}
+.eco-gradient small{display:block;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eco-event{font-size:8px;color:var(--dim);padding:3px 0;font-family:var(--mono)}
 .lab{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#6c6a86;padding:7px 14px 6px;border-bottom:1px solid var(--border);flex:none;
   background:rgba(255,255,255,.012)}
 /* Unified panel section headers */
@@ -572,6 +590,7 @@ input:focus-visible{outline:none}
       <div id="notiftray" style="display:none"></div>
       <div id="tabs">
         <button class="tab active" data-tab="fleet">FLEET</button>
+        <button class="tab" data-tab="ecology">ECOLOGY</button>
         <button class="tab" data-tab="memory">MEMORY</button>
         <button class="tab" data-tab="station">STATION</button>
       </div>
@@ -585,6 +604,34 @@ input:focus-visible{outline:none}
         <div id="proposals" style="display:none"></div>
         <div id="goallab" class="lab panel-hd" style="display:none"><span class="ph-title">goals</span><span class="ph-count" id="goal-count"></span><span class="ph-chevron">›</span></div>
         <div id="goals" style="display:none"></div>
+      </div>
+
+      <!-- ECOLOGY TAB -->
+      <div id="tab-ecology" class="tab-panel" style="display:none">
+        <div id="ecology-head">
+          <div id="ecology-state">DORMANT TISSUE</div>
+          <div id="ecology-counts">awaiting ecology projection</div>
+          <div id="ecology-metabolism" title="ecological token metabolism"><i></i></div>
+        </div>
+        <div class="eco-section">
+          <div class="eco-title">caste distribution · model routes</div>
+          <div id="ecology-castes">
+            <div class="eco-caste"><b>forager</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.5</small></div>
+            <div class="eco-caste"><b>pathogen</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.6 terra</small></div>
+            <div class="eco-caste"><b>symbiont</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.6 luna</small></div>
+            <div class="eco-caste"><b>undertaker</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.6 terra</small></div>
+            <div class="eco-caste"><b>cartographer</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.5</small></div>
+            <div class="eco-caste"><b>instrument-builder</b><span>0</span><small style="display:block;color:var(--dim);margin-top:2px">5.6 terra</small></div>
+          </div>
+        </div>
+        <div class="eco-section">
+          <div class="eco-title">morphogen gradients · unresolved pressure</div>
+          <div id="ecology-gradients"><div class="eco-event">no gradients</div></div>
+        </div>
+        <div class="eco-section">
+          <div class="eco-title">spoor · births, experiments, deaths</div>
+          <div id="ecology-events"><div class="eco-event">no events</div></div>
+        </div>
       </div>
 
       <!-- MEMORY TAB -->
@@ -1138,8 +1185,40 @@ input:focus-visible{outline:none}
   }
 
   // ── fleet IPC listener ──────────────────────────────
+  function renderEcology(payload){
+    var s=(payload&&payload.snapshot)||payload||{};
+    var counts=s.counts||{}, metabolism=s.metabolism||{}, casteCounts=s.casteCounts||{};
+    var state=$('ecology-state'), countEl=$('ecology-counts');
+    if(state)state.textContent=(s.state||'dormant')+' tissue';
+    if(countEl)countEl.textContent=(counts.active||0)+' active · '+(counts.gradients||0)+' gradients · '+(counts.niches||0)+' niches · '+(counts.quarantined||0)+' apoptosed · '+((s.ledger&&s.ledger.records)||0)+' spoor';
+    var fill=document.querySelector('#ecology-metabolism>i');
+    if(fill)fill.style.width=Math.max(0,Math.min(100,Math.round((metabolism.utilization||0)*100)))+'%';
+    var models={forager:'5.5',pathogen:'5.6 terra',symbiont:'5.6 luna',undertaker:'5.6 terra',cartographer:'5.5','instrument-builder':'5.6 terra'};
+    var castes=$('ecology-castes');
+    if(castes){
+      castes.innerHTML=Object.keys(models).map(function(name){
+        return '<div class="eco-caste"><b>'+esc(name)+'</b><span>'+Number(casteCounts[name]||0)+'</span><small style="display:block;color:var(--dim);margin-top:2px">'+models[name]+'</small></div>';
+      }).join('');
+    }
+    var gradients=$('ecology-gradients'), gs=(s.gradients||[]).slice(0,8);
+    if(gradients)gradients.innerHTML=gs.length?gs.map(function(g){
+      var pct=Math.round((g.magnitude||0)*100);
+      return '<div class="eco-gradient"><meter min="0" max="100" value="'+pct+'"></meter>'+pct+'% · '+esc(g.niche||'unknown')+'<small>'+esc(g.statement||'')+'</small></div>';
+    }).join(''):'<div class="eco-event">no unresolved gradients</div>';
+    var events=$('ecology-events'), es=(s.latestEvents||[]).slice(-10).reverse();
+    if(events)events.innerHTML=es.length?es.map(function(e){
+      return '<div class="eco-event">'+esc(String(e.seq||''))+' · '+esc(e.kind||'event')+' · '+esc(String(e.recordHash||'').slice(0,18))+'…</div>';
+    }).join(''):'<div class="eco-event">no spoor</div>';
+  }
+
   window.atlas.onFleet(function(m){
     if(!m)return;
+    if(m.type==="ecology"){
+      renderEcology(m);
+      if(m.error)addTimelineEvent('⚠','ecology '+(m.reason||'failed')+' · '+m.error,'evfailed');
+      else addTimelineEvent('⌬','ecology '+(m.reason||'update')+' · '+(((m.snapshot||{}).counts||{}).active||0)+' active','');
+      return;
+    }
     if(m.type==="lease"||m.type==="ingress"){
       if(m.type==='ingress' && m.state==='renewed') addTimelineEvent('↻','claim-renewal · '+(m.directiveId||'')+' · attempt '+(m.attemptId||'')+' · seq '+(m.seq||'')+' · expires '+(m.expiresAt||''),'');
       if(m.state==='telemetry'){
@@ -2560,6 +2639,7 @@ input:focus-visible{outline:none}
       btn.classList.add('active');
       var which = btn.dataset.tab;
       document.getElementById('tab-fleet').style.display = which === 'fleet' ? '' : 'none';
+      document.getElementById('tab-ecology').style.display = which === 'ecology' ? '' : 'none';
       document.getElementById('tab-memory').style.display = which === 'memory' ? '' : 'none';
       document.getElementById('tab-station').style.display = which === 'station' ? '' : 'none';
       if (which === 'station') loadStationHealth();

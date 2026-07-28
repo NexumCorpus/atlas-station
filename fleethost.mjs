@@ -119,6 +119,8 @@ let _memvector = null;
 try { _memvector = _require('./memvector.cjs'); } catch { _memvector = null; }
 let _sessionState = null;
 try { _sessionState = _require('./session-state.cjs'); } catch { _sessionState = null; }
+let _xenobioticEcology = null;
+try { _xenobioticEcology = _require('./xenobiotic-ecology.cjs'); } catch { _xenobioticEcology = null; }
 let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 let _predict = null;
@@ -3918,6 +3920,9 @@ try { _sfs.mkdirSync(path.join(REPO, '.atlas'), { recursive: true }); } catch {}
 const INGRESS_DIR = process.env.ATLAS_INGRESS_DIR || path.join(REPO, '.atlas');
 const SAY_INBOX = path.join(INGRESS_DIR, 'say-inbox');
 const SAY_OUTBOX = path.join(INGRESS_DIR, 'say-outbox.jsonl');
+const _ecologyOrgan = _xenobioticEcology
+  ? new _xenobioticEcology.XenobioticEcology({ memDir: path.join(REPO, 'memory'), actor: 'ATLAS/Hermes' })
+  : null;
 try {
   const lease = _require('./sidecar-lease.cjs');
   _sidecarLease = lease.acquire(INGRESS_DIR, 15000);
@@ -4060,6 +4065,31 @@ send("provider", ACTIVE_PROVIDER === "codex-cli"
   ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._codexProvider.probe() }
   : { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, available: true });
 send("ready", {});
+try {
+  if (_ecologyOrgan) {
+    const proposalsFile = path.join(REPO, 'memory', 'proposals.ndjson');
+    let proposals = [];
+    if (_sfs.existsSync(proposalsFile)) {
+      proposals = _sfs.readFileSync(proposalsFile, 'utf8').split(/\r?\n/).filter(Boolean)
+        .map(line => { try { return JSON.parse(line); } catch { return null; } })
+        .filter(item => item && ['pending', 'deferred'].includes(item.state))
+        .slice(0, _ecologyOrgan.limits.maxSignalsPerCycle)
+        .map(item => ({
+          statement: item.description || item.title,
+          kind: 'proposal',
+          niche: item.area || 'proposal',
+          impact: String(item.priority || '').toUpperCase() === 'HIGH' ? 0.9 : 0.6,
+          evidenceRefs: item.recordHash ? [item.recordHash] : [],
+        }));
+    }
+    const result = proposals.length
+      ? _ecologyOrgan.recruit({ proposals })
+      : _ecologyOrgan.ensureBootstrap();
+    send('ecology', { reason: 'startup', bootstrapCreated: Boolean(result.created), snapshot: _ecologyOrgan.snapshot() });
+  }
+} catch (error) {
+  send('ecology', { reason: 'startup-failed', error: String(error.message || error) });
+}
 
 // Auto-prune merged fleet branches and their worktrees on startup
 try {
@@ -4163,6 +4193,10 @@ async function runPulse() {
       ].join('\n');
       fs.writeFileSync(path.join(docsDir, 'SELF_STATE.md'), pulseNote, 'utf8');
     } catch (_) {}
+    if (_ecologyOrgan) {
+      snapshot.ecology = _ecologyOrgan.snapshot().counts;
+      send('ecology', { reason: 'pulse', snapshot: _ecologyOrgan.snapshot() });
+    }
     send('pulse', snapshot);
 
     // Every 4th pulse, run a dream reflection
