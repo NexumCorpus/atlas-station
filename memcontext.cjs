@@ -362,13 +362,13 @@ function buildContext(task, opts = {}) {
     const journal = loadJournalExcerpt(journalPath, maxJournalChars);
     if (journal) {
       const label = path.basename(journalPath);
-      const ts    = new Date().toISOString();
+      const ts    = opts._myceliumStable ? 'stable' : new Date().toISOString();
       parts.push(`[Station Journal — ${label} | loaded ${ts}]\n${journal}`);
     }
   }
 
   // 1.5. Session context — skipped for build agents (cross-session narrative, not actionable)
-  if (tier !== 'build') {
+  if (tier !== 'build' && !opts._myceliumStable) {
     try {
       const _sn = require('./session-narrative.cjs');
       const sessionCtx = _sn.buildSessionContext(path.join(__dirname, 'memory'));
@@ -459,8 +459,8 @@ function buildContext(task, opts = {}) {
     } catch { /* skip */ }
   }
 
-  // 4. Temporal awareness — skipped for build agents (they work in their own worktree)
-  if (tier !== 'build') {
+  // 4. Temporal awareness — skipped for build agents and stable mycelium collection.
+  if (tier !== 'build' && !opts._myceliumStable) {
     try {
       const now = new Date();
       const lines = [`Now: ${now.toISOString()} (${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})`];
@@ -561,21 +561,15 @@ function buildContext(task, opts = {}) {
 /**
  * inject(task, opts?) — Prepend the memory context block to an agent task.
  *
- * Returns `task` unchanged if buildContext returns "" or throws.
- * Never throws — memory failure is silent and non-blocking.
+ * Returns `task` unchanged only for non-typed source failures; nucleus and
+ * tissue integrity failures are typed and loud by contract.
  */
 function inject(task, opts = {}) {
   try {
-    const ctx = buildContext(task, opts);
-    // returnStats: buildContext hands back {context, stats}; combine the memory
-    // block with the task and pass stats through (callers expect {context, stats}).
-    if (opts.returnStats) {
-      const mem = (ctx && ctx.context) || '';
-      return { context: mem ? `${mem}\n\n${task}` : task, stats: (ctx && ctx.stats) || null };
-    }
-    if (!ctx) return task;
-    return `${ctx}\n\n${task}`;
-  } catch {
+    const mycelium = require('./context-mycelium.cjs');
+    return mycelium.inject(task, opts, (sourceTask, sourceOpts) => buildContext(sourceTask, sourceOpts));
+  } catch (error) {
+    if (error && typeof error.code === 'string' && error.code.startsWith('CONTEXT_')) throw error;
     return opts.returnStats ? { context: task, stats: null } : task;
   }
 }
@@ -588,6 +582,11 @@ function inject(task, opts = {}) {
  */
 function buildContextStats(task, opts = {}) {
   try {
+    const mycelium = require('./context-mycelium.cjs');
+    const built = mycelium.build(task, opts, (sourceTask, sourceOpts) => buildContext(sourceTask, sourceOpts));
+    return { totalChars: built.stats.utf16Units, totalBytes: built.stats.utf8Bytes, conservativeTokens: built.stats.conservativeTokens, sections: built.stats.selectedReasons || [], budget: built.stats.budget, trimmedSections: built.stats.trimmedSections || [] };
+  } catch (error) {
+    if (error && typeof error.code === 'string' && error.code.startsWith('CONTEXT_') && Number(opts.maxContextChars || 0) > 0) throw error;
     const built = buildContext(task, { ...opts, returnStats: true });
     if (built && built.stats) {
       return {
@@ -600,7 +599,7 @@ function buildContextStats(task, opts = {}) {
     const ctx = typeof built === 'string' ? built : '';
     const sections = ctx.split('\n\n').filter(s => s.startsWith('['));
     return { totalChars: ctx.length, sections: sections.map(s => ({ header: s.split('\n')[0], chars: s.length })), trimmedSections: [] };
-  } catch { return { totalChars: 0, sections: [], budget: 0, trimmedSections: [] }; }
+  }
 }
 
 /**
@@ -613,28 +612,6 @@ function buildContextStats(task, opts = {}) {
  * TODO: When buildContext is refactored to be async, this bridge can be removed.
  */
 async function injectAsync(task, opts = {}) {
-  try {
-    const ms = _getMemstore();
-    if (ms && ms.recallFactsSemantic) {
-      const {
-        maxFacts  = 5,
-        memDir    = path.join(__dirname, 'memory'),
-        tier      = 'full',
-      } = opts;
-      const factLimit = tier === 'build' ? Math.max(maxFacts, 8) : maxFacts;
-      const semanticFacts = await ms.recallFactsSemantic(task, { dir: memDir, maxResults: factLimit });
-      if (semanticFacts && semanticFacts.length > 0) {
-        const ctx = buildContext(task, { ...opts, _semanticFacts: semanticFacts });
-        if (opts.returnStats) {
-          const mem = (ctx && ctx.context) || '';
-          return { context: mem ? `${mem}\n\n${task}` : task, stats: (ctx && ctx.stats) || null };
-        }
-        if (!ctx) return task;
-        return `${ctx}\n\n${task}`;
-      }
-    }
-  } catch { /* fall through */ }
-  // Fallback to sync inject
   return inject(task, opts);
 }
 

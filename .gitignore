@@ -64,6 +64,7 @@ docs/Atlas-Capstone.pdf
 .atlas/*.done.json
 .atlas/gm-content-crystal.txt
 .atlas/activation-manifests/
+.atlas/context-mycelium/
 .gm/*
 !.gm/disciplines/
 !.gm/disciplines/**
