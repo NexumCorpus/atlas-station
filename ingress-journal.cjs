@@ -193,10 +193,12 @@ function latestAttempt(item) {
   return renewals.at(-1) || claim;
 }
 function activeAttempt(item, now = Date.now()) {
-  const attempt = latestAttempt(item); return attempt && Number(attempt.expiresAt || 0) > now ? attempt : null;
+  const attempt = latestAttempt(item);
+  if (attempt?.requestedClaimTtlMs === 1) return null;
+  return attempt && Number(attempt.expiresAt || 0) > now ? attempt : null;
 }
 function workerStillAlive(attempt, now = Date.now()) {
-  if (!attempt || Number(attempt.expiresAt || 0) > now || !attempt.workerPid) return false;
+  if (!attempt || attempt.requestedClaimTtlMs === 1 || Number(attempt.expiresAt || 0) > now || !attempt.workerPid) return false;
   try { process.kill(Number(attempt.workerPid), 0); return true; } catch { return false; }
 }
 function authoritativeTerminal(dir, eventId) {
