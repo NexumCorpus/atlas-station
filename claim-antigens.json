@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "kind": "claim-compiler-lineage-crystal",
+  "acceptedKernel": {
+    "name": "GLM Claim Compiler v4.1",
+    "codeSha256": "94a5c9d54a2b1042303386c88be75afcef8ebaeac6e4d7b4649be1e2b136d6fc",
+    "status": "accepted-bounded-kernel",
+    "claimCeiling": "finite Boolean MUS admission plus explicitly registered trusted adapters"
+  },
+  "sources": [
+    { "attachmentId": "91f52a64-ee22-466c-9593-8e42ef257b60", "sha256": "3bade0ed26c7c9e627f8384b7f0e9bc9ba1c89efcf0088cedc79bf8d10317ffc", "bytes": 7603, "status": "rejected" },
+    { "attachmentId": "2f2f8ce7-15ed-44ae-ad38-54454e514383", "sha256": "67d5d0c1c57640cd849fec0887edbb9eb1b796586c44c5ad8622260896fcb105", "bytes": 5246, "status": "partially-correct" },
+    { "attachmentId": "e5d9bc25-f50e-46ac-891c-094b46179d55", "sha256": "55c0d557ae3fb6f2ddd497cffeaa7383edfed4a3d1825ed1423d6c7b26e2b501", "bytes": 5612, "status": "rejected" },
+    { "attachmentId": "812a2d62-b305-49c0-828b-8c287569018f", "sha256": "37706f7f77ff966d7b471085feb23f708f20789fb635bc2401ecaa5921fae363", "bytes": 12109, "status": "execution-failed" },
+    { "attachmentId": "31db3e00-c680-48fa-a16c-cc5b95240feb", "sha256": "5bb40b3c3d3d0e5a12014a4e932885c8c1d74da3f25fb88b0e5c7aafe8761e39", "bytes": 11459, "status": "execution-failed" },
+    { "attachmentId": "165ff768-31db-462b-9a85-a8384a507aae", "sha256": "61b368bd705bc2b370a73b8c9e83c0bc06db5a9f5a7de9e0ba288c2c51362b05", "bytes": 15935, "status": "execution-failed" },
+    { "attachmentId": "d4792472-c954-4ac0-9d25-378bd013236a", "sha256": "b9adcd234ca3c1c013dacf622fe31773f223a76746449ed7352cf21bc49a3d63", "bytes": 18587, "status": "suite-pass-hostile-probe-fail" },
+    { "attachmentId": "0b8c4a1a-b939-4842-bbd1-52d5d654cee1", "sha256": "fd43993b7bc9ecc5c1dc3f6a4f7808182b58b3b3717dbf2b58755d50a9dd8aab", "bytes": 19658, "status": "accepted" }
+  ],
+  "antigens": [
+    { "id": "namespace-fracture", "expectedStage": "shape" },
+    { "id": "missing-activation", "expectedStage": "proof" },
+    { "id": "redundant-mus-clause", "expectedStage": "proof" },
+    { "id": "invented-evidence", "expectedStage": "binding" },
+    { "id": "exception-coercion", "expectedStage": "proof" },
+    { "id": "ontology-under-collection", "expectedStage": "shape" },
+    { "id": "antigen-occlusion", "expectedStage": "proof" },
+    { "id": "proof-parasitism", "expectedStage": "binding" },
+    { "id": "unrelated-observation", "expectedStage": "semantics" },
+    { "id": "malformed-predicate", "expectedStage": "shape" }
+  ],
+  "protocol": ["generator", "quarantine", "executor", "critic", "promotion"],
+  "authority": "navigation-only"
+}

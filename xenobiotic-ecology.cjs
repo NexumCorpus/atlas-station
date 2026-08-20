@@ -3,8 +3,10 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { compileClaim } = require('./claim-compiler.cjs');
 
 const LEDGER = 'xenobiotic-ecology.ndjson';
+const LEDGER_LOCK = 'xenobiotic-ecology.lock';
 const MAX_TEXT_BYTES = 16 * 1024;
 const SENSITIVE_KEYS = /^(token|secret|password|api[-_]?key|authorization|cookie)$/i;
 
@@ -95,6 +97,30 @@ function clamp(value, min = 0, max = 1) {
 function finite(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function sleep(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
+function withWriterLock(lockPath, operation) {
+  let descriptor = null;
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    try { descriptor = fs.openSync(lockPath, 'wx'); break; }
+    catch (error) {
+      if (!['EEXIST', 'EPERM', 'EBUSY'].includes(error.code)) throw error;
+      try { if (Date.now() - fs.statSync(lockPath).mtimeMs > 60000) fs.unlinkSync(lockPath); } catch {}
+      sleep(Math.min(5, Math.max(1, deadline - Date.now())));
+    }
+  }
+  if (descriptor == null) throw new Error('ecology ledger writer lock timeout');
+  try {
+    fs.writeSync(descriptor, `${process.pid}\n`, null, 'utf8');
+    fs.fsyncSync(descriptor);
+    return operation();
+  } finally {
+    try { fs.closeSync(descriptor); } catch {}
+    try { fs.unlinkSync(lockPath); } catch {}
+  }
 }
 
 function mean(values) {
@@ -196,6 +222,7 @@ class XenobioticEcology {
   constructor(options = {}) {
     this.memDir = path.resolve(options.memDir || path.join(__dirname, 'memory'));
     this.ledgerPath = path.join(this.memDir, LEDGER);
+    this.lockPath = path.join(this.memDir, LEDGER_LOCK);
     this.limits = { ...DEFAULT_LIMITS, ...(options.limits || {}) };
     this.clock = options.clock || (() => Date.now());
     this.actor = options.actor || 'ATLAS';
@@ -207,9 +234,10 @@ class XenobioticEcology {
     const lines = fs.readFileSync(this.ledgerPath, 'utf8').split(/\r?\n/).filter(Boolean);
     const records = [];
     let previous = null;
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
       let record;
-      try { record = JSON.parse(line); } catch { throw new Error('ecology ledger contains invalid JSON'); }
+      try { record = JSON.parse(line); } catch { throw new Error(`ecology ledger contains invalid JSON at seq ${index + 1}`); }
       const body = { ...record };
       delete body.recordHash;
       if (record.recordHash !== hash(body)) throw new Error(`ecology ledger record hash mismatch at seq ${record.seq}`);
@@ -222,19 +250,23 @@ class XenobioticEcology {
 
   append(kind, payload = {}) {
     assertNoSecrets(payload);
-    const records = this.records();
-    const body = {
-      v: 1,
-      seq: records.length + 1,
-      ts: new Date(this.clock()).toISOString(),
-      kind: assertBoundedText(kind, 'record kind').slice(0, 80),
-      actor: this.actor,
-      prevRecordHash: records.at(-1)?.recordHash || null,
-      payload,
-    };
-    const record = { ...body, recordHash: hash(body) };
-    fs.appendFileSync(this.ledgerPath, `${JSON.stringify(record)}\n`, 'utf8');
-    return record;
+    return withWriterLock(this.lockPath, () => {
+      const records = this.records();
+      const body = {
+        v: 1,
+        seq: records.length + 1,
+        ts: new Date(this.clock()).toISOString(),
+        kind: assertBoundedText(kind, 'record kind').slice(0, 80),
+        actor: this.actor,
+        prevRecordHash: records.at(-1)?.recordHash || null,
+        payload,
+      };
+      const record = { ...body, recordHash: hash(body) };
+      const descriptor = fs.openSync(this.ledgerPath, 'a');
+      try { fs.writeSync(descriptor, `${JSON.stringify(record)}\n`, null, 'utf8'); fs.fsyncSync(descriptor); }
+      finally { fs.closeSync(descriptor); }
+      return record;
+    });
   }
 
   verifyLedger() {
@@ -249,6 +281,7 @@ class XenobioticEcology {
       gradients: new Map(),
       cells: new Map(),
       policies: new Map(),
+      claims: new Map(),
       deaths: [],
       experiments: [],
       events: records,
@@ -271,6 +304,9 @@ class XenobioticEcology {
         state.deaths.push(payload);
       }
       if (record.kind === 'experiment-evaluated') state.experiments.push(payload);
+      if (record.kind === 'claim-candidate') state.claims.set(payload.claimId, { ...payload, state: 'quarantined' });
+      if (record.kind === 'claim-admitted') state.claims.set(payload.claimId, { ...(state.claims.get(payload.claimId) || {}), ...payload, state: 'admitted' });
+      if (record.kind === 'claim-rejected') state.claims.set(payload.claimId, { ...(state.claims.get(payload.claimId) || {}), ...payload, state: 'rejected' });
       if (record.kind === 'policy-promoted') state.policies.set(payload.policyHash, { ...payload, state: 'promoted' });
       if (record.kind === 'policy-revoked') {
         const prior = state.policies.get(payload.policyHash) || {};
@@ -412,6 +448,78 @@ class XenobioticEcology {
     });
   }
 
+  _admitExperimentClaim(input) {
+    const propositionId = 'PROP_EXPERIMENT_GAIN';
+    const evidenceId = 'PROOF_INDEPENDENT_HOLDOUT';
+    const artifact = {
+      schema: 1,
+      generatorActor: input.candidateActor,
+      propositions: [{
+        id: propositionId,
+        scope: 'SOFTWARE_BEHAVIOR',
+        predicate: {
+          kind: 'INDEPENDENT_HOLDOUT_GAIN',
+          candidatePolicyHash: input.candidatePolicyHash,
+          minGain: this.limits.minNoveltyGain,
+        },
+        evidenceRefs: [evidenceId],
+      }],
+      evidence: [{
+        id: evidenceId,
+        kind: 'PROOF',
+        propositionId,
+        proof: {
+          candidateActor: input.candidateActor,
+          graderActor: input.graderActor,
+          candidatePolicyHash: input.candidatePolicyHash,
+          baselineScores: input.baselineScores,
+          candidateScores: input.candidateScores,
+          falsifiers: input.falsifiers || [],
+          holdout: input.holdout,
+          startedAt: input.startedAt,
+        },
+      }],
+    };
+    const artifactHash = hash(artifact);
+    const claimId = `claim:${artifactHash.slice(7, 23)}`;
+    const existing = this.projection().events.find(record =>
+      (record.kind === 'claim-admitted' || record.kind === 'claim-rejected') &&
+      record.payload?.claimId === claimId && record.payload?.artifactHash === artifactHash
+    );
+    if (existing) {
+      return {
+        claimId,
+        artifactHash,
+        record: existing,
+        result: { verdict: existing.kind === 'claim-admitted' ? 'admitted' : 'rejected', stage: existing.payload.stage, reason: existing.payload.reason },
+      };
+    }
+    const candidate = this.append('claim-candidate', {
+      claimId,
+      artifactHash,
+      generatorActor: input.candidateActor,
+      propositionId,
+      evidenceIds: [evidenceId],
+      authority: 'none',
+    });
+    const result = compileClaim(artifact, {
+      trustedExecution: true,
+      expectedMinGain: this.limits.minNoveltyGain,
+      verifierActor: 'hermes:claim-compiler-v1',
+    });
+    const record = this.append(result.verdict === 'admitted' ? 'claim-admitted' : 'claim-rejected', {
+      claimId,
+      artifactHash,
+      candidateRecordHash: candidate.recordHash,
+      generatorActor: input.candidateActor,
+      verifierActor: result.verifierActor,
+      stage: result.stage || 'verified',
+      reason: result.reason || 'registered predicate verified',
+      proof: result.results?.[0]?.proof || null,
+    });
+    return { claimId, artifactHash, record, result };
+  }
+
   evaluateExperiment(input = {}) {
     assertNoSecrets(input);
     const anchors = validateEvidenceAnchors(input.anchors || []);
@@ -431,7 +539,8 @@ class XenobioticEcology {
     }
     const gain = candidate - baseline;
     const falsifiers = (input.falsifiers || []).filter(item => item && item.failed);
-    const promoted = gain >= this.limits.minNoveltyGain && falsifiers.length === 0;
+    const admission = this._admitExperimentClaim(input);
+    const promoted = admission.result.verdict === 'admitted';
     const experiment = {
       experimentId: input.experimentId || `experiment:${hash(input.holdout.commitment).slice(7, 23)}`,
       candidatePolicyHash: assertBoundedText(input.candidatePolicyHash, 'candidate policy hash'),
@@ -445,6 +554,8 @@ class XenobioticEcology {
       gain,
       falsifiers,
       promoted,
+      claimId: admission.claimId,
+      claimRecordHash: admission.record.recordHash,
     };
     const evaluated = this.append('experiment-evaluated', experiment);
     if (promoted) {
@@ -452,6 +563,8 @@ class XenobioticEcology {
         policyHash: experiment.candidatePolicyHash,
         parentPolicyHash: experiment.parentPolicyHash,
         experimentRecordHash: evaluated.recordHash,
+        claimId: admission.claimId,
+        claimRecordHash: admission.record.recordHash,
       });
     } else {
       this.append('policy-revoked', {
@@ -459,6 +572,8 @@ class XenobioticEcology {
         rollbackTarget: experiment.parentPolicyHash,
         reason: falsifiers.length ? 'falsifier-triggered' : 'recombination-baseline-not-beaten',
         experimentRecordHash: evaluated.recordHash,
+        claimId: admission.claimId,
+        claimRecordHash: admission.record.recordHash,
       });
       if (input.cellId && this.projection().cells.has(input.cellId)) {
         this.append('apoptosis', { cellId: input.cellId, reason: 'regressing-instrument', evidenceRefs: [evaluated.recordHash] });
@@ -509,6 +624,9 @@ class XenobioticEcology {
         quarantined: cells.filter(cell => cell.state === 'quarantined').length,
         failed: cells.filter(cell => cell.state === 'failed').length,
         experiments: state.experiments.length,
+        claims: state.claims.size,
+        admittedClaims: [...state.claims.values()].filter(claim => claim.state === 'admitted').length,
+        rejectedClaims: [...state.claims.values()].filter(claim => claim.state === 'rejected').length,
       },
       casteCounts,
       niches,
@@ -525,6 +643,7 @@ class XenobioticEcology {
         budget: cell.budget,
       })),
       deaths: state.deaths.slice(-8),
+      claims: [...state.claims.values()].slice(-8),
       latestEvents: state.events.slice(-this.limits.maxEventsInSnapshot).map(record => ({
         seq: record.seq,
         kind: record.kind,

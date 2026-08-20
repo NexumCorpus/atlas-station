@@ -1,9 +1,11 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { runSweep } = require('./work-eater-run.cjs');
 const { runCompiler } = require('./obligation-compiler-run.cjs');
 const { searchSource } = require('../source-sight.cjs');
+const { compileClaim } = require('../claim-compiler.cjs');
 
 const handlers = Object.freeze({
   abolish_work(input) {
@@ -11,6 +13,9 @@ const handlers = Object.freeze({
   },
   compile_obligations(input) {
     return runCompiler({ repo: path.join(__dirname, '..'), secMesa: input.secMesa, diagnostic: input.diagnostic, inputPath: input.inputPath });
+  },
+  compile_claim(input) {
+    return compileClaim(fs.readFileSync(path.resolve(input.inputPath)));
   },
   inspect_source(input) {
     return searchSource({ root: path.join(__dirname, '..'), query: input.query, scope: input.scope, limit: input.limit });
@@ -35,6 +40,8 @@ function parse(name, argv) {
   } else if (name === 'compile_obligations') {
     if (input.dryRun || input.limit !== undefined) throw new Error('compile_obligations is pure and does not accept work-eater arguments');
     if ([input.secMesa, input.diagnostic, Boolean(input.inputPath)].filter(Boolean).length !== 1) throw new Error('compile_obligations requires exactly one of --sec-mesa, --diagnostic, or --input=<json-path>');
+  } else if (name === 'compile_claim') {
+    if (input.dryRun || input.limit !== undefined || input.secMesa || input.diagnostic || !input.inputPath) throw new Error('compile_claim requires exactly --input=<json-path>');
   } else {
     if (input.dryRun || input.secMesa || input.diagnostic || input.inputPath) throw new Error('inspect_source accepts only --query, --path, and --limit');
     if (!input.query) throw new Error('inspect_source requires --query=<text>');
@@ -48,6 +55,7 @@ async function main() {
   if (!Object.hasOwn(handlers, name)) throw new Error(`unknown Atlas tool: ${name || '(empty)'}; available: ${Object.keys(handlers).join(', ')}`);
   const result = await handlers[name](parse(name, process.argv.slice(3)));
   process.stdout.write(`${JSON.stringify({ schema: 1, tool: name, ok: true, result }, null, 2)}\n`);
+  if (name === 'compile_claim' && result.verdict !== 'admitted') process.exitCode = 2;
 }
 
 main().catch((error) => {
