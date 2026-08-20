@@ -8,8 +8,8 @@ const { execFileSync } = require('child_process');
 
 const REPO = __dirname;
 const VERIFIERS = {
-  'boundary-xenosoma-v1': { repo: 'E:/boundary', script: 'tools/verify_xenosoma_receipt.py', protocol: 'boundary-xenosoma-receipt-v1' },
-  'rde-xenosoma-v1': { repo: 'E:/recursive-discovery-engine', script: 'scripts/verify_xenosoma_receipt.py', protocol: 'rde-causal-xenosoma-v1' },
+  'boundary-xenosoma-v1': { repo: process.env.ATLAS_BOUNDARY_REPO || 'E:/boundary', script: 'tools/verify_xenosoma_receipt.py', protocol: 'boundary-xenosoma-receipt-v1' },
+  'rde-xenosoma-v1': { repo: process.env.ATLAS_RDE_REPO || 'E:/recursive-discovery-engine', script: 'scripts/verify_xenosoma_receipt.py', protocol: 'rde-causal-xenosoma-v1' },
 };
 
 function sortValue(value) {

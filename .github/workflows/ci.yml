@@ -19,8 +19,24 @@ jobs:
     timeout-minutes: 20
     env:
       CI: true
+      ATLAS_BOUNDARY_REPO: ${{ github.workspace }}/organism/boundary
+      ATLAS_RDE_REPO: ${{ github.workspace }}/organism/recursive-discovery-engine
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout Boundary verifier
+        uses: actions/checkout@v4
+        with:
+          repository: NexumCorpus/boundary
+          ref: c2b925eec081b5b70affa3bbb19fb00cfd7dffb0
+          path: organism/boundary
+          persist-credentials: false
+      - name: Checkout RDE verifier
+        uses: actions/checkout@v4
+        with:
+          repository: NexumCorpus/recursive-discovery-engine
+          ref: 8b317fd123d63d8349ec77a4f705eff3f226e3b2
+          path: organism/recursive-discovery-engine
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
