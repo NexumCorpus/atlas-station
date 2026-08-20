@@ -37,6 +37,20 @@ jobs:
           ref: 8b317fd123d63d8349ec77a4f705eff3f226e3b2
           path: organism/recursive-discovery-engine
           persist-credentials: false
+      - name: Mount organism topology
+        shell: pwsh
+        run: |
+          subst E: "$env:GITHUB_WORKSPACE\organism"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $required = @(
+            'E:\boundary\tools\verify_xenosoma_receipt.py',
+            'E:\recursive-discovery-engine\scripts\verify_xenosoma_receipt.py'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Missing independent verifier: $path"
+            }
+          }
       - uses: actions/setup-node@v4
         with:
           node-version: 24
