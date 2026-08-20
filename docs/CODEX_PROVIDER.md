@@ -12,6 +12,10 @@ provider adapter, not a claim that the Claude Agent SDK and Codex are identical.
 - Codex thread IDs are persisted with their issuing provider. Later turns use
   `codex exec resume <thread-id>` only when that provider matches; a legacy
   Claude session id is deliberately discarded rather than passed to Codex.
+- When the Codex executable is absent, Hermes may answer a closed read-only
+  directory-list grammar through its deterministic reflex organ. The reflex
+  reads the real current directory, emits explicit `hermes-reflex` provenance,
+  creates no resumable model session, and declines every unsupported task.
 - The external Codex process cannot receive ATLAS's in-process Claude MCP
   server. Deterministic Hermes organs cross that boundary through
   `scripts/atlas-tool.cjs`; the first attached route is `abolish_work`. The
@@ -58,6 +62,12 @@ the source bytes.
 | `ATLAS_CODEX_ORCHESTRATOR_SANDBOX` | Default `read-only` |
 | `ATLAS_CODEX_BUILD_SANDBOX` | Default `workspace-write` |
 | `ATLAS_CODEX_USE_USER_CONFIG` | Set `1` to load user plugins/MCP configuration |
+| `ATLAS_REFLEX` | Set `0` to disable the deterministic missing-cortex reflex |
+
+The reflex is not a substitute model. Its current vocabulary is limited to
+listing files or entries in the current directory, with a 512-byte task limit,
+1,024 inspected entries, 80 emitted file names, and a 4,000-byte response
+ceiling. Build and orchestrator turns never enter it.
 
 The defaults were probed through this station's installed CLI. They are not
 assumed portable: if another Codex account exposes a different catalogue, set a

@@ -2,6 +2,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import hermesReflex from "./hermes-reflex.cjs";
+
+const { reflexQuery } = hermesReflex;
 
 const MAX_DIAGNOSTIC_CHARS = 1_200;
 
@@ -306,16 +309,28 @@ export async function* codexCliQuery({ prompt, options = {} } = {}, config = {})
 
 export function createCodexCliProvider({ env = process.env, command } = {}) {
   const binary = command || resolveCodexBinary(env);
+  const probeBinary = () => {
+    const result = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 5_000, windowsHide: true });
+    if (result.error || result.status !== 0) {
+      return {
+        available: false,
+        binary,
+        error: truncate(result.error?.message || result.stderr || "Codex CLI probe failed"),
+        errorCode: result.error?.code || null,
+      };
+    }
+    return { available: true, binary, version: String(result.stdout || "").trim(), errorCode: null };
+  };
   return {
     name: "codex-cli",
     assign(options) { return resolveCodexModel(options, env); },
-    query(args) { return codexCliQuery(args, { env, command: binary }); },
-    probe() {
-      const result = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 5_000, windowsHide: true });
-      if (result.error || result.status !== 0) {
-        return { available: false, binary, error: truncate(result.error?.message || result.stderr || "Codex CLI probe failed") };
+    query(args) {
+      const availability = probeBinary();
+      if (!availability.available && availability.errorCode === "ENOENT" && env.ATLAS_REFLEX !== "0") {
+        return reflexQuery(args, { cause: availability.error });
       }
-      return { available: true, binary, version: String(result.stdout || "").trim() };
+      return codexCliQuery(args, { env, command: binary });
     },
+    probe: probeBinary,
   };
 }
