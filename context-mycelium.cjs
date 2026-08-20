@@ -4,8 +4,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const shardCodec = require('./shard-codec.cjs');
 
-const PYTHON = process.env.PYTHON || 'python';
 const RUNTIME = path.join(__dirname, '.atlas', 'context-mycelium');
 const MANIFEST = path.join(RUNTIME, 'crystals.ndjson');
 
@@ -25,32 +25,17 @@ function budgetOf(opts) {
 }
 function within(text, budget) { const m = metrics(text); return m.utf8Bytes <= budget.ceiling && m.utf16Units <= budget.ceiling && m.conservativeTokens <= budget.ceiling; }
 function gitHead() { try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: __dirname, encoding: 'utf8', windowsHide: true }).trim(); } catch { return 'unknown'; } }
-function pythonShard(mode, payload) {
-  const script = [
-    'import sys,json,base64,importlib.util',
-    'p=r"E:/station/shard_rs.py"',
-    's=importlib.util.spec_from_file_location("station_shard",p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)',
-    'x=json.loads(sys.stdin.read())',
-    'if x["mode"]=="encode":',
-    ' d=base64.b64decode(x["data"]); f,o=m.encode(d,x["k"],x["n"]); print(json.dumps({"origLen":o,"shards":[base64.b64encode(a).decode() for a in f]}))',
-    'else:',
-    ' f={int(k):base64.b64decode(v) for k,v in x["frags"].items()}; d=m.decode(f,x["k"],x["n"],x["origLen"]); print(json.dumps({"data":None if d is None else base64.b64encode(d).decode()}))'
-  ].join('\n');
-  const out = execFileSync(PYTHON, ['-c', script], { input: JSON.stringify({ mode, ...payload }), encoding: 'utf8', windowsHide: true });
-  return JSON.parse(out);
-}
 function shardBytes(data, k = 2, n = 4) {
-  const out = pythonShard('encode', { data: Buffer.from(data).toString('base64'), k, n });
-  return { k, n, origLen: out.origLen, shards: out.shards.map((s, index) => ({ index, sha256: sha(Buffer.from(s, 'base64')), data: s })) };
+  const out = shardCodec.encode(Buffer.from(data), k, n);
+  return { k, n, origLen: out.origLen, shards: out.shards.map((raw, index) => ({ index, sha256: sha(raw), data: raw.toString('base64') })) };
 }
 function unshard(record) {
   const frags = {}; for (const shard of record.shards) {
     const raw = Buffer.from(shard.data, 'base64'); if (sha(raw) !== shard.sha256) throw new ContextTissueError(`shard ${shard.index} hash mismatch`);
-    frags[shard.index] = raw.toString('base64');
+    frags[shard.index] = raw;
   }
-  const out = pythonShard('decode', { frags: Object.fromEntries(Object.entries(frags)), k: record.k, n: record.n, origLen: record.origLen });
-  if (!out.data) throw new ContextTissueError('insufficient or singular shards', 'CONTEXT_SHARDS_INSUFFICIENT');
-  return Buffer.from(out.data, 'base64');
+  try { return shardCodec.decode(frags, record.k, record.n, record.origLen); }
+  catch { throw new ContextTissueError('insufficient or singular shards', 'CONTEXT_SHARDS_INSUFFICIENT'); }
 }
 function appendCrystal(record) {
   fs.mkdirSync(RUNTIME, { recursive: true });
@@ -122,7 +107,7 @@ function nucleus(task) {
     '[Context Mycelium Nucleus]',
     'identity: Hermes; executive: ATLAS; authority: Station-notarized, epoch/attempt fenced',
     'epistemic: inherited memory is evidence; claims require source-backed verification',
-    `recovery: content-addressed crystal manifest at ${MANIFEST}; shard decoder E:/station/shard_rs.py`,
+    `recovery: content-addressed crystal manifest at ${MANIFEST}; shard decoder native:shard-codec.cjs`,
     `current task: ${String(task)}`
   ].join('\n');
 }
