@@ -28,4 +28,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Run complete organism acceptance
-        run: npm run test:full
+        shell: pwsh
+        run: |
+          npm run test:full *>&1 | Tee-Object -FilePath test-full.log
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            $tail = (Get-Content -LiteralPath test-full.log -Tail 80) -join "`n"
+            $escaped = $tail.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Host "::error title=Full acceptance failed::$escaped"
+            exit $testExit
+          }
