@@ -121,6 +121,10 @@ let _sessionState = null;
 try { _sessionState = _require('./session-state.cjs'); } catch { _sessionState = null; }
 let _xenobioticEcology = null;
 try { _xenobioticEcology = _require('./xenobiotic-ecology.cjs'); } catch { _xenobioticEcology = null; }
+let _workEater = null;
+try { _workEater = _require('./scripts/work-eater-run.cjs'); } catch { _workEater = null; }
+let _obligationCompiler = null;
+try { _obligationCompiler = _require('./scripts/obligation-compiler-run.cjs'); } catch { _obligationCompiler = null; }
 let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
 let _predict = null;
@@ -854,7 +858,7 @@ const selfAssessTool = tool(
   {},
   async () => {
     const lines = [];
-    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, close_proposal, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health, population_status, make_prediction, resolve_prediction, prediction_accuracy`);
+    lines.push(`[Tools available] spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, close_proposal, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, abolish_work, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health, population_status, make_prediction, resolve_prediction, prediction_accuracy`);
     try {
       const branch = gitC(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
       const log = gitC(["log", "--oneline", "-3"]).trim();
@@ -908,7 +912,7 @@ const capabilityManifestTool = tool(
       "save_routine", "run_routine", "list_routines",
       "crystallize", "cluster_facts",
       "drain_proposals", "prune_facts",
-      "rate_build", "build_outcomes", "revert_build",
+      "rate_build", "build_outcomes", "abolish_work", "revert_build",
       "capture_insight", "context_telemetry",
       "project_create", "project_advance", "project_status", "project_complete",
       "auto_build",
@@ -916,8 +920,8 @@ const capabilityManifestTool = tool(
       "tool_audit", "proposal_analysis", "memory_health_detail", "daemon_report", "daemon_health", "population_status",
       "make_prediction", "resolve_prediction", "prediction_accuracy"
     ];
-    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log", "predict"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson"];
+    const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log", "predict", "work-eater"];
+    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson", "work-eater.ndjson"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
@@ -2349,6 +2353,24 @@ const buildOutcomesTool = tool(
   }
 );
 
+const abolishWorkTool = tool(
+  "abolish_work",
+  "Find recurrent work-generating conditions in Atlas's real negative evidence and emit proof-bound abolition contracts. Contracts cannot execute or promote themselves; use dryRun to inspect without writing runtime receipts.",
+  {
+    limit: z.number().int().min(1).max(8).optional().describe("Maximum ranked abolition contracts (default 3)."),
+    dryRun: z.boolean().optional().describe("Plan without writing Work-Eater, ecology, Mycelium, or crystal receipts."),
+  },
+  async (args) => {
+    if (!_workEater) return { content: [{ type: 'text', text: 'work-eater module not available' }] };
+    try {
+      const report = _workEater.runSweep({ repo: REPO, limit: args.limit || 3, dryRun: Boolean(args.dryRun), actor: 'ATLAS/Hermes' });
+      return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `abolish_work error: ${error.message}` }] };
+    }
+  }
+);
+
 const contextTelemetryTool = tool(
   "context_telemetry",
   "Analyze historical context budget usage — average utilization, which sections are largest, how often budget is exceeded. Use to evaluate whether context improvements (semantic routing, decay, crystals) are actually working.",
@@ -3262,7 +3284,7 @@ const predictionAccuracyTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
@@ -3323,6 +3345,7 @@ drain_proposals(priority?,dryRun?) — convert pending proposals to deferred tas
 prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) — mark old low-confidence facts stale; use memory_health first to see age distribution
 rate_build(agentId,rating,causalChain?,notes?) — record quality rating (good/partial/bad) for a build; feeds success-rate metric. IMPORTANT: provide causalChain for EVERY rating — required for 'bad' (which steps broke, what assumptions violated), expected for 'good' (what went right, causally)
 build_outcomes(showRecent?) — show aggregate build quality: success rate, distribution, recent ratings
+abolish_work(limit?,dryRun?) — find recurrent burdens and create authority-free, independently falsifiable abolition contracts
 revert_build(agentId,dryRun?) — revert a fleet build's merge commit via git revert (safe, creates new revert commit)
 capture_insight(insight,category?) — manually crystallize a mid-conversation observation into persistent memory
 context_telemetry(lastN?) — historical context budget analysis: avg utilization, section sizes, trim frequency over last N turns
@@ -3963,6 +3986,32 @@ async function pollSayInbox() {
   const am = txt.match(/^!autonomy\s+(\d+)/i);
   if (am) { startAutonomy(parseInt(am[1], 10)); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!autonomy <minutes>' }); finish(); return; }
   if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!stop' }); finish(); return; }
+  const obligationControl = _obligationCompiler?.parseIngressControl(txt);
+  if (obligationControl?.operation === 'sec-mesa') {
+    try {
+      if (!_obligationCompiler) throw new Error('obligation compiler organ unavailable');
+      const result = await _obligationCompiler.runCompiler({ repo: REPO, secMesa: true });
+      const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', result });
+      const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+        ...attempt,
+        executionPath: 'deterministic-control',
+        parserRule: '!obligations sec-mesa',
+        outboxRecordHash: out && out.recordHash,
+      });
+      send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', timeline: 'ack' });
+    } catch (error) {
+      const failure = String((error && error.message) || error);
+      const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', error: failure });
+      const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+        ...attempt,
+        executionPath: 'deterministic-control',
+        parserRule: '!obligations sec-mesa',
+      });
+      send('ingress', { state: 'failed', directiveId: claim.directiveId, seq: fail.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', reason: failure, timeline: 'fail' });
+    }
+    finish();
+    return;
+  }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
     await enqueueOrchestrate(txt, 'user', {
@@ -4185,8 +4234,8 @@ async function runPulse() {
         `- Session cost: $${sessionStats.totalCost.toFixed(3)}`,
         `- Agents spawned: ${sessionStats.agentCount}`,
         ``,
-        `## Tools (67 registered)`,
-        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, shard_memory, recover_shard, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
+        `## Tools (68 registered)`,
+        `spawn_agent, check_fleet, chain_agents, fleet_status, diagnose, propose_improvement, load_proposals, journal_write, recall_memory, set_goal, list_goals, resolve_goal, defer_task, memory_health, notify_self, self_assess, capability_manifest, trigger_selfloop, session_stats, export_conversation, write_doc, read_doc, list_docs, run_script, memory_consolidate, web_research, relate_facts, fact_graph, load_dreams, resonance_stats, read_self, fan_research, signal_propagate, generate_tool, verify_build, run_tests, validate_facts, shard_memory, recover_shard, staged_verify_build, mutation_map, set_instruction, get_instructions, clear_instruction, save_routine, run_routine, list_routines, crystallize, cluster_facts, drain_proposals, prune_facts, rate_build, build_outcomes, abolish_work, revert_build, capture_insight, context_telemetry, project_create, project_advance, project_status, project_complete, auto_build, triage_proposals, tool_audit, proposal_analysis, memory_health_detail, daemon_report, daemon_health`,
         ``,
         `## Status`,
         `Station is operational. Pulse interval: 25 min.`,

@@ -45,6 +45,31 @@ spiral requires a distinct subsystem/capability vector, changed measure,
 evidence, falsifier, and kill condition. Continued work on an existing vector
 is recorded as a continuation and cannot inflate the new-vector count.
 
+## Inverse metabolism
+
+`work-eater.cjs` and `work-eater-evidence.cjs` turn failed runs, deferred or
+rejected proposals, bad outcomes, and xenobiotic failures into transparent
+abolition contracts. The objective is not to perform recurring work faster;
+it is to make the upstream condition that demands the work structurally
+impossible. Contracts remain proposal-only until an independent,
+precommitted holdout demonstrates zero recurrence without displaced cost.
+
+`scripts/work-eater-run.cjs` is the whole-organism route: it recruits the
+xenobiotic ecology, stores a hash-chained receipt, seals full evidence tissue
+through Context Mycelium and Reed-Solomon shards, and writes only a compact
+navigation crystal. Atlas exposes the same route as `abolish_work`.
+
+## Obligation compiler
+
+`obligation-compiler.cjs` treats typed contractual promises as a directed graph
+and searches bounded cycles of three through eight consenting parties. A plan
+is admissible only when residual cash settlement preserves every participant's
+declared face-value position, stays inside their tolerance, and leaves positive
+evidenced fulfillment-cost savings after novation cost and the stated Atlas fee.
+The compiler is pure and proposal-only. The `compile_obligations` bridge accepts
+operator JSON, a secondary deterministic diagnostic, or a read-only live proof
+over exact SEC bytes for a real five-party obligation rewrite and active contract.
+
 ## External organs and claims
 
 - `wing-host.cjs` mounts language-independent external organs through JSONL

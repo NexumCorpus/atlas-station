@@ -12,10 +12,11 @@ provider adapter, not a claim that the Claude Agent SDK and Codex are identical.
 - Codex thread IDs are persisted with their issuing provider. Later turns use
   `codex exec resume <thread-id>` only when that provider matches; a legacy
   Claude session id is deliberately discarded rather than passed to Codex.
-- The external Codex process cannot receive ATLAS's in-process Claude MCP server.
-  The adapter says this explicitly in every prompt, so a Codex run cannot
-  honestly claim to have called `spawn_agent`, `verify_build`, or another fleet
-  tool that was never attached.
+- The external Codex process cannot receive ATLAS's in-process Claude MCP
+  server. Deterministic Hermes organs cross that boundary through
+  `scripts/atlas-tool.cjs`; the first attached route is `abolish_work`. The
+  adapter names the exact command and still forbids claims about unattached
+  fleet tools such as `spawn_agent`, `verify_build`, or `shard_memory`.
 
 ## Hermes bridge
 

@@ -115,7 +115,8 @@ function assertBoundedText(value, label = 'text') {
 function assertNoSecrets(value, trail = []) {
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (SENSITIVE_KEYS.test(key)) throw new Error(`authority leakage rejected at ${[...trail, key].join('.')}`);
+    const normalizedKey = key.normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\s._-]/gu, '');
+    if (SENSITIVE_KEYS.test(normalizedKey)) throw new Error(`authority leakage rejected at ${[...trail, key].join('.')}`);
     assertNoSecrets(child, [...trail, key]);
   }
 }

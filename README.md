@@ -25,6 +25,10 @@ failure surface.
 - An end-to-end discovery mission path with append-only evidence.
 - Sidecar-generation-aware Electron UI with transparent provider, model, task,
   failure, and autonomy state.
+- Inverse metabolism that turns recurring negative evidence into proof-bound
+  contracts for eliminating the source of work rather than accelerating it.
+- A proposal-only obligation compiler that detects consented multilateral
+  novation cycles while preserving every participant's declared face position.
 - One machine-readable release contract and one full readiness command.
 
 ## Run
@@ -35,6 +39,29 @@ Requirements: Windows, Node.js 24, Python 3, and a logged-in Codex CLI.
 npm install
 npm start
 ```
+
+To inspect or run the local Work-Eater organ:
+
+```text
+npm run work:eat:dry
+npm run work:eat
+node scripts/atlas-tool.cjs abolish_work --limit=3 --dry-run
+node scripts/atlas-tool.cjs inspect_source --query=obligation --path=scripts
+npm run obligations:proof
+```
+
+The Atlas bridge invokes these organs without a second model or worker. The
+obligation proof fetches exact bytes from four SEC EDGAR filings: an executed
+five-party agreement, its closing and final settlement, and an active ten-year
+capacity contract. It reports the observed $51,703,516 exchange value but never
+mislabels that amount as savings. `npm run obligations:diagnostic` retains a
+fictional cycle strictly for deterministic parser and solver diagnosis.
+
+`inspect_source` is the organism's fail-closed self-sight route when indexed
+semantic search is unavailable. It scans only bounded source extensions inside
+the repository, never follows symlinks or runtime stores, and returns exact line
+coordinates plus source hashes. File, byte, result, query, and path limits are
+explicit in every response.
 
 The app starts the fleet sidecar automatically. The bottom composer speaks to
 ATLAS; fleet cards expose delegated work. Local execution authority is explicit
