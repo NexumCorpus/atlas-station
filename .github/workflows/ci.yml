@@ -21,6 +21,7 @@ jobs:
       CI: true
       ATLAS_BOUNDARY_REPO: ${{ github.workspace }}/organism/boundary
       ATLAS_RDE_REPO: ${{ github.workspace }}/organism/recursive-discovery-engine
+      D2_HARNESS: ${{ github.workspace }}/organism/director2-harness
     steps:
       - uses: actions/checkout@v4
       - name: Checkout Boundary verifier
@@ -36,6 +37,13 @@ jobs:
           repository: NexumCorpus/recursive-discovery-engine
           ref: 8b317fd123d63d8349ec77a4f705eff3f226e3b2
           path: organism/recursive-discovery-engine
+          persist-credentials: false
+      - name: Checkout Director2 harness
+        uses: actions/checkout@v4
+        with:
+          repository: NexumCorpus/director2
+          ref: f5bd0cb8c474d4a7ade2a2f295f4520329cad892
+          path: organism/director2-harness
           persist-credentials: false
       - name: Mount organism topology
         shell: pwsh
@@ -55,8 +63,16 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: organism/director2-harness/pyproject.toml
       - name: Install locked dependencies
         run: npm ci
+      - name: Install Director2 harness
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check -e "$env:D2_HARNESS"
       - name: Run complete organism acceptance
         shell: pwsh
         run: |
