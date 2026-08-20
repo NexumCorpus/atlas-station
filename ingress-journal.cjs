@@ -3,10 +3,17 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const MAX_CLAIM_TTL_MS = 86400000;
 
 function bytesHash(value) { return `sha256:${crypto.createHash('sha256').update(Buffer.from(String(value), 'utf8')).digest('hex')}`; }
 function hash(value) { return bytesHash(JSON.stringify(value)); }
 function sleep(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+function admitClaimTtl(value) {
+  const requestedClaimTtlMs = value;
+  if (!Number.isSafeInteger(requestedClaimTtlMs) || requestedClaimTtlMs < 1 || requestedClaimTtlMs > MAX_CLAIM_TTL_MS) throw new Error(`claim TTL must be an integer from 1 through ${MAX_CLAIM_TTL_MS}`);
+  const effectiveClaimTtlMs = requestedClaimTtlMs === 1 ? 1 : Math.max(1000, requestedClaimTtlMs);
+  return { requestedClaimTtlMs, effectiveClaimTtlMs };
+}
 function canonicalDir(dir) {
   const resolved = path.resolve(dir || path.join(__dirname, '.atlas'));
   return resolved === path.resolve(__dirname) ? path.join(resolved, '.atlas') : resolved;
@@ -208,6 +215,7 @@ function authoritativeTerminal(dir, eventId) {
 function terminal(dir, eventId) { return authoritativeTerminal(dir, eventId); }
 
 function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxReplays = 3, attemptMeta = {}) {
+  const ttl = admitClaimTtl(claimTtlMs);
   dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
@@ -225,11 +233,12 @@ function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxRepla
       attemptId: `attempt:${crypto.randomUUID()}`, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attemptMeta.workerPid || process.pid, workerStartIdentity: attemptMeta.workerStartIdentity || null,
       providerSessionId: attemptMeta.providerSessionId || null, providerModel: attemptMeta.providerModel || null,
-      expiresAt: now + claimTtlMs, replay: Boolean(priorClaim), claimCount: candidate.claims.length + 1 });
+      ...ttl, expiresAt: now + ttl.effectiveClaimTtlMs, replay: Boolean(priorClaim), claimCount: candidate.claims.length + 1 });
   });
 }
 
 function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlMs = 30000) {
+  const ttl = admitClaimTtl(claimTtlMs);
   return withLock(dir, () => {
     const l = assertLease(dir, leaseOrOwner, token, epoch); const item = entries(dir).byId.get(eventId); const current = latestAttempt(item);
     const claim = item?.claims?.find(record => record.attemptId === attempt.attemptId && record.recordHash === attempt.claimRecordHash);
@@ -237,7 +246,7 @@ function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlM
     return appendUnlocked(dir, { kind: 'claim-renewal', eventId, directiveId: item.ingress.directiveId, attemptId: claim.attemptId, claimRecordHash: claim.recordHash,
       contentHash: claim.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attempt.workerPid, workerStartIdentity: attempt.workerStartIdentity, providerSessionId: attempt.providerSessionId, providerModel: attempt.providerModel,
-      expiresAt: Date.now() + claimTtlMs });
+      ...ttl, expiresAt: Date.now() + ttl.effectiveClaimTtlMs });
   });
 }
 
