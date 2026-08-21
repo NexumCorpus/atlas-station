@@ -20,4 +20,10 @@ assert.match(html, /autonomy forced discovery/);
 assert.match(html, /autonomy retry scheduled/);
 assert.match(html, /window\.atlas\.resolveGoal\(gid, 'done'\)/);
 
+assert.match(html, /id="stream-think"/);
+assert.match(html, /m\.type==="orchestrator_thinking"/);
+assert.match(html, /function captureThinkForFinal/);
+assert.match(html, /function thinkFromList/);
+assert.match(html, /class="think"/);
+assert.match(html, /usage\.prompt_tokens/);
 console.log("renderer contract: ALL PASS");

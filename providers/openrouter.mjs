@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+﻿import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -74,6 +74,31 @@ function runShell(input, cwd, env, signal) {
   });
 }
 
+function requestBody(messages, env, stream) {
+  const body = {
+    model: env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL,
+    messages,
+    tools: TOOLS,
+    tool_choice: "auto",
+    reasoning: { effort: env.ATLAS_OPENROUTER_REASONING || "max" },
+    max_tokens: Number(env.ATLAS_OPENROUTER_MAX_TOKENS) || 32_768,
+  };
+  if (stream) {
+    body.stream = true;
+    body.usage = { include: true }; // final SSE chunk carries token accounting
+  }
+  return body;
+}
+
+function authHeaders(env) {
+  return {
+    Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://github.com/NexumCorpus/atlas-station",
+    "X-Title": "Atlas Station",
+  };
+}
+
 async function request(messages, env, signal) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
@@ -81,20 +106,8 @@ async function request(messages, env, signal) {
   const response = await fetch(API_URL, {
     method: "POST",
     signal: requestSignal,
-    headers: {
-      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/NexumCorpus/atlas-station",
-      "X-Title": "Atlas Station",
-    },
-    body: JSON.stringify({
-      model: env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL,
-      messages,
-      tools: TOOLS,
-      tool_choice: "auto",
-      reasoning: { effort: env.ATLAS_OPENROUTER_REASONING || "max" },
-      max_tokens: Number(env.ATLAS_OPENROUTER_MAX_TOKENS) || 32_768,
-    }),
+    headers: authHeaders(env),
+    body: JSON.stringify(requestBody(messages, env, false)),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -105,12 +118,117 @@ async function request(messages, env, signal) {
   return payload;
 }
 
+// Streaming variant: parses OpenRouter SSE chunks, forwards text / reasoning /
+// tool_call deltas to onDelta as they arrive, and resolves with the assembled
+// message + usage. Handles both delta.reasoning and delta.reasoning_content.
+async function requestStreaming(messages, env, signal, onDelta) {
+  const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
+  const timeoutSignal = AbortSignal.timeout(requestTimeout);
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const response = await fetch(API_URL, {
+    method: "POST",
+    signal: requestSignal,
+    headers: authHeaders(env),
+    body: JSON.stringify(requestBody(messages, env, true)),
+  });
+  if (!response.ok || !response.body) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
+    error.status = response.status;
+    throw error;
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let reasoning = "";
+  const toolAcc = new Map(); // index -> { id, name, args }
+  let usage = null;
+  let finishReason = null;
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).replace(/\r$/, "");
+      buffer = buffer.slice(nl + 1);
+      if (!line.startsWith("data:")) continue; // skips SSE comments (e.g. ": OPENROUTER PROCESSING")
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      let evt; try { evt = JSON.parse(data); } catch { continue; }
+      if (evt.usage) usage = evt.usage;
+      const choice = evt.choices?.[0];
+      if (!choice) continue;
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+      const d = choice.delta || {};
+      const rText = d.reasoning ?? d.reasoning_content;
+      if (typeof rText === "string" && rText) { reasoning += rText; onDelta?.({ kind: "thinking", text: rText }); }
+      if (typeof d.content === "string" && d.content) { content += d.content; onDelta?.({ kind: "text", text: d.content }); }
+      if (Array.isArray(d.tool_calls)) {
+        for (const tc of d.tool_calls) {
+          const idx = Number.isInteger(tc.index) ? tc.index : 0;
+          let slot = toolAcc.get(idx);
+          if (!slot) { slot = { id: "", name: "", args: "" }; toolAcc.set(idx, slot); }
+          if (tc.id) slot.id = String(tc.id);
+          if (tc.function?.name) slot.name += String(tc.function.name);
+          if (tc.function?.arguments) {
+            slot.args += String(tc.function.arguments);
+            onDelta?.({ kind: "tool_arg", index: idx });
+          }
+        }
+      }
+    }
+  }
+  const tool_calls = [...toolAcc.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, s]) => ({ id: s.id || `call_${s.name}`, type: "function", function: { name: s.name || "shell", arguments: s.args || "{}" } }));
+  return {
+    message: {
+      content: content || null,
+      reasoning: reasoning || null, // surfaced for telemetry; never persisted back into chat history
+      tool_calls: tool_calls.length ? tool_calls : undefined,
+    },
+    usage,
+    finish_reason: finishReason,
+  };
+}
+
+// Minimal async channel so the async-generator query() can interleave live
+// deltas (yielded as they arrive) with the final consolidated round result.
+function deltaChannel() {
+  const buf = [];
+  let wake = null;
+  let state = "open"; // open | closed | errored
+  let error = null;
+  return {
+    push(item) {
+      if (state !== "open") return;
+      if (wake) { const w = wake; wake = null; w(item); } else buf.push(item);
+    },
+    close() { state = "closed"; if (wake) { const w = wake; wake = null; w(null); } },
+    fail(err) { state = "errored"; error = err; if (wake) { const w = wake; wake = null; w(null); } },
+    async *drain() {
+      while (true) {
+        if (buf.length) { yield buf.shift(); continue; }
+        if (state === "open") {
+          const item = await new Promise((res) => { wake = res; });
+          if (item) yield item;
+          continue;
+        }
+        if (state === "errored") throw error;
+        return;
+      }
+    },
+  };
+}
+
 export function createOpenRouterProvider({ env = process.env } = {}) {
   const model = env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL;
+  // ATLAS_OPENROUTER_STREAM=0 forces the legacy non-streaming path (fallback
+  // safety: a stream-parser regression must never brick the organism).
+  const streamingEnabled = String(env.ATLAS_OPENROUTER_STREAM ?? "1") !== "0";
   return {
     name: "openrouter",
     assign() { return { purpose: "organism", route: "openrouter", model, source: "openrouter-directive" }; },
-    probe() { return { available: Boolean(env.OPENROUTER_API_KEY), credentialConfigured: Boolean(env.OPENROUTER_API_KEY), model, api: "chat-completions" }; },
+    probe() { return { available: Boolean(env.OPENROUTER_API_KEY), credentialConfigured: Boolean(env.OPENROUTER_API_KEY), model, api: streamingEnabled ? "chat-completions-sse" : "chat-completions" }; },
     async *query({ prompt, options = {} } = {}) {
       if (!env.OPENROUTER_API_KEY) {
         yield { type: "result", subtype: "error", result: "OPENROUTER_API_KEY is not configured", total_cost_usd: null };
@@ -124,14 +242,32 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter" });
       try {
         for (let round = 0; round < MAX_ROUNDS; round++) {
-          const payload = await request(messages, env, options.abortSignal);
-          const message = payload?.choices?.[0]?.message;
-          if (!message) throw new Error("OpenRouter returned no assistant message");
+          let message; let usage;
+          if (streamingEnabled) {
+            const ch = deltaChannel();
+            const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d))
+              .then((r) => { ch.close(); return r; })
+              .catch((e) => { ch.fail(e); return null; });
+            for await (const d of ch.drain()) {
+              if (d.kind === "thinking") yield { type: "assistant_stream", kind: "thinking", text: d.text };
+              else if (d.kind === "text") yield { type: "assistant_stream", kind: "text", text: d.text };
+              else if (d.kind === "tool_arg") yield { type: "assistant_stream", kind: "tool_arg", index: d.index };
+            }
+            const assembled = await pump;
+            if (!assembled) throw new Error("OpenRouter stream failed");
+            message = assembled.message;
+            usage = assembled.usage;
+          } else {
+            const payload = await request(messages, env, options.abortSignal);
+            message = payload?.choices?.[0]?.message;
+            usage = payload?.usage || null;
+            if (!message) throw new Error("OpenRouter returned no assistant message");
+          }
           messages.push({ role: "assistant", content: message.content || null, tool_calls: message.tool_calls || undefined });
           if (message.content) yield { type: "assistant", message: { content: [{ type: "text", text: String(message.content) }] } };
           const calls = message.tool_calls || [];
           if (!calls.length) {
-            yield { type: "result", subtype: "success", result: String(message.content || ""), total_cost_usd: payload?.usage?.cost ?? 0, usage: payload.usage || null };
+            yield { type: "result", subtype: "success", result: String(message.content || ""), total_cost_usd: usage?.cost ?? 0, usage: usage || null };
             return;
           }
           for (const call of calls) {
