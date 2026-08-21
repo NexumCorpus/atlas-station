@@ -10,6 +10,7 @@
 // MUST spawn a build subagent (isolated worktree), never the live tree.
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
+import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync } from "fs";
@@ -27,7 +28,8 @@ function query(args) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} — use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
-  if (ACTIVE_PROVIDER === "codex-cli") return _codexProvider.query(args);
+  if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.query(args);
+  if (CODEX_PROVIDER_ACTIVE) return _codexProvider.query(args);
   return _sdkQuery(args);
 }
 
@@ -41,29 +43,36 @@ if (process.env.ATLAS_CODEX_UNRESTRICTED !== "0") {
 }
 const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "codex-cli").toLowerCase();
 const _codexProvider = createCodexCliProvider();
+const _openrouterProvider = createOpenRouterProvider();
 const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
   ? "codex-cli"
+  : ["openrouter", "openrouter-codex"].includes(REQUESTED_PROVIDER)
+    ? "openrouter"
   : REQUESTED_PROVIDER === "claude" || REQUESTED_PROVIDER === "claude-sdk"
     ? "claude-sdk"
-    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Use codex-cli or claude-sdk.`); })();
+    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Use codex-cli, openrouter, or claude-sdk.`); })();
+const CODEX_PROVIDER_ACTIVE = ACTIVE_PROVIDER === "codex-cli";
+const AGENT_PROVIDER_ACTIVE = CODEX_PROVIDER_ACTIVE || ACTIVE_PROVIDER === "openrouter";
 const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MODEL_OPUS   = "claude-opus-4-8";
 const MODEL = MODEL_SONNET; // default for ATLAS orchestrator
 // Hermes is the whole operating body.  Its current executive directive is
 // explicit and beats an old conversation's persisted model assignment.
-const ORCHESTRATOR_MODEL_DIRECTIVE = process.env.ATLAS_CODEX_ORCHESTRATOR_MODEL || "gpt-5.6-luna";
+const ORCHESTRATOR_MODEL_DIRECTIVE = process.env.ATLAS_CODEX_ORCHESTRATOR_MODEL ||
+  (ACTIVE_PROVIDER === "openrouter" ? process.env.ATLAS_OPENROUTER_MODEL || process.env.ATLAS_CODEX_MODEL || "stealth/ox-alpha" : "gpt-5.6-luna");
 
 // Keep the UI/state record aligned with the provider actually running the task.
 // The legacy Claude labels remain inputs to its SDK path only.
 function assignedModel(options, fallbackModel) {
-  return ACTIVE_PROVIDER === "codex-cli"
+  if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.assign(options).model;
+  return CODEX_PROVIDER_ACTIVE
     ? resolveCodexModel(options, process.env).model
     : fallbackModel;
 }
 
 function codexRouting(route, fallbackModel) {
-  return ACTIVE_PROVIDER === "codex-cli"
+  return AGENT_PROVIDER_ACTIVE
     ? { ...route, atlasAssignedModel: assignedModel(route, fallbackModel) }
     : {};
 }
@@ -3570,7 +3579,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}) {
     } catch {}
   }
   const resumedSession = compatibleSession(orchSession, orchSessionProvider, ACTIVE_PROVIDER);
-  const orchestrationRouting = ACTIVE_PROVIDER === "codex-cli"
+  const orchestrationRouting = AGENT_PROVIDER_ACTIVE
     ? codexRouting({
       atlasMode: "orchestrator",
       atlasPurpose: "orchestration",
@@ -3585,8 +3594,8 @@ async function orchestrate(userText, source = 'user', executionHooks = {}) {
     state: "working",
     provider: ACTIVE_PROVIDER,
     model: orchestrationModel,
-    sandbox: ACTIVE_PROVIDER === "codex-cli" ? resolveCodexSandbox(orchestrationRouting, process.env) : "provider-managed",
-    route: ACTIVE_PROVIDER === "codex-cli" ? "orchestrator-required-directive" : "claude-sdk",
+    sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
+    route: ACTIVE_PROVIDER === "openrouter" ? "openrouter-tools" : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
     task: String(userText || "").slice(0, 220),
     startedAt: new Date().toISOString(),
   });
@@ -3643,8 +3652,8 @@ async function orchestrate(userText, source = 'user', executionHooks = {}) {
           state: m.subtype === "success" ? "done" : "failed",
           provider: ACTIVE_PROVIDER,
           model: orchestrationModel,
-          sandbox: ACTIVE_PROVIDER === "codex-cli" ? resolveCodexSandbox(orchestrationRouting, process.env) : "provider-managed",
-          route: ACTIVE_PROVIDER === "codex-cli" ? "orchestrator-required-directive" : "claude-sdk",
+          sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
+          route: ACTIVE_PROVIDER === "openrouter" ? "openrouter-tools" : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
           summary: full.slice(0, 220),
           finishedAt: new Date().toISOString(),
         });
@@ -3964,7 +3973,7 @@ async function pollSayInbox() {
   try { _ingress.reconcileLegacy(INGRESS_DIR, SAY_INBOX, 'legacy-say-inbox'); } catch (error) { send('ingress', { state: 'failed', reason: error.message }); return; }
   const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000, 3, {
     workerPid: process.pid, workerStartIdentity: _sidecarLease.owner.startIdentity,
-    providerSessionId: `codex:${process.pid}:${Date.now()}`, providerModel: ACTIVE_PROVIDER === 'codex-cli' ? ORCHESTRATOR_MODEL_DIRECTIVE : MODEL,
+    providerSessionId: `${ACTIVE_PROVIDER}:${process.pid}:${Date.now()}`, providerModel: AGENT_PROVIDER_ACTIVE ? ORCHESTRATOR_MODEL_DIRECTIVE : MODEL,
   });
   if (!claim) return;
   const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
@@ -4110,9 +4119,11 @@ if (_persist) {
   } catch {}
 }
 send("counter", { value: _maxCounter });
-send("provider", ACTIVE_PROVIDER === "codex-cli"
-  ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._codexProvider.probe() }
-  : { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, available: true });
+send("provider", ACTIVE_PROVIDER === "openrouter"
+  ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._openrouterProvider.probe() }
+  : CODEX_PROVIDER_ACTIVE
+    ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._codexProvider.probe() }
+    : { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, available: true });
 send("ready", {});
 try {
   if (_ecologyOrgan) {
