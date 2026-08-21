@@ -41,6 +41,21 @@ const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 if (process.env.ATLAS_CODEX_UNRESTRICTED !== "0") {
   process.env.ATLAS_CODEX_UNRESTRICTED = "1";
 }
+// Load gitignored .env at boot (never overrides real env; values never logged).
+try {
+  const _envFs = _require('fs');
+  const _envPath = path.join(REPO, '.env');
+  if (_envFs.existsSync(_envPath)) {
+    for (const _line of _envFs.readFileSync(_envPath, 'utf8').split(/\r?\n/)) {
+      if (!_line.trim() || _line.trim().startsWith('#')) continue;
+      const _m = _line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!_m) continue;
+      let _v = _m[2];
+      if ((_v.startsWith('"') && _v.endsWith('"')) || (_v.startsWith("'") && _v.endsWith("'"))) _v = _v.slice(1, -1);
+      if (!(_m[1] in process.env)) process.env[_m[1]] = _v;
+    }
+  }
+} catch {}
 const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "codex-cli").toLowerCase();
 const _codexProvider = createCodexCliProvider();
 const _openrouterProvider = createOpenRouterProvider();
@@ -321,9 +336,30 @@ const BUILD_NOTE = "\n\n[Working conditions] You are inside an ISOLATED git work
 
 // Stream one query's messages into agent `id`'s state; returns the final reply.
 async function consume(id, iterable, build, branch) {
+  // Live reasoning telemetry: ATLAS-only rolling tail, throttled GUI sends.
+  const isOrch = id === "ATLAS";
+  let thinkTail = "";
+  let thinkDirty = false;
+  let thinkLastSend = 0;
+  const flushThinking = (force = false) => {
+    if (!isOrch || !thinkDirty) return;
+    const now = Date.now();
+    if (!force && now - thinkLastSend < 400) return;
+    thinkLastSend = now;
+    thinkDirty = false;
+    send("orchestrator_thinking", { text: thinkTail.slice(-4096) });
+  };
   let final = "";
   for await (const m of iterable) {
-    if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id });
+        if (m.type === "assistant_stream") {
+      if (m.kind === "thinking" && isOrch && typeof m.text === "string" && m.text) {
+        thinkTail = (thinkTail + m.text).slice(-4096);
+        thinkDirty = true;
+        flushThinking();
+      }
+      continue;
+    }
+if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id });
     else if (m.type === "assistant") {
       const a = agents.get(id); const turns = (a?.turns || 0) + 1; let patch = { state: "working", turns };
       for (const b of (m.message?.content ?? [])) {
@@ -354,7 +390,8 @@ async function consume(id, iterable, build, branch) {
     } else if (m.type === "result") {
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
       final = String(m.result ?? agents.get(id)?.summary ?? "");
-      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...extra });
+      flushThinking(true);
+      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
       // Record which files this build agent modified — feeds mutation_map churn analysis

@@ -481,6 +481,8 @@ input:focus-visible{outline:none}
   .otl-status.err{color:var(--red)}
   .otl-status.run{color:var(--amber);animation:otl-pulse 1.2s ease-in-out infinite}
   .otl-out{font-size:9.5px;color:#7d8a99;white-space:pre-wrap;word-break:break-word;max-height:66px;overflow:hidden;padding:1px 0 1px 10px;border-left:2px solid rgba(255,255,255,.08);margin-left:4px}
+.think{margin:2px 0 8px;display:flex;flex-direction:column;gap:2px;font-family:Consolas,'Cascadia Mono',monospace}
+.think-line{font-size:10px;line-height:1.5;color:#6b7f95;font-style:italic;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;padding-left:10px;border-left:2px solid rgba(122,162,247,.18)}
   @keyframes otl-pulse{50%{opacity:.35}}
 
 /* Execution rail: the current run remains visible like a CLI status line. */
@@ -1251,7 +1253,7 @@ input:focus-visible{outline:none}
     }
     if(m.type==="execution"){
       renderExecution(m);
-      if(m.state==='working'){window.__otl={lines:[],map:{}};}
+      if(m.state==='working'){window.__otl={lines:[],map:{}};window.__thk={tail:''};var _sth=document.getElementById('stream-think');if(_sth)_sth.innerHTML='';}
       addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',
         'Atlas '+(m.state||'state')+' · '+(m.model||'model')+' · '+(m.sandbox||'sandbox'),
         m.state==='done'?'evdone':m.state==='failed'?'evfailed':'');
@@ -1311,7 +1313,14 @@ input:focus-visible{outline:none}
       return;
     }
 
-    if(m.type==="agent"){
+        if(m.type==="orchestrator_thinking"){
+      var T=window.__thk||(window.__thk={tail:''});
+      T.tail=((T.tail||'')+String(m.text||''));
+      if(T.tail.length>4096)T.tail=T.tail.slice(-4096);
+      renderThink();
+      return;
+    }
+if(m.type==="agent"){
       if(m.id==="ATLAS"){
         if(m.partial){
           agents.set("ATLAS",m);
@@ -1336,14 +1345,14 @@ input:focus-visible{outline:none}
           setTyping(true);
           $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"){
-          captureOtlForFinal();clearStreamingMsg(); // remove live stream element before final render
+          captureOtlForFinal();captureThinkForFinal();clearStreamingMsg(); // remove live stream element before final render
           var txt=m.reply||m.summary||"(no reply)";
           if(pend){
             pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;pend.error=m.state==="failed";
-            attachOtlToMsg(pend);
+            attachOtlToMsg(pend);attachThinkToMsg(pend);
             pend.ts=pend.ts||Date.now();
           } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
-            var _fm={role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()};attachOtlToMsg(_fm);thread.push(_fm);
+            var _fm={role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()};attachOtlToMsg(_fm);attachThinkToMsg(_fm);thread.push(_fm);
           }
           setTyping(false);
           $('status').textContent=m.state==="failed"?"overseer · failed":"overseer · idle";
@@ -1735,6 +1744,11 @@ input:focus-visible{outline:none}
         var tsStr = formatTs(msg.ts);
         var costHtml = (msg.role === 'atlas' && msg.cost != null && msg.cost > 0)
           ? '<span style="font-size:9px;color:var(--dim);margin-left:auto;opacity:.5">$' + Number(msg.cost).toFixed(2) + '</span>' : '';
+        if (msg.role === 'atlas' && msg.usage && (Number(msg.usage.prompt_tokens)||Number(msg.usage.completion_tokens))) {
+          costHtml += '<span style="font-size:9px;color:var(--dim);opacity:.55;margin-left:8px">' +
+            Number(msg.usage.prompt_tokens||0).toLocaleString() + '\u2192' + Number(msg.usage.completion_tokens||0).toLocaleString() + ' tok' +
+            (msg.durationMs != null ? ' \u00b7 ' + Math.round(Number(msg.durationMs)/1000) + 's' : '') + '</span>';
+        }
         var seam = (restoredAtBoot > 0 && i === restoredAtBoot - 1)
           ? '<div class="thread-seam"><span class="ts-line"></span>' +
             '<span class="ts-label">' + restoredAtBoot + ' from last session · ' +
@@ -1769,7 +1783,7 @@ input:focus-visible{outline:none}
             (msg.restored ? '<span class="msg-time">earlier</span>' : '') +
             costHtml +
             '</div>' +
-            '<div class="msg-text">' + ((msg.role === 'atlas' && msg.tools && msg.tools.length) ? otlFromList(msg.tools) : '') + renderMd(pk.prose) + '</div>' +
+            '<div class="msg-text">' + ((msg.role === 'atlas' && msg.tools && msg.tools.length) ? otlFromList(msg.tools) : '') + ((msg.role === 'atlas' && msg.thinking && msg.thinking.length) ? thinkFromList(msg.thinking) : '') + renderMd(pk.prose) + '</div>' +
             packetHtml +
           '</div>' +
           '<button type="button" class="msg-copy" aria-label="Copy message" onclick="copyMsg(' + i + ')">copy</button>' +
@@ -1790,7 +1804,7 @@ input:focus-visible{outline:none}
       localStorage.setItem('atlas_thread', JSON.stringify(
         thread.filter(function(t) { return t.role !== 'atlas' || !t.pending; })
           .slice(-150)
-          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts,chosen:t.chosen}; })
+          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts,chosen:t.chosen,tools:t.tools||null,thinking:t.thinking||null}; })
       ));
     } catch(e) {}
     // Show/hide typing indicator based on pending atlas state
@@ -1854,7 +1868,7 @@ input:focus-visible{outline:none}
       el = document.createElement('div');
       el.id = 'streaming-msg';
       el.className = 'msg atlas';
-      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div id="stream-otl"></div><div class="msg-text" id="stream-text"></div></div>';
+      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div id="stream-otl"></div><div id="stream-think"></div><div class="msg-text" id="stream-text"></div></div>';
       var threadEl = document.getElementById('thread');
       if (threadEl) threadEl.appendChild(el);
       var sts = document.getElementById('stream-ts');
@@ -1901,6 +1915,27 @@ input:focus-visible{outline:none}
     window.__otlFinal=null;
   }
 
+  function renderThink(){
+    var T=window.__thk; var el=document.getElementById('stream-think');
+    if(!el)return;
+    if(!T||!T.tail){el.innerHTML='';return;}
+    var seg=T.tail.split(/\n+/).filter(Boolean).slice(-8);
+    el.innerHTML='<div class="think">'+seg.map(function(s){return '<div class="think-line">'+esc(s.length>400?s.slice(0,400)+'\u2026':s)+'</div>';}).join('')+'</div>';
+    var th=document.getElementById('thread'); if(th&&th.scrollHeight-th.scrollTop-th.clientHeight<120)th.scrollTop=th.scrollHeight;
+  }
+  function thinkFromList(list){
+    if(!list||!list.length)return '';
+    return '<div class="think">'+list.map(function(s){return '<div class="think-line">'+esc(String(s))+'</div>';}).join('')+'</div>';
+  }
+  function captureThinkForFinal(){
+    var T=window.__thk;
+    window.__thkFinal=(T&&T.tail)?T.tail.split(/\n+/).filter(Boolean).slice(-4).map(function(s){return s.length>300?s.slice(0,300)+'\u2026':s;}):null;
+    window.__thk={tail:''};
+  }
+  function attachThinkToMsg(msg){
+    if(window.__thkFinal&&msg){msg.thinking=window.__thkFinal;}
+    window.__thkFinal=null;
+  }
   function clearStreamingMsg() {
     var el = document.getElementById('streaming-msg');
     if (el && el.parentNode) el.parentNode.removeChild(el);
