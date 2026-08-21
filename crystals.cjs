@@ -67,4 +67,28 @@ function loadCrystalFailures(memDir, maxN = 10) {
   return lines.slice(-limit).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 }
 
-module.exports = { appendCrystal, loadCrystals, countCrystals, appendCrystalFailure, loadCrystalFailures };
+/**
+ * Provider-error banners sometimes arrive as SUCCESSFUL results (observed
+ * 2026-08-11: the usage-limit banner was stored verbatim as a crystal).
+ * Detection is deliberately banner-specific - a genuine crystal that merely
+ * DISCUSSES usage limits must never be rejected. Short-text guard: banners
+ * are compact; long texts are only scanned at head/tail.
+ */
+const PROVIDER_ERROR_PATTERNS = [
+  /usage limit[^\n]*try again at/i,
+  /(purchase|buy)[^\n]{0,40}credits/i,
+  /^you'?ve hit your usage limit/i,
+  /visit https?:\/\/\S*(settings\/usage|explore\/pro)/i,
+  /^api error/i,
+  /^error:/i,
+];
+function isProviderErrorText(text) {
+  if (!text) return false;
+  const s = String(text);
+  if (s.length > 500) {
+    return PROVIDER_ERROR_PATTERNS.some(re => re.test(s.slice(0, 200)) || re.test(s.slice(-200)));
+  }
+  return PROVIDER_ERROR_PATTERNS.some(re => re.test(s));
+}
+
+module.exports = { appendCrystal, loadCrystals, countCrystals, appendCrystalFailure, loadCrystalFailures, isProviderErrorText };
