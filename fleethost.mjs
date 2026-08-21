@@ -3493,9 +3493,22 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
       abortControllers.delete(crystalId);
     }
 
-    if (crystalText && crystalText.trim()) {
-      _crystals.appendCrystal(crystalText, [Math.max(1, turnNum - 4), turnNum], memDir);
-      send('crystal_formed', { text: crystalText.slice(0, 100) });
+    const trimmedCrystal = String(crystalText || '').trim();
+    if (_crystals.isProviderErrorText && _crystals.isProviderErrorText(trimmedCrystal)) {
+      // Provider error arrived disguised as a successful result. Never store it
+      // as memory (poisoned crystal on 2026-08-11); record retryable receipt.
+      try {
+        _crystals.appendCrystalFailure({
+          turnNum,
+          error: { name: 'ProviderErrorAsResult', message: trimmedCrystal.slice(0, 500) },
+          retryable: true,
+          status: 'rejected_provider_error',
+        }, path.join(REPO, 'memory'));
+      } catch (_) {}
+        send('crystal_failed', { turnNum, reason: 'provider-error text rejected' });
+    } else if (trimmedCrystal) {
+      _crystals.appendCrystal(trimmedCrystal, [Math.max(1, turnNum - 4), turnNum], memDir);
+      send('crystal_formed', { text: trimmedCrystal.slice(0, 100) });
     }
   } catch (error) {
     // Failed crystallizations used to vanish silently. Record a structured,
