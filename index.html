@@ -470,6 +470,19 @@ input:focus-visible{outline:none}
 .tab:active{transform:none}
 .tab-panel{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto}
 .tab-panel[style*="display:none"]{display:none!important}
+  /* Orchestrator tool telemetry: CLI-parity live transcript of ATLAS tool calls */
+  .otl{margin:2px 0 8px;display:flex;flex-direction:column;gap:3px;font-family:Consolas,'Cascadia Mono',monospace}
+  .otl-line{display:flex;align-items:baseline;gap:8px;font-size:10.5px;line-height:1.55;color:var(--dim)}
+  .otl-dot{color:var(--cyan);flex:none;font-size:9px}
+  .otl-name{color:var(--acid);font-weight:600}
+  .otl-arg{color:#93a1b1;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52ch}
+  .otl-status{margin-left:auto;flex:none;font-size:10px}
+  .otl-status.ok{color:var(--green)}
+  .otl-status.err{color:var(--red)}
+  .otl-status.run{color:var(--amber);animation:otl-pulse 1.2s ease-in-out infinite}
+  .otl-out{font-size:9.5px;color:#7d8a99;white-space:pre-wrap;word-break:break-word;max-height:66px;overflow:hidden;padding:1px 0 1px 10px;border-left:2px solid rgba(255,255,255,.08);margin-left:4px}
+  @keyframes otl-pulse{50%{opacity:.35}}
+
 /* Execution rail: the current run remains visible like a CLI status line. */
 #executionrail{display:flex;align-items:center;gap:7px;min-height:26px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(34,225,255,.025);font-size:9px;letter-spacing:.05em;color:var(--dim);overflow:hidden}
 #exec-dot{width:6px;height:6px;border-radius:50%;background:#57546a;flex:none}
@@ -1238,6 +1251,7 @@ input:focus-visible{outline:none}
     }
     if(m.type==="execution"){
       renderExecution(m);
+      if(m.state==='working'){window.__otl={lines:[],map:{}};}
       addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',
         'Atlas '+(m.state||'state')+' · '+(m.model||'model')+' · '+(m.sandbox||'sandbox'),
         m.state==='done'?'evdone':m.state==='failed'?'evfailed':'');
@@ -1281,6 +1295,22 @@ input:focus-visible{outline:none}
       renderThread();
       return;
     }
+    if(m.type==="orchestrator_tool"||m.type==="orchestrator_toolresult"){
+      var O=window.__otl||(window.__otl={lines:[],map:{}});
+      if(m.type==="orchestrator_tool"){
+        if(/^(think|Thinking)$/i.test(m.name||''))return;
+        var line={name:m.name||'tool',arg:String(m.arg||''),status:'run',out:'',ts:Date.now()};
+        O.lines.push(line); if(O.lines.length>40)O.lines.shift();
+        if(m.id)O.map[m.id]=line;
+      } else {
+        var tgt=(m.id&&O.map[m.id])||null;
+        if(!tgt){for(var oi=O.lines.length-1;oi>=0;oi--){if(O.lines[oi].status==='run'){tgt=O.lines[oi];break;}}}
+        if(tgt){tgt.status=(m.ok===false)?'err':'ok';tgt.out=String(m.output||'');}
+      }
+      var _so=document.getElementById('stream-otl'); if(_so)_so.innerHTML=otlHtml();
+      return;
+    }
+
     if(m.type==="agent"){
       if(m.id==="ATLAS"){
         if(m.partial){
@@ -1306,13 +1336,14 @@ input:focus-visible{outline:none}
           setTyping(true);
           $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"){
-          clearStreamingMsg(); // remove live stream element before final render
+          captureOtlForFinal();clearStreamingMsg(); // remove live stream element before final render
           var txt=m.reply||m.summary||"(no reply)";
           if(pend){
             pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;pend.error=m.state==="failed";
+            attachOtlToMsg(pend);
             pend.ts=pend.ts||Date.now();
           } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
-            thread.push({role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()});
+            var _fm={role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()};attachOtlToMsg(_fm);thread.push(_fm);
           }
           setTyping(false);
           $('status').textContent=m.state==="failed"?"overseer · failed":"overseer · idle";
@@ -1738,7 +1769,7 @@ input:focus-visible{outline:none}
             (msg.restored ? '<span class="msg-time">earlier</span>' : '') +
             costHtml +
             '</div>' +
-            '<div class="msg-text">' + renderMd(pk.prose) + '</div>' +
+            '<div class="msg-text">' + ((msg.role === 'atlas' && msg.tools && msg.tools.length) ? otlFromList(msg.tools) : '') + renderMd(pk.prose) + '</div>' +
             packetHtml +
           '</div>' +
           '<button type="button" class="msg-copy" aria-label="Copy message" onclick="copyMsg(' + i + ')">copy</button>' +
@@ -1823,7 +1854,7 @@ input:focus-visible{outline:none}
       el = document.createElement('div');
       el.id = 'streaming-msg';
       el.className = 'msg atlas';
-      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div class="msg-text" id="stream-text"></div></div>';
+      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div id="stream-otl"></div><div class="msg-text" id="stream-text"></div></div>';
       var threadEl = document.getElementById('thread');
       if (threadEl) threadEl.appendChild(el);
       var sts = document.getElementById('stream-ts');
@@ -1835,7 +1866,39 @@ input:focus-visible{outline:none}
     // Suppress the packet fence (even partially streamed) so raw JSON never flashes;
     // renderThread turns it into cards once the final message lands.
     if (textEl) textEl.innerHTML = renderMd((text || '').replace(/\[\[packet\]\][\s\S]*$/, '').replace(/\s+$/, ''));
+    var sotl=document.getElementById('stream-otl'); if(sotl) sotl.innerHTML=otlHtml();
     if (threadEl2 && atBottom) threadEl2.scrollTop = threadEl2.scrollHeight;
+  }
+
+  // ---- orchestrator tool telemetry helpers ----
+  function otlRowHtml(l){
+    var st=l.status==='ok'?'<span class="otl-status ok">✓</span>'
+        :l.status==='err'?'<span class="otl-status err">✗</span>'
+        :'<span class="otl-status run">…</span>';
+    var argStr=l.arg?String(l.arg):'';
+    var shown=argStr.length>90?argStr.slice(0,90)+'…':argStr;
+    return '<div class="otl-line"><span class="otl-dot">◍</span>'+
+      '<span class="otl-name">'+esc(l.name||'tool')+'</span>'+
+      (shown?'<span class="otl-arg" title="'+esc(argStr)+'">'+esc(shown)+'</span>':'')+st+'</div>'+
+      (l.out?'<div class="otl-out">'+esc(String(l.out).slice(0,240))+'</div>':'');
+  }
+  function otlHtml(){
+    var O=window.__otl;
+    if(!O||!O.lines.length)return '';
+    return '<div class="otl">'+O.lines.slice(-12).map(otlRowHtml).join('')+'</div>';
+  }
+  function otlFromList(list){
+    if(!list||!list.length)return '';
+    return '<div class="otl">'+list.map(otlRowHtml).join('')+'</div>';
+  }
+  function captureOtlForFinal(){
+    var O=window.__otl;
+    window.__otlFinal=(O&&O.lines.length)?O.lines.slice(-12).map(function(l){return{name:l.name,arg:l.arg,status:l.status,out:l.out};}):null;
+    window.__otl={lines:[],map:{}};
+  }
+  function attachOtlToMsg(msg){
+    if(window.__otlFinal&&msg){msg.tools=window.__otlFinal;}
+    window.__otlFinal=null;
   }
 
   function clearStreamingMsg() {

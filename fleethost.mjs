@@ -331,7 +331,18 @@ async function consume(id, iterable, build, branch) {
           const n = (b.name || "").replace(/^mcp__fleet__/, "");
           patch.lastTool = n;
           patch.lastToolArg = extractToolArg(n, b.input);
-        }
+            // CLI-parity live telemetry: every orchestrator tool call streams
+            // to the GUI as it happens (Codex/Claude desktop-style visibility).
+            send("orchestrator_tool", { id: b.id || null, name: n, arg: patch.lastToolArg || null });
+          }
+          else if (b.type === "tool_result") {
+            const ok = !b.is_error;
+            const rc = b.content;
+            let outText = "";
+            if (typeof rc === "string") outText = rc;
+            else if (Array.isArray(rc)) outText = rc.filter(c => c && c.type === "text").map(c => c.text || "").join(" ");
+            send("orchestrator_toolresult", { id: b.id || null, ok, output: String(outText || "").slice(0, 400) });
+          }
         else if (b.type === "text" && b.text.trim()) {
           patch.summary = b.text.trim().slice(0, 160);
           // Stream partial text to GUI in real-time (no persist, no agents Map mutation)
