@@ -52,7 +52,10 @@ try {
       if (!_m) continue;
       let _v = _m[2];
       if ((_v.startsWith('"') && _v.endsWith('"')) || (_v.startsWith("'") && _v.endsWith("'"))) _v = _v.slice(1, -1);
-      if (!(_m[1] in process.env)) process.env[_m[1]] = _v;
+      // Authoritative: .env is the operator-owned config surface (gitignored);
+      // it intentionally overrides inherited launch env so key rotations and
+      // provider selection persist across ANY relaunch method.
+      process.env[_m[1]] = _v;
     }
   }
 } catch {}
