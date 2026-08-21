@@ -207,6 +207,51 @@ function appendRun(run, dir = DEFAULT_DIR) {
  *
  * Returns [] on empty query or no matches.
  */
+/**
+ * Terminal-record idempotency. The agent SDK has been observed emitting more
+ * than one terminal result event per logical run; consume() used to append a
+ * runs.jsonl row per event, producing twin failure/done records 15-20ms apart
+ * (CRYS-1786437672685, DREAM-336). recordTerminalOnce admits only the first
+ * terminal record per agent id inside TERMINAL_ONCE_WINDOW_MS; later attempts
+ * are swallowed and counted for diagnosis.
+ */
+const TERMINAL_ONCE_KEY = '__terminalOnceSeen';
+const TERMINAL_ONCE_WINDOW_MS = 60000;
+function recordTerminalOnce(agentId, now = Date.now()) {
+  const key = String(agentId || '');
+  if (!key) return true;
+  if (!globalThis[TERMINAL_ONCE_KEY]) globalThis[TERMINAL_ONCE_KEY] = new Map();
+  const seen = globalThis[TERMINAL_ONCE_KEY];
+  const prior = seen.get(key);
+  if (prior && (now - prior.ts) < TERMINAL_ONCE_WINDOW_MS) {
+    prior.count++;
+    return false;
+  }
+  seen.set(key, { ts: now, count: 1 });
+  return true;
+}
+
+/**
+ * Read-side dedupe for run lists. Collapses consecutive same-id records whose
+ * state and summary agree into one record (keeps the first), so consumers like
+ * the dream pulse judge real runs instead of duplicated twins.
+ */
+function dedupeRuns(runs) {
+  if (!Array.isArray(runs)) return [];
+  const out = [];
+  for (const r of runs) {
+    const prev = out[out.length - 1];
+    if (
+      prev && r &&
+      prev.agentId === r.agentId &&
+      prev.state === r.state &&
+      String(prev.summary || '') === String(r.summary || '')
+    ) continue;
+    out.push(r);
+  }
+  return out;
+}
+
 function recallFacts(query, { dir = DEFAULT_DIR, maxResults = 5 } = {}) {
   const tokens = (query || '').toLowerCase().split(/\W+/).filter(t => t.length > 2);
   if (!tokens.length) return [];
@@ -335,7 +380,7 @@ async function recallFactsSemantic(query, { dir = DEFAULT_DIR, maxResults = 5 } 
   return recallFacts(query, { dir, maxResults });
 }
 
-module.exports = { appendFact, appendRun, recallFacts, recallFactsSemantic, recentRuns, lifetimeStats, compactFacts, factStats };
+module.exports = { appendFact, appendRun, recordTerminalOnce, dedupeRuns, recallFacts, recallFactsSemantic, recentRuns, lifetimeStats, compactFacts, factStats };
 
 // ---------------------------------------------------------------------------
 // Self-test: `node memstore.cjs`

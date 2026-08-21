@@ -28,4 +28,43 @@ function countCrystals(memDir) {
   return fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).length;
 }
 
-module.exports = { appendCrystal, loadCrystals, countCrystals };
+const CRYSTAL_FAILURES_FILE = (dir) => path.join(dir, 'crystal-failures.ndjson');
+
+/**
+ * Record a failed crystallization as a structured, retryable handoff.
+ * Replaces the old fire-and-forget catch{} that swallowed failures silently.
+ * Each receipt carries the turn, error identity, retryability, and status so a
+ * later session can resume distillation instead of re-deriving what broke.
+ */
+function appendCrystalFailure(body, memDir) {
+  if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true });
+  const { turnNum = null, crystalId = null, error = null, retryable = false, status = 'pending_retry' } = body || {};
+  const entry = {
+    ts: new Date().toISOString(),
+    kind: 'crystal-failure',
+    turnNum,
+    crystalId,
+    error: {
+      name: error && error.name || null,
+      message: error && String(error.message || '').slice(0, 500) || null,
+    },
+    retryable: Boolean(retryable),
+    status,
+    session: process.pid,
+    hermes: circulation.envelope(null, 'memory-write', 'crystal-failures'),
+  };
+  fs.appendFileSync(CRYSTAL_FAILURES_FILE(memDir), JSON.stringify(entry) + String.fromCharCode(10), 'utf8');
+  return entry;
+}
+
+/** Load recent crystallization failures (newest last unless maxN given). */
+function loadCrystalFailures(memDir, maxN = 10) {
+  const f = CRYSTAL_FAILURES_FILE(memDir);
+  if (!fs.existsSync(f)) return [];
+  const lines = fs.readFileSync(f, 'utf8').trim().split(String.fromCharCode(10)).filter(Boolean);
+  const limit = maxN == null ? 10 : Math.max(0, Math.floor(Number(maxN) || 0));
+  if (limit === 0) return [];
+  return lines.slice(-limit).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+}
+
+module.exports = { appendCrystal, loadCrystals, countCrystals, appendCrystalFailure, loadCrystalFailures };

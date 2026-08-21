@@ -179,6 +179,10 @@ const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCo
 let pulseCount = 0;
 let orchTurnCount = 0;
 let _completedBuildCount = 0; // triggers improvement cycle every N builds
+// Terminal-record idempotency: the SDK can emit more than one terminal result event
+// per run; each used to append a duplicate runs.jsonl row (CRYS-/DREAM- twins
+// 15-20ms apart), which then fed dream-pulse duplicated-failure proposals.
+// memstore.recordTerminalOnce() admits only the first terminal record per id.
 
 // Codex resume threads are stateful and cannot safely accept concurrent turns.
 // Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
@@ -340,7 +344,7 @@ async function consume(id, iterable, build, branch) {
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
       final = String(m.result ?? agents.get(id)?.summary ?? "");
       set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...extra });
-      if (_memstore) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null,
+      if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
       // Record which files this build agent modified — feeds mutation_map churn analysis
       if (build && _mutmap) {
@@ -3493,7 +3497,21 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
       _crystals.appendCrystal(crystalText, [Math.max(1, turnNum - 4), turnNum], memDir);
       send('crystal_formed', { text: crystalText.slice(0, 100) });
     }
-  } catch {} // fire-and-forget — crystallization failures are silent
+  } catch (error) {
+    // Failed crystallizations used to vanish silently. Record a structured,
+    // retryable handoff so a future session can resume the distillation.
+    try {
+      const failDir = path.join(REPO, 'memory');
+      if (_crystals && _crystals.appendCrystalFailure) {
+        _crystals.appendCrystalFailure({
+          turnNum,
+          error: { name: error && error.name || 'Error', message: String(error && error.message || error).slice(0, 500) },
+          retryable: true,
+        }, failDir);
+      }
+      send('crystal_failed', { turnNum, reason: String(error && error.message || error).slice(0, 200) });
+    } catch (_) {}
+  }
 }
 
 async function orchestrate(userText, source = 'user', executionHooks = {}) {
@@ -4270,8 +4288,10 @@ async function runPulse() {
         let recentRuns = [];
         let recentJournal = [];
         if (fs.existsSync(runsFile)) {
-          recentRuns = fs.readFileSync(runsFile, 'utf8').trim().split('\n').filter(Boolean)
-            .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+          const rawRuns = fs.readFileSync(runsFile, 'utf8').trim().split(String.fromCharCode(10)).filter(Boolean)
+            .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          // Collapse duplicated terminal records so pulses judge real runs, not twins.
+          recentRuns = ((_memstore && typeof _memstore.dedupeRuns === 'function') ? _memstore.dedupeRuns(rawRuns) : rawRuns)
             .slice(-15);
         }
         if (fs.existsSync(journalFile)) {
