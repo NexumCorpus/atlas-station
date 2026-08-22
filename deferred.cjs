@@ -90,14 +90,38 @@ function _taskFingerprint(taskText) {
   return String(taskText || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function _taskTokens(taskText) {
+  return new Set(String(taskText || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+}
+
+function _jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+// Paraphrase tolerance: the dream pulse re-words recurring proposals
+// (17 near-duplicate phrasings seeded one defect), so exact fingerprints
+// alone cannot stop the loop. Two LONG texts sharing >=85% of their
+// vocabulary are treated as the same problem. Short texts are exempt:
+// brief task names overlap too easily for similarity to be meaningful.
+const FUZZY_MIN_TOKENS = 9;
+const FUZZY_JACCARD = 0.8;
+
+function _isDuplicate(t, fp, tokens, now) {
+  if (!['pending', 'queued', 'claimed'].includes(t.state)) return false;
+  if (!t.ts || (now - Date.parse(t.ts)) >= DEDUPE_WINDOW_MS) return false;
+  if (_taskFingerprint(t.task) === fp) return true;
+  if (!tokens || tokens.size < FUZZY_MIN_TOKENS) return false;
+  return _jaccard(_taskTokens(t.task), tokens) >= FUZZY_JACCARD;
+}
+
 function findLiveDuplicate(tasks, taskText, now = Date.now()) {
   const fp = _taskFingerprint(taskText);
   if (!fp) return null;
-  return tasks.find(t =>
-    ['pending', 'queued', 'claimed'].includes(t.state) &&
-    t.ts && (now - Date.parse(t.ts)) < DEDUPE_WINDOW_MS &&
-    _taskFingerprint(t.task) === fp
-  ) || null;
+  const tokens = _taskTokens(taskText);
+  return tasks.find(t => _isDuplicate(t, fp, tokens, now)) || null;
 }
 
 function dedupeDeferred(entry, tasks, dir) {

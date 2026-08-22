@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const assert = require('assert');
 const fs = require('fs');
@@ -46,6 +46,21 @@ try {
   const live = deferred.findLiveDuplicate(deferred.listDeferred(tmp), '  post-restart\tverification of reasoning-stream activation ');
   assert.equal(live.id, other.id);
   assert.equal(deferred.findLiveDuplicate(deferred.listDeferred(tmp), 'completely unrelated work'), null);
+
+  // 5. Paraphrase suppression: long near-synonym rewording of a live task.
+  const para = deferred.deferTask(
+    'Diagnose the recurring crystallization breakdown and restore verified persistence of dream outputs',
+    { ...REASON }, tmp); // fresh live task, long text
+  assert.ok(!para.__suppressed);
+  const paraDupe = deferred.deferTask(
+    'Diagnose the recurring crystallization breakdown and restore confirmed persistence of dream outputs',
+    { ...REASON }, tmp);
+  assert.equal(paraDupe.__suppressed, true, 'paraphrase of a LIVE long task must suppress');
+
+  // 6. Short texts are exempt from fuzzy matching.
+  const s1 = deferred.deferTask('Audit A-999 ledger', { ...REASON }, tmp);
+  const s2 = deferred.deferTask('Audit A-998 ledger', { ...REASON }, tmp);
+  assert.ok(!s1.__suppressed && !s2.__suppressed, 'short similar tasks must both be admitted');
 
   console.log('deferred-dedupe-contract: ALL PASS');
 } finally {
