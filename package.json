@@ -15,6 +15,7 @@
     "test:mission": "node tests/mission.test.mjs",
     "test:providers": "node tests/codex-provider.test.mjs && node tests/continuity.test.mjs",
     "test:mouth": "node tests/mouth-metabolism.test.mjs && node tests/turn-bound.test.mjs",
+    "test:lanes": "node tests/lane-integration.test.mjs",
     "test:renderer": "node tests/renderer-contract.mjs",
     "test:renderer:live": "electron tests/renderer-harness.cjs",
     "test:rate-build": "node tests/rate-build-contract.mjs",
