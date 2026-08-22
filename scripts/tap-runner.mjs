@@ -5,6 +5,8 @@
 // Env: TAP_TASK (prompt), TAP_MODEL, TAP_SANDBOX (default read-only),
 //      TAP_COMMIT_PROMPT (optional single resume leg for commit duty).
 import { spawn } from 'node:child_process';
+import * as fsWrite from 'node:fs';
+import { existsSync as fsExistsSync } from 'node:fs';
 import { appendFileSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 
@@ -80,6 +82,7 @@ async function runLeg(args, legName) {
 const OR_API = "https://openrouter.ai/api/v1/chat/completions";
 const OR_MODEL = process.env.TAP_OR_MODEL || process.env.ATLAS_OPENROUTER_MODEL || "stealth/ox-alpha";
 let orMsgs = null; // kept across main->commit legs
+let claimedWrites = []; // paths the worker claims to have written - VERIFIED post-hoc
 
 function loadOrKey() {
   try {
@@ -98,7 +101,7 @@ const OR_TOOLS = [
 ];
 async function orChat(messages, key) {
   const r = await fetch(OR_API, { method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: OR_MODEL, max_tokens: 3000, messages, tools: OR_TOOLS }) });
+    body: JSON.stringify({ model: OR_MODEL, max_tokens: SANDBOX === "workspace-write" ? 8000 : 3000, messages, tools: OR_TOOLS }) });
   const j = await r.json().catch(() => null);
   if (!j) throw new Error("unparseable provider response");
   if (j.error) throw new Error(j.error.message || JSON.stringify(j.error).slice(0, 200));
@@ -141,9 +144,16 @@ async function runOrTurns(key, maxRounds) {
           if (!withinRoot(rp)) out = "DENIED: outside working directory";
           else out = readdirSync(rp).join("\n");
         } else if (c.function.name === "write_file") {
-          out = "DENIED: openrouter leg is read-only by design (non-overstepping norm)";
+          if (!a.path) { orMsgs.push({ role: "tool", tool_call_id: c.id, content: "ERROR: path required - e.g. {\"path\": \"out/index.html\", \"content\": \"...\"}" }); continue; }
+          if (SANDBOX === "workspace-write") {
+            const rp2 = resolve(CWD, a.path || "");
+            if (!withinRoot(rp2)) out = "DENIED: outside working directory";
+            else { mkdirSync(join(rp2, ".."), { recursive: true }); fsWrite.writeFileSync(rp2, String(a.content == null ? "" : a.content)); claimedWrites.push(rp2); out = "WROTE " + rp2 + " (" + Buffer.byteLength(String(a.content == null ? "" : a.content)) + " bytes)"; }
+          }
+          else out = "DENIED: openrouter leg is read-only by design (non-overstepping norm)";
         } else out = "unknown tool: " + c.function.name;
       } catch (e) { out = "ERROR: " + e.message; }
+      if (process.env.TAP_DEBUG && /^(ERROR|DENIED)/.test(out)) console.log("[tap:dbg] tool-error:", String(out).slice(0,200));
       if (imageFollowUp) { orMsgs.push(imageFollowUp); continue; }
       orMsgs.push({ role: "tool", tool_call_id: c.id, content: String(out).slice(0, 60000) });
     }
@@ -172,8 +182,18 @@ async function orLeg(legName, taskOverride) {
         { role: "user", content: taskOverride || TASK }];
     } else orMsgs.push({ role: "user", content: taskOverride });
     const result = await runOrTurns(key, legName === "main" ? 12 : 6);
-    const ok = !!(result && result.trim());
-    tap({ ts: new Date().toISOString(), agentId: ID + (legName === "main" ? "" : "-" + legName), threadId: null, route: "openrouter", model: OR_MODEL, state: ok ? "success" : "failed", summary: String(result || "round cap exhausted or empty reply").slice(0, 300), exitCode: ok ? 0 : 1, ms: Date.now() - t0 });
+    let ok = !!(result && result.trim());
+    if (ok && SANDBOX === "workspace-write" && claimedWrites.length === 0 && /write|create|build/i.test(TASK)) {
+      ok = false;
+      result = (result || "") + " [REJECTED: build task completed no verified writes - claiming done without the artifact is failure, not success]";
+    }
+    let verifyNote = "";
+    if (claimedWrites.length) {
+      const missing = claimedWrites.filter(w => { try { return !fsExistsSync(w); } catch { return true; } });
+      if (missing.length) { ok = false; verifyNote = " [WRITE-VERIFICATION FAILED: missing " + missing.join(", ") + "]"; }
+      else verifyNote = " [write-verified: " + claimedWrites.length + " artifact(s) on disk]";
+    }
+    tap({ ts: new Date().toISOString(), agentId: ID + (legName === "main" ? "" : "-" + legName), threadId: null, route: "openrouter", model: OR_MODEL, state: ok ? "success" : "failed", summary: (String(result || "round cap exhausted or empty reply") + verifyNote).slice(0, 300), exitCode: ok ? 0 : 1, ms: Date.now() - t0 });
     return { state: ok ? "success" : "failed" };
   } catch (e) {
     tap({ ts: new Date().toISOString(), agentId: ID + (legName === "main" ? "" : "-" + legName), threadId: null, route: "openrouter", model: OR_MODEL, state: "failed", summary: String(e.message || e).slice(0, 300), exitCode: 1, ms: Date.now() - t0 });
@@ -182,7 +202,7 @@ async function orLeg(legName, taskOverride) {
 }
 
 // ---------- Route dispatch ----------
-const ROUTE = process.env.TAP_ROUTE || "auto"; // auto | openrouter | codex
+const ROUTE = process.env.TAP_ROUTE || "openrouter"; // OWN MODEL primary (Daniel 2026-08-22); codex fallback via TAP_ROUTE=codex|auto // auto | openrouter | codex
 let finalState = "failed";
 if (ROUTE === "openrouter") {
   const r = await orLeg("main");

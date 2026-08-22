@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HERMES EMPIRE</title>
+<style>
+:root{--a:#9d6bff;--b:#49ff9e;--c:#22e1ff;--bg:#0a0a12;--fg:#e8e8f2}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+header{padding:28px 32px;border-bottom:1px solid #1c1c2e;display:flex;justify-content:space-between;align-items:baseline;background:linear-gradient(90deg,#141422,#0a0a12)}
+h1{font-size:26px;letter-spacing:6px;color:var(--a);text-shadow:0 0 18px rgba(157,107,255,.55)}
+#clock{font-variant-numeric:tabular-nums;color:var(--c);font-size:15px;text-shadow:0 0 12px rgba(34,225,255,.5)}
+main{flex:1;padding:24px 32px}
+h2{font-size:13px;letter-spacing:3px;color:#8b8ba7;margin-bottom:14px;text-transform:uppercase}
+.rail{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:36px}
+.organ{display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid #22223a;border-radius:10px;background:#10101c;cursor:pointer;user-select:none;transition:.15s}
+.organ:hover{border-color:var(--a);transform:translateY(-2px)}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--a);box-shadow:0 0 10px var(--a)}
+.organ:nth-child(3n+2) .dot{background:var(--b);box-shadow:0 0 10px var(--b)}
+.organ:nth-child(3n) .dot{background:var(--c);box-shadow:0 0 10px var(--c)}
+.organ .name{font-size:13px;color:#c9c9de}
+.count{font-size:13px;font-weight:600;color:var(--b);font-variant-numeric:tabular-nums}
+.workers{display:flex;gap:16px;flex-wrap:wrap}
+.card{width:230px;border:1px solid #22223a;border-radius:12px;padding:16px;background:#10101c;transition:.15s}
+.card:hover{border-color:var(--c)}
+.card h3{font-size:14px;color:var(--c);margin-bottom:10px;letter-spacing:1px}
+.row{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;color:#a9a9c4}
+.row b{color:#e8e8f2;font-weight:500}
+.state-ok{color:var(--b)}.state-busy{color:var(--a)}.state-idle{color:#77779a}
+footer{text-align:center;padding:16px;font-size:12px;color:#55556e;border-top:1px solid #1c1c2e}
+footer b{color:var(--b);font-weight:600}
+</style>
+</head>
+<body>
+<header><h1>HERMES EMPIRE</h1><div id="clock">--:--:--</div></header>
+<main>
+<h2>Organ Rail</h2>
+<div class="rail" id="rail"></div>
+<h2>Workers</h2>
+<div class="workers" id="workers"></div>
+</main>
+<footer>Built by <b>stealth/ox-alpha</b></footer>
+<script>
+const ORGANS=['crystal','shard','deferral','decision','continuity','xenosoma','dream','tap'];
+const rail=document.getElementById('rail');
+ORGANS.forEach(name=>{
+  const d=document.createElement('div');
+  d.className='organ';
+  d.innerHTML=`<i class="dot"></i><span class="name">${name}</span><b class="count">0</b>`;
+  d.onclick=()=>{const c=d.querySelector('.count');c.textContent=(+c.textContent)+1;};
+  rail.appendChild(d);
+});
+const WORKERS=[
+  {id:'w-01',route:'/atlas/crystal',state:'ok',ms:12},
+  {id:'w-02',route:'/atlas/shard',state:'busy',ms:48},
+  {id:'w-03',route:'/atlas/dream',state:'idle',ms:7}
+];
+document.getElementById('workers').innerHTML=WORKERS.map(w=>
+  `<div class="card"><h3>${w.id}</h3>`
+  +`<div class="row"><span>route</span><b>${w.route}</b></div>`
+  +`<div class="row"><span>state</span><b class="state-${w.state}">${w.state.toUpperCase()}</b></div>`
+  +`<div class="row"><span>ms</span><b>${w.ms} ms</b></div></div>`
+).join('');
+const clock=document.getElementById('clock');
+const tick=()=>clock.textContent=new Date().toLocaleTimeString();
+tick();
+setInterval(tick,1000);
+</script>
+</body>
+</html>
