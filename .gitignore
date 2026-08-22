@@ -35,6 +35,7 @@ verify*.cjs
 .atlas/supervisor-registry.ndjson
 .atlas/ingress*.ndjson
 .atlas/ingress-migration-anchor.json
+.atlas/ingress.lock
 orch_test.mjs
 gui.mjs
 upgrade1.mjs
