@@ -101,7 +101,7 @@ function startFleet() {
       pendingActivationRestart = false;
       win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, restarting });
       win.webContents.send("fleet", { type: "error", m: "fleet engine exited (generation " + generation + ", code " + (code ?? "?") + ")" });
-      if (restarting || activationRestart) setTimeout(() => { if (!fleet) startFleet(); }, 2000);
+      if (restarting || activationRestart) setTimeout(() => { if (!fleet) startFleet(); }, 0); // instant respawn (Daniel directive 2026-08-22: restarts must be instant)
     }
   });
 }
