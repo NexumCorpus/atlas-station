@@ -2206,7 +2206,12 @@ const crystallizeTool = tool(
         const text = existing.map(c => `[${String(c.ts).slice(0,10)} turn ${(c.turnRange||[]).join('-')}]\n${c.text}`).join('\n\n');
         return { content: [{ type: 'text', text: text }] };
       }
-      triggerCrystallization(orchTurnCount || 1).catch(() => {});
+      triggerCrystallization(orchTurnCount || 1).catch(err => {
+        // Fire-and-forget wrapper must not stay silent: the inner catch covers
+        // normal failures, but a rejection of the wrapper itself vanished without
+        // trace until D-1787354993945. Receipt lands in crystal-failures.ndjson.
+        try { if (_crystals && _crystals.appendCrystalFailure) { _crystals.appendCrystalFailure({ turnNum: orchTurnCount || 1, error: { name: err && err.name || 'Error', message: String(err && err.message || err).slice(0, 500) }, retryable: true, status: 'wrapper_rejection' }, path.join(REPO, 'memory')); } } catch (_) {}
+      });
       return { content: [{ type: 'text', text: `Crystallization triggered for turn ${orchTurnCount}. Crystal will be stored in memory/crystals.ndjson.` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `crystallize error: ${e.message}` }] };
@@ -3793,7 +3798,9 @@ async function orchestrate(userText, source = 'user', executionHooks = {}) {
         // Crystallization every 5 ATLAS turns — fire-and-forget
         orchTurnCount++;
         if (orchTurnCount % 5 === 0 && _crystals) {
-          triggerCrystallization(orchTurnCount).catch(() => {});
+          triggerCrystallization(orchTurnCount).catch(err => {
+            try { if (_crystals && _crystals.appendCrystalFailure) { _crystals.appendCrystalFailure({ turnNum: orchTurnCount, error: { name: err && err.name || 'Error', message: String(err && err.message || err).slice(0, 500) }, retryable: true, status: 'wrapper_rejection' }, path.join(REPO, 'memory')); } } catch (_) {}
+          });
         }
         // Persist session counters across daemon restarts
         if (_sessionState) {

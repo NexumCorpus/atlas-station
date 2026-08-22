@@ -75,14 +75,53 @@ function normalizeReason(reason) {
   return { reason: parts.join('\n'), cause, blocker, nextAction, validationCondition, retryCondition: validationCondition };
 }
 
+/**
+ * Write-time dedupe for deferred tasks. The dream pulse mints a fresh HIGH
+ * proposal per reflection; without a guard, near-identical crystallization-
+ * repair proposals re-seeded future turns for days after their defect was
+ * already fixed on master (17 entries retired Aug 2026). findLiveDuplicate
+ * admits a new task only if no LIVE task (pending/queued/claimed) shares its
+ * normalized fingerprint within DEDUPE_WINDOW_MS. Terminal states never
+ * block fresh work: re-raising a solved problem is legitimate after regression.
+ */
+const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function _taskFingerprint(taskText) {
+  return String(taskText || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function findLiveDuplicate(tasks, taskText, now = Date.now()) {
+  const fp = _taskFingerprint(taskText);
+  if (!fp) return null;
+  return tasks.find(t =>
+    ['pending', 'queued', 'claimed'].includes(t.state) &&
+    t.ts && (now - Date.parse(t.ts)) < DEDUPE_WINDOW_MS &&
+    _taskFingerprint(t.task) === fp
+  ) || null;
+}
+
+function dedupeDeferred(entry, tasks, dir) {
+  const dup = findLiveDuplicate(tasks, entry.task, Date.parse(entry.ts));
+  if (!dup) return entry;
+  if (dir) {
+    try {
+      fs.appendFileSync(path.join(dir, FILE + '.dedupes.ndjson'),
+        JSON.stringify({ ts: new Date().toISOString(), suppressedId: entry.id, duplicateOf: dup.id, task: String(entry.task || '').slice(0, 200), state: dup.state }) + '\n', 'utf8');
+    } catch {}
+  }
+  return { ...entry, __suppressed: true, duplicateOf: dup.id };
+}
 function deferTask(task, reason, dir) {
   dir = dir || path.join(__dirname, 'memory');
   const tasks = _load(dir);
   const normalized = normalizeReason(reason);
   const entry = { id: 'D-' + Date.now(), ts: new Date().toISOString(), task, ...normalized, state: 'pending' };
-  tasks.push(entry);
-  _save(tasks, dir);
-  return entry;
+  const admitted = dedupeDeferred(entry, tasks, dir);
+  if (!admitted.__suppressed) {
+    tasks.push(entry);
+    _save(tasks, dir);
+  }
+  return admitted;
 }
 
 function popPending(dir) {
@@ -170,6 +209,8 @@ function markTerminal(id, terminal, dir) {
 
 module.exports = {
   deferTask,
+  findLiveDuplicate,
+  dedupeDeferred,
   popPending,
   listDeferred,
   peekPending,
