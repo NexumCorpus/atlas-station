@@ -4370,6 +4370,11 @@ async function runPulse() {
             .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
             .slice(-8);
         }
+        // Pulses inherit their predecessors' reflections instead of
+        // re-deriving them from scratch each cycle.
+        try {
+          recentJournal = _dream.inheritJournal(recentJournal, _dream.loadDreams(memDir, 3));
+        } catch {}
 
         const successRate = recentRuns.length
           ? Math.round(recentRuns.filter(r => r.state === 'done').length / recentRuns.length * 100)
@@ -4494,12 +4499,37 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
           } catch {}
         }
 
-        // Parse the dream output
+        // Parse the dream output - validated, with inspectable failure receipts.
+        // The old greedy brace-match + silent catch{} stubbed every parse
+        // failure into an empty "processing" reflection (23 accumulated).
         let dreamReport = { patterns: [], insights: [], proposals: [], mood: 'processing' };
-        try {
-          const jsonMatch = dreamText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) dreamReport = JSON.parse(jsonMatch[0]);
-        } catch {}
+        let parsedDream = null;
+        if (_dream.parseDreamReport) {
+          parsedDream = _dream.parseDreamReport(dreamText);
+          if (parsedDream.ok) {
+            dreamReport = parsedDream.report;
+          } else if (_dream.writeDreamReceipt) {
+            try {
+              _dream.writeDreamReceipt({
+                dreamId,
+                pulseCount,
+                event: 'terminal',
+                state: 'parse_failed',
+                task: `dream protocol (pulse ${pulseCount})`,
+                input: dreamText,
+                output: '',
+                error: { name: 'DreamParseFailed', message: String(JSON.stringify(parsedDream.attempts)).slice(0, 500), attempts: parsedDream.attempts },
+                exit: { state: 'parse_failed', code: null, signal: null },
+              }, memDir);
+            } catch (_) {}
+            send('dream_parse_failed', { pulseCount, attempts: parsedDream.attempts });
+          }
+        } else {
+          try {
+            const jsonMatch = dreamText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) dreamReport = JSON.parse(jsonMatch[0]);
+          } catch {}
+        }
 
         // Write to dreams.ndjson
         const dreamEntry = _dream.writeDream(dreamReport, memDir);
