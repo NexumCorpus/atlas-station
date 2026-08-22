@@ -23,10 +23,12 @@ to Station memory, receipts, configuration, or Git.
 The provider uses OpenRouter Chat Completions with native function calling. Its
 shell organ executes PowerShell in the requested Atlas workspace, returns
 bounded output, and enforces a 20-minute maximum per command. The provider
-defaults to 24 tool rounds, while the Atlas orchestrator explicitly requests 64
-through `ATLAS_ORCHESTRATOR_MAX_TURNS`. Callers may choose a smaller bound (the
-worker default is 12); every request is clamped to the provider safety ceiling
-of 256. Operator cancellation terminates the active tool.
+defaults to 24 tool rounds. The conversational mouth requests 6 through
+`ATLAS_MOUTH_MAX_TURNS`; metabolism requests 64 through
+`ATLAS_ORCHESTRATOR_MAX_TURNS`; and workers default to 12. Every request is
+clamped to the provider safety ceiling of 256. If the mouth exhausts its small
+budget, it releases speech with a bounded acknowledgement and queues exactly one
+continuation on metabolism. Operator cancellation terminates the active tool.
 
 Atlas has two independent serialized execution lanes. The **mouth** owns live
 operator conversation and its own provider session. **Metabolism** owns startup,

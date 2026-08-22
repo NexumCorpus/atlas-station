@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { createOrchestrationLanes } from '../orchestration-lanes.mjs';
+import { createOrchestrationLanes, laneTurnBound, mouthExhaustionHandoff } from '../orchestration-lanes.mjs';
 
 const require = createRequire(import.meta.url);
 const ingress = require('../ingress-journal.cjs');
@@ -63,6 +63,18 @@ await check('operator ingress preempts older background work and receipts carry 
     lease.release('test-complete');
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+await check('mouth has an independent small bound and exhaustion becomes one metabolism handoff', async () => {
+  assert.equal(laneTurnBound('mouth', {}), 6);
+  assert.equal(laneTurnBound('metabolism', {}), 64);
+  assert.equal(laneTurnBound('mouth', { ATLAS_MOUTH_MAX_TURNS: '3' }), 3);
+  assert.equal(laneTurnBound('metabolism', { ATLAS_ORCHESTRATOR_MAX_TURNS: '999' }), 256);
+  assert.equal(mouthExhaustionHandoff('metabolism', 'error_max_turns', 'x', 64), null);
+  assert.equal(mouthExhaustionHandoff('mouth', 'success', 'x', 6), null);
+  const handoff = mouthExhaustionHandoff('mouth', 'error_max_turns', 'finish the proof', 6);
+  assert.match(handoff.acknowledgement, /released speech/);
+  assert.match(handoff.task, /finish the proof/);
 });
 
 if (!process.exitCode) console.log(`\n${passed} passed, 0 failed\n`);

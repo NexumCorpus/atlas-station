@@ -12,7 +12,7 @@ import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/clau
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
-import { createOrchestrationLanes } from "./orchestration-lanes.mjs";
+import { createOrchestrationLanes, laneTurnBound, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
@@ -3687,6 +3687,7 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
 async function orchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
   const mouth = source === 'user';
   const lane = mouth ? 'mouth' : 'metabolism';
+  const maxTurns = laneTurnBound(lane, process.env);
   const agentId = mouth ? 'ATLAS' : 'ATLAS-METABOLISM';
   let laneSession = mouth ? orchSession : metabolismSession;
   let laneSessionProvider = mouth ? orchSessionProvider : metabolismSessionProvider;
@@ -3827,7 +3828,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
-        maxTurns: Math.max(1, Math.min(256, Number(process.env.ATLAS_ORCHESTRATOR_MAX_TURNS) || 64)),
+        maxTurns,
       },
     })) {
       if (m.type === "system" && m.subtype === "init") {
@@ -3858,7 +3859,14 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
         set(agentId, patch);
       } else if (m.type === "result") {
-        const full = String(m.result ?? "");
+        const handoff = mouthExhaustionHandoff(lane, m.subtype, userText, maxTurns);
+        const full = handoff ? handoff.acknowledgement : String(m.result ?? "");
+        if (handoff) {
+          enqueueOrchestrate(handoff.task, 'mouth-exhaustion-handoff').catch(error => {
+            send('execution', { state: 'handoff-failed', lane: 'metabolism', reason: String(error?.message || error).slice(0, 220) });
+          });
+          send('execution', { state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', maxTurns, task: String(userText || '').slice(0, 220) });
+        }
         if (_decisionPacket && _decisionLoop) {
           try {
             const memDir = path.join(REPO, 'memory');
