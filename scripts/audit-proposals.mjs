@@ -8,8 +8,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const file = process.env.ATLAS_PROPOSAL_LOG
   ? path.resolve(process.env.ATLAS_PROPOSAL_LOG)
   : path.join(root, "memory", "proposals.ndjson");
-const history = path.join(root, "evidence", "proposal-audit-history.ndjson");
-const files = [history, file].filter((candidate) => fs.existsSync(candidate));
+const historyEnv = process.env.ATLAS_PROPOSAL_HISTORY;
+const history = historyEnv === "none"
+  ? null
+  : historyEnv
+    ? path.resolve(historyEnv)
+    : path.join(root, "evidence", "proposal-audit-history.ndjson");
+const files = [history, file].filter((candidate) => candidate && fs.existsSync(candidate));
 const proposalsByKey = new Map();
 for (const candidate of files) {
   const lines = fs.readFileSync(candidate, "utf8").split(/\r?\n/).filter(Boolean);
