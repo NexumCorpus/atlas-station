@@ -11,6 +11,7 @@
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
+import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
@@ -28,6 +29,8 @@ function query(args) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} — use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
+  const bound = workerTurnBound(args && args.options);
+  if (bound != null) args = { ...args, options: { ...(args.options || {}), maxTurns: bound } };
   if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.query(args);
   if (CODEX_PROVIDER_ACTIVE) return _codexProvider.query(args);
   return _sdkQuery(args);
@@ -451,9 +454,29 @@ function _wrapBuildBrief(task) {
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
-async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId, dialectName) {
-  _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
-  sessionStats.agentCount++;
+// One-shot detached retry for the tool-round-exhaustion run class (DREAM-408,
+// B-155): the failed agent keeps its honest failed record; a reserved "-R" id
+// waits 15 minutes (dreamRetryAt parity) then reruns the identical task once.
+const AGENT_RETRY_DELAY_MS = 15 * 60 * 1000;
+function scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, priorId, reason) {
+  const rid = priorId + "-R";
+  set(rid, { id: rid, state: "waiting-retry", task, mode: mode === "build" ? "build" : "read", model: model || MODEL_HAIKU, summary: "one-shot retry in 15min (" + reason + ")", parent: priorId, retryOf: priorId });
+  send("agent", agents.get(rid));
+  send("agent_retry_scheduled", { id: rid, retryOf: priorId, reason, retryInMs: AGENT_RETRY_DELAY_MS });
+  setTimeout(() => {
+    Promise.resolve().then(async () => {
+      const cur = agents.get(rid) || {};
+      if (cur.state === "interrupted") { send("agent_retry_skipped", { id: rid, why: "cancelled while waiting" }); return; }
+      set(rid, { state: "working", turns: 0, lastTool: null, summary: "retry running" });
+      await runSubagent(task, mode, agentTimeout, model, projectId, dialectName, { retried: true }, rid);
+    }).catch((e) => { try { set(rid, { state: "failed", summary: String(e && e.message || e).slice(0, 180) }); } catch (_) {} });
+  }, AGENT_RETRY_DELAY_MS);
+  return rid;
+}
+
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId, dialectName, retryState = { retried: false }, forcedId = null) {
+  if (!forcedId) { _maxCounter++; sessionStats.agentCount++; }
+  const id = forcedId || ((mode === "build" ? "B-" : "A-") + _maxCounter);
   const agentModel = model || MODEL_HAIKU; // workers default to Haiku (Sonnet head dispatches Haiku); ATLAS may override per-task
   const atlasMode = mode === "build" ? "build" : "read";
   const dialectSet = dialectName && _dialect ? _dialect.toolSet(dialectName) : null;
@@ -509,12 +532,23 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
       } catch {}
     }
     final = await consume(id, query({ prompt: resonantTask, options: dialectSet ? { ...options, mcpServers: { fleet: variantServer(dialectSet) }, abortSignal: ac.signal } : { ...options, abortSignal: ac.signal } }), build, branch);
+    // Class guard: yielded exhaustion => one-shot detached retry (DREAM-408/B-155 class)
+    const __term = agents.get(id) || {};
+    if (__term.failSubtype === "error_max_turns" && !(retryState && retryState.retried)) {
+      scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, id, "tool-round exhaustion");
+      return "Subagent " + id + " exhausted its tool rounds; one-shot retry queued in 15min";
+    }
   } catch (e) {
     if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
       set(id, { state: "interrupted", summary: "cancelled by user" });
       final = "(cancelled)";
     } else {
       const failureMode = _outcomeTracker ? _outcomeTracker.parseFailureMode(e.stderr || e.message || '') : 'unknown';
+      if (!(retryState && retryState.retried) && /tool[-_ ]round|max[\s_-]?turns|exhausted/i.test(String((e && (e.stderr || e.message)) || e))) {
+        // Thrown exhaustion (provider-specific wording) belongs to the same class
+        scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, id, "provider tool-round error");
+        return "Subagent " + id + " hit a provider tool-round error; one-shot retry queued in 15min";
+      }
       set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
       final = "(subagent errored: " + String(e?.message ?? e).slice(0, 120) + ")";
       if (_outcomeTracker) {

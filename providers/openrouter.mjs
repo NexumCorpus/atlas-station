@@ -1,4 +1,4 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -241,7 +241,11 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       yield { type: "system", subtype: "init", session_id: sessionId };
       options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter" });
       try {
-        for (let round = 0; round < MAX_ROUNDS; round++) {
+        // Turn bound (class fix: DREAM-408 + B-155 starved at the hard 24-round
+        // ceiling). Callers may tighten the loop via options.maxTurns - fleethost
+        // defaults every worker seat to 12. Never exceeds MAX_ROUNDS.
+        const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || MAX_ROUNDS));
+        for (let round = 0; round < turnCap; round++) {
           let message; let usage;
           if (streamingEnabled) {
             const ch = deltaChannel();
@@ -280,7 +284,9 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             messages.push({ role: "tool", tool_call_id: call.id, content: output });
           }
         }
-        yield { type: "result", subtype: "error", result: `OpenRouter exceeded ${MAX_ROUNDS} tool rounds`, total_cost_usd: null };
+        // Loop exited by round-cap => exhaustion. Classified distinctly so the
+        // station can one-shot-retry the run class (matches SDK error_max_turns).
+        yield { type: "result", subtype: "error_max_turns", result: `Run exhausted its ${turnCap}-tool-round bound (provider ceiling ${MAX_ROUNDS})`, total_cost_usd: null };
       } catch (error) {
         yield { type: "result", subtype: "error", result: safeError(error), total_cost_usd: null };
       }
