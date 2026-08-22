@@ -85,6 +85,11 @@ function normalizeReason(reason) {
  * block fresh work: re-raising a solved problem is legitimate after regression.
  */
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+// Evidence-keyed auto-close (D-1787378827439): a dream re-seed of a task whose
+// defect is already proven fixed by commit/receipt evidence must not enter the
+// live queue again. Match is deliberately narrow - crystallization-repair theme
+// AND an existing terminal solved record - so unrelated tasks are never touched.
+const AUTO_CLOSE_RE = /crystall/i;
 
 function _taskFingerprint(taskText) {
   return String(taskText || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -154,12 +159,27 @@ function dedupeDeferred(entry, tasks, dir) {
   }
   return { ...entry, __suppressed: true, duplicateOf: dup.id };
 }
+function _evidenceAutoClose(entry, tasks, dir) {
+  if (!AUTO_CLOSE_RE.test(String(entry.task || ''))) return null;
+  const prior = tasks.find(t =>
+    AUTO_CLOSE_RE.test(String(t.task || '')) &&
+    ['retired', 'consumed', 'closed'].includes(t.state));
+  if (!prior) return null;
+  if (dir) {
+    try {
+      fs.appendFileSync(path.join(dir, FILE + '.autoclose.ndjson'),
+        JSON.stringify({ ts: new Date().toISOString(), closedId: entry.id, duplicateOf: prior.id, priorState: prior.state, fixCommits: prior.fixCommits || null, task: String(entry.task || '').slice(0, 200) }) + '\n', 'utf8');
+    } catch {}
+  }
+  return { ...entry, __suppressed: true, __autoClosed: true, duplicateOf: prior.id };
+}
 function deferTask(task, reason, dir) {
   dir = dir || path.join(__dirname, 'memory');
   const tasks = _load(dir);
   const normalized = normalizeReason(reason);
   const entry = { id: 'D-' + Date.now(), ts: new Date().toISOString(), task, ...normalized, state: 'pending' };
-  const admitted = dedupeDeferred(entry, tasks, dir);
+  let admitted = dedupeDeferred(entry, tasks, dir);
+  if (!admitted.__suppressed) admitted = _evidenceAutoClose(entry, tasks, dir) || entry;
   if (!admitted.__suppressed) {
     tasks.push(entry);
     _save(tasks, dir);

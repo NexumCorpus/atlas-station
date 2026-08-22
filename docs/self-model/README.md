@@ -5,10 +5,15 @@ agent lineage has actually held under pressure, the empirical record behind
 both, and how that record shaped the station's design. It is Phase 4 of the
 capstone spec (`docs/design/2026-07-01-capstone-design.md`).
 
-Atlas is an orchestration station — an Electron body over the Claude Code
-agent SDK, mounting proven organs (the director2 discovery harness, its
-nervous system, gm dispatch discipline, RDE v11 verification) via a file-based
-Wing Protocol. Its claims can be trusted for a structural reason, not a
+Atlas is the executive and speaking surface of Hermes — a provider-independent
+organism embodied by an Electron station, a plain-Node sidecar, persistent
+memory and receipts, and replaceable model adapters. The authenticated Codex
+CLI is the normal v1 route, OpenRouter can run the same Hermes loop directly,
+and the Claude Agent SDK remains a compatibility route rather than the
+organism's identity. Hermes mounts proven organs (the director2 discovery
+harness, its nervous system, gm dispatch discipline, and RDE v11 verification)
+via a file-based Wing Protocol. Its claims can be trusted for a structural
+reason, not a
 reputational one: **every claim defaults to unverified, and the grader is
 never the generator.** A `claim` event must carry an audit bundle; the station
 renders it unverified until a separately-dispatched grader agent — one that
