@@ -1,0 +1,8 @@
+{
+    "armedAt":  "2026-08-22T19:06:45.9375635Z",
+    "delaySeconds":  8,
+    "killedPid":  33128,
+    "note":  "gen-7 restart: activates paste-image vision (d005c8b), handoff task D-1787425578293 queued for successor",
+    "expectedGeneration":  7,
+    "head":  "53e41ff"
+}

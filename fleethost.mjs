@@ -197,6 +197,9 @@ let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 let orchSessionProvider = null; // prevents a Claude session id being resumed by Codex (or vice versa)
 let orchSessionModel = null; // prevents an env change from silently swapping a resumed Codex thread's model
+let metabolismSession = null; // autonomous/deferred cognition never owns the conversational thread
+let metabolismSessionProvider = null;
+let metabolismSessionModel = null;
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
 let dreamRetryAt = 0; // epoch-ms of next exhaustion-retry dream (one-shot; DREAM-408 follow-up)
@@ -207,12 +210,15 @@ let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // 15-20ms apart), which then fed dream-pulse duplicated-failure proposals.
 // memstore.recordTerminalOnce() admits only the first terminal record per id.
 
-// Codex resume threads are stateful and cannot safely accept concurrent turns.
-// Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
-// the thread produced by the previous one.
-let _orchQueue = Promise.resolve();
+// Each provider session is stateful and must be serialized, but the organism's
+// mouth must not queue behind its metabolism. These lanes own distinct sessions
+// and agent records so live speech remains available during autonomous work.
+let _mouthQueue = Promise.resolve();
+let _metabolismQueue = Promise.resolve();
 function enqueueOrchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
-  const turn = _orchQueue.then(async () => {
+  const mouth = source === 'user';
+  const prior = mouth ? _mouthQueue : _metabolismQueue;
+  const turn = prior.then(async () => {
     // Persist Daniel's words at the exact execution seam. Queueing elsewhere
     // would scramble dialogue order when several UI messages arrive together.
     if (source === 'user' && _sessionLog) {
@@ -220,7 +226,8 @@ function enqueueOrchestrate(userText, source = 'user', executionHooks = {}, atta
     }
     return orchestrate(userText, source, executionHooks, attachments);
   });
-  _orchQueue = turn.catch(() => {});
+  if (mouth) _mouthQueue = turn.catch(() => {});
+  else _metabolismQueue = turn.catch(() => {});
   return turn;
 }
 
@@ -256,7 +263,7 @@ function set(id, patch) {
     timeoutHandles.delete(id);
   }
   // Accumulate subagent costs for session narrative
-  if ((patch.state === "done" || patch.state === "failed") && patch.cost != null && id !== "ATLAS") {
+  if ((patch.state === "done" || patch.state === "failed") && patch.cost != null && id !== "ATLAS" && id !== "ATLAS-METABOLISM") {
     sessionStats.totalCost += Number(patch.cost) || 0;
   }
   Object.assign(a, patch);
@@ -283,7 +290,8 @@ function set(id, patch) {
     send('session_cost', { total: runningCost, agentCount: sessionStats.agentCount });
   }
   if (_persist) {
-    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider, orchSessionModel };
+    const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider, orchSessionModel,
+      metabolismSession, metabolismSessionProvider, metabolismSessionModel };
     if (patch.state === 'done' || patch.state === 'failed') {
       try { _persist.save(newState); } catch (_) {} // immediate — don't lose terminal state on exit
     } else {
@@ -458,19 +466,33 @@ function _wrapBuildBrief(task) {
 // B-155): the failed agent keeps its honest failed record; a reserved "-R" id
 // waits 15 minutes (dreamRetryAt parity) then reruns the identical task once.
 const AGENT_RETRY_DELAY_MS = 15 * 60 * 1000;
+const agentRetryTimers = new Map();
+function armAgentRetry(record) {
+  if (!record?.id || agentRetryTimers.has(record.id)) return;
+  const delay = Math.max(0, Number(record.retryAt || Date.now()) - Date.now());
+  const timer = setTimeout(() => {
+    agentRetryTimers.delete(record.id);
+    Promise.resolve().then(async () => {
+      const cur = agents.get(record.id) || {};
+      if (cur.state !== "waiting-retry") {
+        send("agent_retry_skipped", { id: record.id, why: "retry no longer waiting" });
+        return;
+      }
+      set(record.id, { state: "working", turns: 0, lastTool: null, summary: "retry running", retryStartedAt: new Date().toISOString() });
+      await runSubagent(record.task, record.retryMode, record.agentTimeout, record.requestedModel, record.projectId, record.dialectName, { retried: true }, record.id);
+    }).catch((e) => { try { set(record.id, { state: "failed", summary: String(e && e.message || e).slice(0, 180) }); } catch (_) {} });
+  }, delay);
+  timer.unref?.();
+  agentRetryTimers.set(record.id, timer);
+}
 function scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, priorId, reason) {
   const rid = priorId + "-R";
-  set(rid, { id: rid, state: "waiting-retry", task, mode: mode === "build" ? "build" : "read", model: model || MODEL_HAIKU, summary: "one-shot retry in 15min (" + reason + ")", parent: priorId, retryOf: priorId });
-  send("agent", agents.get(rid));
+  const retryAt = Date.now() + AGENT_RETRY_DELAY_MS;
+  set(rid, { id: rid, state: "waiting-retry", task, mode: mode === "build" ? "build" : "read", retryMode: mode,
+    model: model || MODEL_HAIKU, requestedModel: model || null, agentTimeout, projectId: projectId || null,
+    dialectName: dialectName || null, retryAt, summary: "one-shot retry in 15min (" + reason + ")", parent: priorId, retryOf: priorId });
   send("agent_retry_scheduled", { id: rid, retryOf: priorId, reason, retryInMs: AGENT_RETRY_DELAY_MS });
-  setTimeout(() => {
-    Promise.resolve().then(async () => {
-      const cur = agents.get(rid) || {};
-      if (cur.state === "interrupted") { send("agent_retry_skipped", { id: rid, why: "cancelled while waiting" }); return; }
-      set(rid, { state: "working", turns: 0, lastTool: null, summary: "retry running" });
-      await runSubagent(task, mode, agentTimeout, model, projectId, dialectName, { retried: true }, rid);
-    }).catch((e) => { try { set(rid, { state: "failed", summary: String(e && e.message || e).slice(0, 180) }); } catch (_) {} });
-  }, AGENT_RETRY_DELAY_MS);
+  armAgentRetry(agents.get(rid));
   return rid;
 }
 
@@ -3428,7 +3450,8 @@ const runVariantTool = tool(
   async (args) => {
     if (!_dialect) return { content: [{ type: 'text', text: 'dialect module not available' }] };
     try {
-      const reply = await runSubagent(String(args.task || ''), 'variant:' + (args.dialect || 'memory-only'), DEFAULT_TIMEOUT_MS, MODEL_HAIKU, null);
+      const dialectName = args.dialect || 'memory-only';
+      const reply = await runSubagent(String(args.task || ''), 'variant:' + dialectName, DEFAULT_TIMEOUT_MS, MODEL_HAIKU, null, dialectName);
       return { content: [{ type: 'text', text: reply }] };
     } catch (e) {
       return { content: [{ type: 'text', text: 'run_variant error: ' + e.message }] };
@@ -3666,6 +3689,12 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
 }
 
 async function orchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
+  const mouth = source === 'user';
+  const lane = mouth ? 'mouth' : 'metabolism';
+  const agentId = mouth ? 'ATLAS' : 'ATLAS-METABOLISM';
+  let laneSession = mouth ? orchSession : metabolismSession;
+  let laneSessionProvider = mouth ? orchSessionProvider : metabolismSessionProvider;
+  let laneSessionModel = mouth ? orchSessionModel : metabolismSessionModel;
   let enriched, _ctxStats = null;
   if (_memcontext) {
     const _injectResult = _memcontext.inject(userText, { tier: 'full', returnStats: true });
@@ -3734,7 +3763,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       fs.appendFileSync(telFile, JSON.stringify(entry) + '\n', 'utf8');
     } catch {}
   }
-  set("ATLAS", { id: "ATLAS", role: "orchestrator", state: "working", task: userText, lastTool: null, reply: "", summary: "" }); // clear last turn's reply so streaming events don't rebroadcast it as this turn's "thinking"
+  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "" });
   // Dynamic self-instructions injection
   let dynamicRole = ORGANISM_IDENTITY + "\n\n" + ORCH_ROLE;
   if (_instructions) {
@@ -3747,20 +3776,21 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       }
     } catch {}
   }
-  const resumedSession = compatibleSession(orchSession, orchSessionProvider, ACTIVE_PROVIDER);
+  const resumedSession = compatibleSession(laneSession, laneSessionProvider, ACTIVE_PROVIDER);
   const orchestrationRouting = AGENT_PROVIDER_ACTIVE
     ? codexRouting({
       atlasMode: "orchestrator",
       atlasPurpose: "orchestration",
       atlasRequiredModel: ORCHESTRATOR_MODEL_DIRECTIVE,
-      ...(resumedSession && orchSessionModel && orchSessionModel !== ORCHESTRATOR_MODEL_DIRECTIVE
-        ? { atlasPreviousModel: orchSessionModel } : {}),
+      ...(resumedSession && laneSessionModel && laneSessionModel !== ORCHESTRATOR_MODEL_DIRECTIVE
+        ? { atlasPreviousModel: laneSessionModel } : {}),
     }, MODEL)
     : {};
   const orchestrationModel = orchestrationRouting.atlasAssignedModel || MODEL;
-  set("ATLAS", { id: "ATLAS", model: orchestrationModel });
+  set(agentId, { id: agentId, model: orchestrationModel, lane });
   send("execution", {
     state: "working",
+    lane,
     provider: ACTIVE_PROVIDER,
     model: orchestrationModel,
     sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
@@ -3801,13 +3831,19 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
+        maxTurns: Math.max(1, Math.min(256, Number(process.env.ATLAS_ORCHESTRATOR_MAX_TURNS) || 64)),
       },
     })) {
       if (m.type === "system" && m.subtype === "init") {
-        orchSession = m.session_id;
-        orchSessionProvider = ACTIVE_PROVIDER;
-        orchSessionModel = orchestrationModel;
-        set("ATLAS", { session: orchSession, model: orchestrationModel });
+        laneSession = m.session_id;
+        laneSessionProvider = ACTIVE_PROVIDER;
+        laneSessionModel = orchestrationModel;
+        if (mouth) {
+          orchSession = laneSession; orchSessionProvider = laneSessionProvider; orchSessionModel = laneSessionModel;
+        } else {
+          metabolismSession = laneSession; metabolismSessionProvider = laneSessionProvider; metabolismSessionModel = laneSessionModel;
+        }
+        set(agentId, { session: laneSession, model: orchestrationModel, lane });
       }
       else if (m.type === "assistant") {
         let patch = { state: "working" };
@@ -3820,11 +3856,11 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           else if (b.type === "text" && b.text.trim()) {
             patch.summary = b.text.trim().slice(0, 160);
             // Stream partial text to GUI in real-time (no persist, no agents Map mutation)
-            const cur = agents.get("ATLAS") || { id: "ATLAS" };
+            const cur = agents.get(agentId) || { id: agentId };
             send("agent", { ...cur, ...patch, partial: true, ts: new Date().toISOString() });
           }
         }
-        set("ATLAS", patch);
+        set(agentId, patch);
       } else if (m.type === "result") {
         const full = String(m.result ?? "");
         if (_decisionPacket && _decisionLoop) {
@@ -3841,6 +3877,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
         send("execution", {
           state: m.subtype === "success" ? "done" : "failed",
+          lane,
           provider: ACTIVE_PROVIDER,
           model: orchestrationModel,
           sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
@@ -3848,14 +3885,14 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           summary: full.slice(0, 220),
           finishedAt: new Date().toISOString(),
         });
-        set("ATLAS", { state: m.subtype === "success" ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), lastToolArg: null, session: orchSession });
+        set(agentId, { state: m.subtype === "success" ? "done" : "failed", lane, cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), lastToolArg: null, session: laneSession });
         if (full) {
           try {
             const _extractor = _require("./fact-extractor.cjs");
             if (_extractor && typeof _extractor.extractAndStore === "function") {
               _extractor.extractAndStore(full, "ATLAS:" + new Date().toISOString().slice(0, 10), {
                 hermes: {
-                  v: 1, flow_id: `atlas:${orchSession || Date.now()}`, parent_flow_id: null,
+                  v: 1, flow_id: `atlas:${lane}:${laneSession || Date.now()}`, parent_flow_id: null,
                   stage: 'memory-write', actor: 'ATLAS', organism: true,
                   execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
                   provenance: [],
@@ -3871,7 +3908,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         // Write session narrative so ATLAS can read it next session
         if (_session) {
           try {
-            const atlasA = agents.get("ATLAS");
+            const atlasA = agents.get(agentId);
             if (atlasA) sessionStats.totalCost += Number(atlasA.cost) || 0;
             _session.writeSession({
               ts: new Date().toISOString(),
@@ -3880,7 +3917,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
               topics: sessionStats.topics,
               note: null,
               hermes: {
-                v: 1, flow_id: `atlas:${orchSession || Date.now()}`, parent_flow_id: null,
+                v: 1, flow_id: `atlas:${lane}:${laneSession || Date.now()}`, parent_flow_id: null,
                 stage: 'memory-write', actor: 'ATLAS', organism: true,
                 execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
                 provenance: [],
@@ -3912,7 +3949,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
       }
     }
-  } catch (e) { set("ATLAS", { state: "failed", summary: String(e?.message ?? e).slice(0, 180) }); }
+  } catch (e) { set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) }); }
   if (autonomyEnabled) scheduleAutonomyTick();
 }
 
@@ -4156,10 +4193,15 @@ try {
   send('lease', { state: 'blocked', reason: String(error.message || error) });
   setTimeout(() => process.exit(17), 20);
 }
-let _sayBusy = false;
+let _mouthBusy = false;
+let _metabolismIngressBusy = false;
+function isOperatorIngressSource(source) {
+  source = String(source || '').toLowerCase();
+  return source === 'ipc-say' || source === 'legacy-say-inbox' || source === 'daniel';
+}
 function _sayLog(o) { try { return _ingress.appendOutbox(SAY_OUTBOX, o); } catch { return null; } }
 async function pollSayInbox() {
-  if (_sayBusy || autonomyBusy) return; // never run two ATLAS turns at once
+  if (_mouthBusy && (_metabolismIngressBusy || autonomyBusy)) return;
   if (!_ingress || !_sidecarLease) return;
   try { _ingress.repairPublication(INGRESS_DIR, SAY_OUTBOX, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); } catch (error) { send('ingress', { state: 'repair-failed', reason: error.message }); }
   try { send('ingress', { state: 'telemetry', ..._ingress.telemetry(INGRESS_DIR), leaseEpoch: _sidecarLease.owner.epoch, fencingToken: _sidecarLease.fencingToken }); } catch {}
@@ -4167,13 +4209,17 @@ async function pollSayInbox() {
   const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000, 3, {
     workerPid: process.pid, workerStartIdentity: _sidecarLease.owner.startIdentity,
     providerSessionId: `${ACTIVE_PROVIDER}:${process.pid}:${Date.now()}`, providerModel: AGENT_PROVIDER_ACTIVE ? ORCHESTRATOR_MODEL_DIRECTIVE : MODEL,
+    allowOperator: !_mouthBusy,
+    allowBackground: !_metabolismIngressBusy && !autonomyBusy,
   });
   if (!claim) return;
   const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
   const txt = item.text;
-  _sayBusy = true;
+  const mouthClaim = isOperatorIngressSource(item.source);
+  if (mouthClaim) _mouthBusy = true; else _metabolismIngressBusy = true;
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
-    workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel };
+    workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel,
+    lane: mouthClaim ? 'mouth' : 'metabolism' };
   const renew = (state = 'renewed') => {
     const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000);
     send('ingress', { state, directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt,
@@ -4182,7 +4228,7 @@ async function pollSayInbox() {
   };
   const renewalTimer = setInterval(() => { try { renew(); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
   renewalTimer.unref?.();
-  const finish = () => { clearInterval(renewalTimer); _sayBusy = false; };
+  const finish = () => { clearInterval(renewalTimer); if (mouthClaim) _mouthBusy = false; else _metabolismIngressBusy = false; };
   send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
   // control commands: !autonomy <min> grants a window; !stop ends it
   const am = txt.match(/^!autonomy\s+(\d+)/i);
@@ -4215,9 +4261,9 @@ async function pollSayInbox() {
     return;
   }
   try {
-    if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
+    if (mouthClaim && autonomyEnabled) stopAutonomy('operator prompt preempts the window');
     const _attachments = (claim && claim.attachments) || null;
-    await enqueueOrchestrate(txt, 'user', {
+    await enqueueOrchestrate(txt, mouthClaim ? 'user' : 'system', {
       onProviderSpawn(meta) {
         attempt.workerPid = meta.pid;
         attempt.workerStartIdentity = meta.startIdentity;
@@ -4226,7 +4272,7 @@ async function pollSayInbox() {
         renew('worker-bound');
       },
     }, _attachments);
-    const a = agents.get('ATLAS') || {};
+    const a = agents.get(mouthClaim ? 'ATLAS' : 'ATLAS-METABOLISM') || {};
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
     const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
     send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
@@ -4267,7 +4313,7 @@ let _draining = false;
 async function gracefulDrain(reason = 'shutdown') {
   if (_draining) return; _draining = true;
   send('lease', { state: 'draining', reason, epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
-  try { await _orchQueue; } catch {}
+  try { await Promise.allSettled([_mouthQueue, _metabolismQueue]); } catch {}
   try { _sidecarLease?.release(); } catch {}
   send('lease', { state: 'released', epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
   process.exit(0);
@@ -4281,7 +4327,7 @@ process.on('unhandledRejection', error => { try { _ingress?.appendError(INGRESS_
 
 process.on("message", (m) => {
   if (!m) return;
-  // ATLAS turns are serialized; see enqueueOrchestrate above.
+  // The mouth and metabolism are independently serialized; ingress selects a lane.
   if (m.t === "say") {
     if (autonomyEnabled) stopAutonomy("you're back — window ended early");
     try {
@@ -4312,7 +4358,7 @@ if (_persist) {
         // not live fleet members. Re-emitting them on boot made the UI show
         // hundreds of stale agents and replay every terminal toast. Only the
         // orchestrator and actionable states re-enter the live map.
-        const actionable = a.id === "ATLAS" || a.state === "working" || a.state === "needs-you";
+        const actionable = a.id === "ATLAS" || a.id === "ATLAS-METABOLISM" || a.state === "working" || a.state === "waiting-retry" || a.state === "needs-you";
         if (!actionable) continue;
         if (a.state === "working") a.state = "interrupted";
         a.restored = true;
@@ -4327,12 +4373,20 @@ if (_persist) {
         orchSessionProvider = ACTIVE_PROVIDER;
         orchSessionModel = saved.orchSessionModel || null;
       }
+      metabolismSession = compatibleSession(saved.metabolismSession, saved.metabolismSessionProvider, ACTIVE_PROVIDER);
+      if (metabolismSession) {
+        metabolismSessionProvider = ACTIVE_PROVIDER;
+        metabolismSessionModel = saved.metabolismSessionModel || null;
+      }
     }
     const atlas = agents.get("ATLAS");
     if (!orchSession && saved?.orchSessionProvider === ACTIVE_PROVIDER && atlas?.session) {
       orchSession = atlas.session;
       orchSessionProvider = ACTIVE_PROVIDER;
       orchSessionModel = atlas.model || null;
+    }
+    for (const restored of agents.values()) {
+      if (restored.state === 'waiting-retry' && restored.retryOf) armAgentRetry(restored);
     }
   } catch {}
 }

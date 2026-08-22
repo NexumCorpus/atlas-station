@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "stealth/ox-alpha";
-const MAX_ROUNDS = 24;
+const DEFAULT_ROUNDS = 24;
+const MAX_ROUNDS = 256;
 const MAX_TOOL_OUTPUT = 20_000;
 const sessions = new Map();
 const providerStartedAt = new Date().toISOString();
@@ -74,15 +75,17 @@ function runShell(input, cwd, env, signal) {
   });
 }
 
-function requestBody(messages, env, stream) {
+function requestBody(messages, env, stream, tools = TOOLS) {
   const body = {
     model: env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL,
     messages,
-    tools: TOOLS,
-    tool_choice: "auto",
     reasoning: { effort: env.ATLAS_OPENROUTER_REASONING || "max" },
     max_tokens: Number(env.ATLAS_OPENROUTER_MAX_TOKENS) || 32_768,
   };
+  if (tools.length) {
+    body.tools = tools;
+    body.tool_choice = "auto";
+  }
   if (stream) {
     body.stream = true;
     body.usage = { include: true }; // final SSE chunk carries token accounting
@@ -99,7 +102,7 @@ function authHeaders(env) {
   };
 }
 
-async function request(messages, env, signal) {
+async function request(messages, env, signal, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -107,7 +110,7 @@ async function request(messages, env, signal) {
     method: "POST",
     signal: requestSignal,
     headers: authHeaders(env),
-    body: JSON.stringify(requestBody(messages, env, false)),
+    body: JSON.stringify(requestBody(messages, env, false, tools)),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -121,7 +124,7 @@ async function request(messages, env, signal) {
 // Streaming variant: parses OpenRouter SSE chunks, forwards text / reasoning /
 // tool_call deltas to onDelta as they arrive, and resolves with the assembled
 // message + usage. Handles both delta.reasoning and delta.reasoning_content.
-async function requestStreaming(messages, env, signal, onDelta) {
+async function requestStreaming(messages, env, signal, onDelta, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -129,7 +132,7 @@ async function requestStreaming(messages, env, signal, onDelta) {
     method: "POST",
     signal: requestSignal,
     headers: authHeaders(env),
-    body: JSON.stringify(requestBody(messages, env, true)),
+    body: JSON.stringify(requestBody(messages, env, true, tools)),
   });
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({}));
@@ -227,6 +230,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
   const streamingEnabled = String(env.ATLAS_OPENROUTER_STREAM ?? "1") !== "0";
   return {
     name: "openrouter",
+    capabilities: Object.freeze({ maxTurns: true, disallowedTools: true, canUseTool: true, permissionMode: "caller-declared", mcpServers: false }),
     assign() { return { purpose: "organism", route: "openrouter", model, source: "openrouter-directive" }; },
     probe() { return { available: Boolean(env.OPENROUTER_API_KEY), credentialConfigured: Boolean(env.OPENROUTER_API_KEY), model, api: streamingEnabled ? "chat-completions-sse" : "chat-completions" }; },
     async *query({ prompt, options = {} } = {}) {
@@ -236,20 +240,21 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       }
       const sessionId = options.resume && sessions.has(options.resume) ? options.resume : `openrouter:${randomUUID()}`;
       const messages = sessions.get(sessionId) || [{ role: "system", content: systemPrompt(options) }];
+      const disallowed = new Set((options.disallowedTools || []).map((name) => String(name).toLowerCase()));
+      const shellAdvertised = !disallowed.has('shell') && !disallowed.has('bash') && options.permissionMode !== 'plan';
+      const availableTools = shellAdvertised ? TOOLS : [];
       messages.push({ role: "user", content: Array.isArray(prompt) ? prompt : String(prompt || "") }); // arrays = multimodal blocks (paste-image spec 98f8861)
       sessions.set(sessionId, messages);
       yield { type: "system", subtype: "init", session_id: sessionId };
       options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter" });
       try {
-        // Turn bound (class fix: DREAM-408 + B-155 starved at the hard 24-round
-        // ceiling). Callers may tighten the loop via options.maxTurns - fleethost
-        // defaults every worker seat to 12. Never exceeds MAX_ROUNDS.
-        const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || MAX_ROUNDS));
+        const configuredDefault = Number(env.ATLAS_OPENROUTER_MAX_ROUNDS) || DEFAULT_ROUNDS;
+        const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || configuredDefault));
         for (let round = 0; round < turnCap; round++) {
           let message; let usage;
           if (streamingEnabled) {
             const ch = deltaChannel();
-            const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d))
+            const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d), availableTools)
               .then((r) => { ch.close(); return r; })
               .catch((e) => { ch.fail(e); return null; });
             for await (const d of ch.drain()) {
@@ -262,7 +267,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             message = assembled.message;
             usage = assembled.usage;
           } else {
-            const payload = await request(messages, env, options.abortSignal);
+            const payload = await request(messages, env, options.abortSignal, availableTools);
             message = payload?.choices?.[0]?.message;
             usage = payload?.usage || null;
             if (!message) throw new Error("OpenRouter returned no assistant message");
@@ -278,15 +283,26 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             let input = {};
             try { input = JSON.parse(call.function?.arguments || "{}"); } catch {}
             yield { type: "assistant", message: { content: [{ type: "tool_use", name: call.function?.name || "shell", input }] } };
-            const output = call.function?.name === "shell"
-              ? await runShell(input, options.cwd || env.ATLAS_REPO || process.cwd(), env, options.abortSignal)
-              : `unsupported tool: ${call.function?.name}`;
+            let output;
+            if (call.function?.name !== "shell") output = `unsupported tool: ${call.function?.name}`;
+            else if (!shellAdvertised) output = "tool denied by provider capability policy";
+            else {
+              let admittedInput = input;
+              if (typeof options.canUseTool === 'function') {
+                const verdict = await options.canUseTool('shell', input, { provider: 'openrouter', sessionId });
+                if (!verdict || verdict.behavior !== 'allow') {
+                  output = `tool denied: ${verdict?.message || 'caller policy'}`;
+                } else if (verdict.updatedInput && typeof verdict.updatedInput === 'object') admittedInput = verdict.updatedInput;
+              }
+              if (output == null) output = await runShell(admittedInput, options.cwd || env.ATLAS_REPO || process.cwd(), env, options.abortSignal);
+            }
             messages.push({ role: "tool", tool_call_id: call.id, content: output });
           }
         }
         // Loop exited by round-cap => exhaustion. Classified distinctly so the
         // station can one-shot-retry the run class (matches SDK error_max_turns).
-        yield { type: "result", subtype: "error_max_turns", result: `Run exhausted its ${turnCap}-tool-round bound (provider ceiling ${MAX_ROUNDS})`, total_cost_usd: null };
+        const namedCeiling = turnCap === configuredDefault ? configuredDefault : MAX_ROUNDS;
+        yield { type: "result", subtype: "error_max_turns", result: `Run exhausted its ${turnCap}-tool-round bound (provider ceiling ${namedCeiling})`, total_cost_usd: null };
       } catch (error) {
         yield { type: "result", subtype: "error", result: safeError(error), total_cost_usd: null };
       }

@@ -1,0 +1,8 @@
+{
+    "armedAt":  "2026-08-22T19:49:25.0858472Z",
+    "delaySeconds":  75,
+    "targetPid":  27808,
+    "note":  "gen-8 restart: activates turn-bound class fix bcd5dd7 (worker maxTurns=12 + error_max_turns retry); D-1787413765000 queued for successor to rerun B-155",
+    "expectedGeneration":  8,
+    "head":  "bcd5dd7f5005d64d0527f937c8567a0924ce6657"
+}

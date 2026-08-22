@@ -216,12 +216,21 @@ function authoritativeTerminal(dir, eventId) {
 }
 function terminal(dir, eventId) { return authoritativeTerminal(dir, eventId); }
 
+function operatorIngress(item) {
+  const source = String(item?.ingress?.source || '').toLowerCase();
+  return source === 'ipc-say' || source === 'legacy-say-inbox' || source === 'daniel';
+}
+
 function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxReplays = 3, attemptMeta = {}) {
   const ttl = admitClaimTtl(claimTtlMs);
   dir = canonicalDir(dir);
   return withLock(dir, () => {
     const l = leaseParts(leaseOrOwner, token, epoch); assertLease(dir, leaseOrOwner, token, epoch); const snapshot = entries(dir); const now = Date.now();
-    const candidate = [...snapshot.byId.values()].find(item => item.ingress && (!item.terminal || (item.terminal.blocked && item.replayRecoveries.length)) && (!item.replayLimits.length || (item.terminal?.blocked && item.replayRecoveries.length)) && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now)); if (!candidate) return null;
+    const allowOperator = attemptMeta.allowOperator !== false;
+    const allowBackground = attemptMeta.allowBackground !== false;
+    const eligible = [...snapshot.byId.values()].filter(item => item.ingress && (operatorIngress(item) ? allowOperator : allowBackground) && (!item.terminal || (item.terminal.blocked && item.replayRecoveries.length)) && (!item.replayLimits.length || (item.terminal?.blocked && item.replayRecoveries.length)) && !activeAttempt(item, now) && !workerStillAlive(latestAttempt(item), now));
+    eligible.sort((a, b) => Number(operatorIngress(b)) - Number(operatorIngress(a)) || Number(a.ingress.seq || 0) - Number(b.ingress.seq || 0));
+    const candidate = eligible[0]; if (!candidate) return null;
     const priorClaim = candidate.claims[candidate.claims.length - 1];
     if (candidate.claims.length >= maxReplays && !candidate.replayRecoveries.length) {
       const prior = candidate.claims.at(-1); appendUnlocked(dir, { kind: 'fail', eventId: candidate.ingress.eventId || candidate.ingress.directiveId, directiveId: candidate.ingress.directiveId,
@@ -235,6 +244,7 @@ function claimNext(dir, leaseOrOwner, epoch, token, claimTtlMs = 30000, maxRepla
       attemptId: `attempt:${crypto.randomUUID()}`, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attemptMeta.workerPid || process.pid, workerStartIdentity: attemptMeta.workerStartIdentity || null,
       providerSessionId: attemptMeta.providerSessionId || null, providerModel: attemptMeta.providerModel || null,
+      lane: attemptMeta.lane || (operatorIngress(candidate) ? 'mouth' : 'metabolism'),
       ...ttl, expiresAt: now + ttl.effectiveClaimTtlMs, replay: Boolean(priorClaim), claimCount: candidate.claims.length + 1 });
   });
 }
@@ -248,6 +258,7 @@ function renewClaim(dir, eventId, attempt, leaseOrOwner, epoch, token, claimTtlM
     return appendUnlocked(dir, { kind: 'claim-renewal', eventId, directiveId: item.ingress.directiveId, attemptId: claim.attemptId, claimRecordHash: claim.recordHash,
       contentHash: claim.contentHash, owner: l.owner, token: l.token, tokenFingerprint: bytesHash(l.token).slice(-16), epoch: l.epoch,
       workerPid: attempt.workerPid, workerStartIdentity: attempt.workerStartIdentity, providerSessionId: attempt.providerSessionId, providerModel: attempt.providerModel,
+      lane: attempt.lane || claim.lane || null,
       ...ttl, expiresAt: Date.now() + ttl.effectiveClaimTtlMs });
   });
 }

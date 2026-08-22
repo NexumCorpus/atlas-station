@@ -1,0 +1,8 @@
+{
+    "armedAt":  "2026-08-22T03:06:44.1055528Z",
+    "delaySeconds":  7,
+    "killedPid":  44412,
+    "note":  "instant restart: kill fires 7s after arm (post turn-flush), supervisor respawns on HEAD",
+    "expectedGeneration":  6,
+    "head":  "7236316"
+}
