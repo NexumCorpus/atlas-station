@@ -495,6 +495,14 @@ input:focus-visible{outline:none}
 #exec-route{color:var(--cyan);white-space:nowrap;flex:none}
 #exec-task{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;opacity:.8}
 #exec-sandbox{margin-left:auto;color:var(--amber);white-space:nowrap;flex:none}
+
+/* organ-rail:v1 */
+#organs{display:flex;gap:10px;align-items:center;padding:3px 12px;border-top:1px solid rgba(157,107,255,.15);font-size:9px;letter-spacing:.08em;color:#7ab8e8;overflow-x:auto;white-space:nowrap;}
+#organs .organ{display:inline-flex;align-items:center;gap:4px;opacity:.55;transition:opacity .3s;}
+#organs .organ.hot{opacity:1;}
+#organs .odot{width:6px;height:6px;border-radius:50%;background:#5a5870;display:inline-block;}
+#organs .organ.ok .odot{background:#49ff9e;}#organs .organ.err .odot{background:#ff6a3d;}#organs .organ.warn .odot{background:#ff784e;}#organs .organ.run .odot{background:#22e1ff;}
+#organs .ocount{color:#d8deec;font-size:9px;}
 </style>
 </head>
 <body>
@@ -542,6 +550,7 @@ input:focus-visible{outline:none}
     <span id="vcost">$0.00</span>
     <span id="vact">IDLE</span>
   </div>
+  <div id="organs" class="boot-seq" title="organ telemetry - senses for everything hermes does"><!--organ-rail:v1--></div>
 
   <div id="main">
     <div id="convcol" class="boot-seq">
@@ -1297,7 +1306,31 @@ input:focus-visible{outline:none}
       renderThread();
       return;
     }
-    if(m.type==="orchestrator_tool"||m.type==="orchestrator_toolresult"){
+    // organ-router:v1 - surfaces every orphan organ as live telemetry
+if(window.__ORGAN_ROUTER__!=="v1"){
+  window.__ORGAN_ROUTER__="v1";
+  window.__ORGANS__={};
+  var ORGAN_DEFS={crystal_formed:["crystal","ok"],crystal_failed:["crystal","err"],shard_memory:["shard","ok"],recover_shard:["shard","ok"],deferred_reconciled:["deferral","ok"],deferred_error:["deferral","err"],decision_loop:["decision","run"],continuity:["continuity","run"],xenosoma:["xenosoma","run"],dream:["dream","ok"],dream_parse_failed:["dream","err"],dream_retry_scheduled:["dream","warn"],tap:["tap","ok"]};
+  window.organPulse=function(type,detail){
+    var def=ORGAN_DEFS[type]; if(!def)return false;
+    var label=def[0],cls=def[1];
+    var o=window.__ORGANS__[label]||(window.__ORGANS__[label]={count:0,last:"",el:null});
+    o.count++; o.last=new Date().toLocaleTimeString();
+    var rail=document.getElementById("organs");
+    if(rail&&!o.el){ o.el=document.createElement("span"); o.el.className="organ"; o.el.innerHTML='<span class="odot"></span>'+label+' <span class="ocount">0</span>'; rail.appendChild(o.el); }
+    if(o.el){ o.el.className="organ "+cls+" hot"; o.el.title=label+" last:"+o.last+(detail?(" :: "+String(detail).slice(0,120)):""); var c=o.el.querySelector(".ocount"); if(c)c.textContent=o.count; setTimeout(function(){o.el&&(o.el.className="organ "+cls);},2500); }
+    return true;
+  };
+}
+(function(){ var ORGAN_THREAD={tap:1,dream_retry_scheduled:1,crystal_failed:1,deferred_error:1};
+  window.organEvent=function(m){ if(window.organPulse(m.type,(m.summary||m.error||m.state||m.label||""))){ if(ORGAN_THREAD[m.type]){
+    var txt={tap:"\u29c9 worker "+(m.agentId||"?")+" tapped: "+(m.state||"?")+" \u2014 "+String(m.summary||"").slice(0,140),
+      dream_retry_scheduled:"\u27f3 dream retry scheduled (+15min) after exhaustion",
+      crystal_failed:"\u2717 crystallization failed \u2014 receipt written",
+      deferred_error:"\u2717 deferral reconciliation error"}[m.type]||m.type;
+    thread.push({role:"system",text:txt,error:/failed|error/.test(m.type)||(m.state==="failed"),ts:Date.now()}); renderThread(); } return true; } return false; };
+})();
+if(m.type==="orchestrator_tool"||m.type==="orchestrator_toolresult"){
       var O=window.__otl||(window.__otl={lines:[],map:{}});
       if(m.type==="orchestrator_tool"){
         if(/^(think|Thinking)$/i.test(m.name||''))return;

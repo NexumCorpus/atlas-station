@@ -12,7 +12,7 @@ const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ?
 const ID = arg('id', 'B-anon');
 const CWD = arg('cwd', process.env.ATLAS_REPO || process.cwd());
 const TIMEOUT_MS = Number(arg('timeout-min', '25')) * 60 * 1000;
-const MODEL = process.env.TAP_MODEL || 'claude-haiku-4-5-20251001';
+const MODEL = process.env.TAP_MODEL || 'gpt-5.6-luna';
 const SANDBOX = process.env.TAP_SANDBOX || 'read-only'; // never danger-full-access
 const TASK = process.env.TAP_TASK;
 const COMMIT_PROMPT = process.env.TAP_COMMIT_PROMPT || '';
@@ -41,7 +41,7 @@ function tap(rec) {
 }
 
 function baseArgs() {
-  return ['exec', '--json', '--color', 'never', '--ignore-user-config', '--model', MODEL];
+  return ['exec', '--json', '--color', 'never', '--ignore-user-config', '--skip-git-repo-check', '--model', MODEL];
 }
 async function runLeg(args, legName) {
   return new Promise((resolve) => {
@@ -80,7 +80,7 @@ async function runLeg(args, legName) {
 const s1 = await runLeg([...baseArgs(), '-C', CWD, '-s', SANDBOX, TASK], 'main');
 // Optional single commit leg via resume (only on success and only if requested).
 if (COMMIT_PROMPT && s1.state === 'success' && s1.threadId) {
-  await runLeg(['exec', 'resume', '--json', '--color', 'never', '--ignore-user-config', '--model', MODEL, '-s', SANDBOX, s1.threadId, COMMIT_PROMPT], 'commit');
+  await runLeg(['exec', 'resume', '--json', '--color', 'never', '--ignore-user-config', '--skip-git-repo-check', '--model', MODEL, '-s', SANDBOX, s1.threadId, COMMIT_PROMPT], 'commit');
 } else if (COMMIT_PROMPT && s1.state === 'success') {
   console.log('[tap] commit leg skipped: no threadId captured');
 }

@@ -13,7 +13,7 @@ import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCo
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
-import { mkdirSync } from "fs";
+import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { followAutonomyTurn } from "./scripts/autonomy-policy.mjs";
@@ -4182,6 +4182,30 @@ async function pollSayInbox() {
   finish();
 }
 setInterval(pollSayInbox, 700); // reflex poll: inbound latency 2.5s -> 0.7s (Daniel directive 2026-08-22)
+
+// Tap ganglion sensory half: workers tap by appending to .atlas/taps.ndjson;
+const tapsFile = path.join(REPO, '.atlas', 'taps.ndjson');
+let tapOffset = 0;
+function pollTaps() {
+  try {
+    let st; try { st = statSync(tapsFile); } catch { return; }
+    if (st.size <= tapOffset) { if (st.size < tapOffset) tapOffset = 0; return; }
+    const fd = openSync(tapsFile, 'r');
+    const len = st.size - tapOffset;
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, tapOffset);
+    closeSync(fd);
+    const text = buf.toString('utf8');
+    const cut = text.lastIndexOf('\n');
+    if (cut < 0) return; // wait for a complete line
+    tapOffset += Buffer.byteLength(text.slice(0, cut + 1), 'utf8');
+    for (const line of text.slice(0, cut).split('\n')) {
+      if (!line.trim()) continue;
+      try { send('tap', JSON.parse(line)); } catch {}
+    }
+  } catch {}
+}
+setInterval(pollTaps, 1000); // heard within ~1s of any worker completion
 let _draining = false;
 async function gracefulDrain(reason = 'shutdown') {
   if (_draining) return; _draining = true;
