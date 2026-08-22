@@ -26,9 +26,11 @@ bounded output, and enforces a 20-minute maximum per command. The provider
 defaults to 24 tool rounds. The conversational mouth requests 6 through
 `ATLAS_MOUTH_MAX_TURNS`; metabolism requests 64 through
 `ATLAS_ORCHESTRATOR_MAX_TURNS`; and workers default to 12. Every request is
-clamped to the provider safety ceiling of 256. If the mouth exhausts its small
-budget, it releases speech with a bounded acknowledgement and queues exactly one
-continuation on metabolism. Operator cancellation terminates the active tool.
+clamped to the provider safety ceiling of 256. The mouth also has a 45-second
+wall-clock fuse, configurable with `ATLAS_MOUTH_TIMEOUT_MS` from 5 through 120
+seconds. If either mouth bound is exhausted, it releases speech with a bounded
+acknowledgement and queues exactly one continuation on metabolism. Operator
+cancellation terminates the active tool.
 
 Atlas has two independent serialized execution lanes. The **mouth** owns live
 operator conversation and its own provider session. **Metabolism** owns startup,

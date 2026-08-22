@@ -12,7 +12,7 @@ import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/clau
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
-import { createOrchestrationLanes, laneTurnBound, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
+import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
@@ -3688,6 +3688,11 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   const mouth = source === 'user';
   const lane = mouth ? 'mouth' : 'metabolism';
   const maxTurns = laneTurnBound(lane, process.env);
+  const timeoutMs = laneTimeoutMs(lane, process.env);
+  const mouthAbort = mouth ? new AbortController() : null;
+  let mouthTimedOut = false;
+  const mouthTimer = mouthAbort ? setTimeout(() => { mouthTimedOut = true; mouthAbort.abort(); }, timeoutMs) : null;
+  mouthTimer?.unref?.();
   const agentId = mouth ? 'ATLAS' : 'ATLAS-METABOLISM';
   let laneSession = mouth ? orchSession : metabolismSession;
   let laneSessionProvider = mouth ? orchSessionProvider : metabolismSessionProvider;
@@ -3829,6 +3834,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
         maxTurns,
+        abortSignal: mouthAbort?.signal,
       },
     })) {
       if (m.type === "system" && m.subtype === "init") {
@@ -3859,7 +3865,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
         set(agentId, patch);
       } else if (m.type === "result") {
-        const handoff = mouthExhaustionHandoff(lane, m.subtype, userText, maxTurns);
+        const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : m.subtype, userText, maxTurns);
         const full = handoff ? handoff.acknowledgement : String(m.result ?? "");
         if (handoff) {
           enqueueOrchestrate(handoff.task, 'mouth-exhaustion-handoff').catch(error => {
@@ -3953,7 +3959,20 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
       }
     }
-  } catch (e) { set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) }); }
+  } catch (e) {
+    const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : null, userText, maxTurns);
+    if (handoff) {
+      enqueueOrchestrate(handoff.task, 'mouth-timeout-handoff').catch(error => {
+        send('execution', { state: 'handoff-failed', lane: 'metabolism', reason: String(error?.message || error).slice(0, 220) });
+      });
+      set(agentId, { state: 'done', lane, summary: handoff.acknowledgement, reply: handoff.acknowledgement, lastToolArg: null });
+      send('execution', { state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', timeoutMs, task: String(userText || '').slice(0, 220) });
+    } else {
+      set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) });
+    }
+  } finally {
+    if (mouthTimer) clearTimeout(mouthTimer);
+  }
   if (autonomyEnabled) scheduleAutonomyTick();
 }
 

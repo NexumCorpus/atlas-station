@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { createOrchestrationLanes, laneTurnBound, mouthExhaustionHandoff } from '../orchestration-lanes.mjs';
+import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, mouthExhaustionHandoff } from '../orchestration-lanes.mjs';
 
 const require = createRequire(import.meta.url);
 const ingress = require('../ingress-journal.cjs');
@@ -70,11 +70,17 @@ await check('mouth has an independent small bound and exhaustion becomes one met
   assert.equal(laneTurnBound('metabolism', {}), 64);
   assert.equal(laneTurnBound('mouth', { ATLAS_MOUTH_MAX_TURNS: '3' }), 3);
   assert.equal(laneTurnBound('metabolism', { ATLAS_ORCHESTRATOR_MAX_TURNS: '999' }), 256);
+  assert.equal(laneTimeoutMs('mouth', {}), 45_000);
+  assert.equal(laneTimeoutMs('mouth', { ATLAS_MOUTH_TIMEOUT_MS: '1000' }), 5_000);
+  assert.equal(laneTimeoutMs('metabolism', {}), 0);
   assert.equal(mouthExhaustionHandoff('metabolism', 'error_max_turns', 'x', 64), null);
   assert.equal(mouthExhaustionHandoff('mouth', 'success', 'x', 6), null);
   const handoff = mouthExhaustionHandoff('mouth', 'error_max_turns', 'finish the proof', 6);
   assert.match(handoff.acknowledgement, /released speech/);
   assert.match(handoff.task, /finish the proof/);
+  const timed = mouthExhaustionHandoff('mouth', 'mouth_timeout', 'continue safely', 6);
+  assert.match(timed.acknowledgement, /wall-clock limit/);
+  assert.match(timed.task, /continue safely/);
 });
 
 if (!process.exitCode) console.log(`\n${passed} passed, 0 failed\n`);
