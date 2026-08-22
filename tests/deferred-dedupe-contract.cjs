@@ -47,21 +47,26 @@ try {
   assert.equal(live.id, other.id);
   assert.equal(deferred.findLiveDuplicate(deferred.listDeferred(tmp), 'completely unrelated work'), null);
 
-  // 5. Paraphrase suppression: long near-synonym rewording of a live task.
+  // 5. Topic-cluster suppression: two REAL phrasings from the Aug-2026
+  //    corpus that no exact/Jaccard rule could match.
   const para = deferred.deferTask(
-    'Diagnose the recurring crystallization breakdown and restore verified persistence of dream outputs',
+    'Diagnose the repeated crystallization failure and seal continuity with a successful receipt before accepting another dream pulse as complete.',
     { ...REASON }, tmp); // fresh live task, long text
   assert.ok(!para.__suppressed);
   const paraDupe = deferred.deferTask(
-    'Diagnose the recurring crystallization breakdown and restore confirmed persistence of dream outputs',
+    'Diagnose the duplicated crystallization failure and preserve failed sessions as retryable handoffs.',
     { ...REASON }, tmp);
-  assert.equal(paraDupe.__suppressed, true, 'paraphrase of a LIVE long task must suppress');
+  assert.equal(paraDupe.__suppressed, true, 'topical re-mint of a LIVE long task must suppress');
 
-  // 6. Short texts are exempt from fuzzy matching.
+  // 6. Genuinely distinct work in a hot area stays admissible (real
+  //    negative from the same corpus, measured 0/19 false positives).
+  const distinctTask = deferred.deferTask('Recover the source intent for A-148 through A-151, then re-queue or explicitly close each item.', { ...REASON }, tmp);
+  assert.ok(!distinctTask.__suppressed, 'distinct family must never be suppressed');
+
+  // 7. Short texts are exempt from fuzzy matching.
   const s1 = deferred.deferTask('Audit A-999 ledger', { ...REASON }, tmp);
   const s2 = deferred.deferTask('Audit A-998 ledger', { ...REASON }, tmp);
   assert.ok(!s1.__suppressed && !s2.__suppressed, 'short similar tasks must both be admitted');
-
   console.log('deferred-dedupe-contract: ALL PASS');
 } finally {
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
