@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-context-mycelium",
+  "version": "1.0.0",
+  "description": "Compress large context into authenticated roots while preserving selective byte-exact recovery.",
+  "triggers": [
+    "context",
+    "token",
+    "compress",
+    "lossless",
+    "mycelium",
+    "large history"
+  ],
+  "exclusions": [
+    "short prompt"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "raw-history",
+    "observations"
+  ],
+  "produces": [
+    "context-root"
+  ],
+  "evidenceRoute": "context-mycelium selection and reconstruction receipts",
+  "falsifier": "A required source span cannot be rehydrated byte-exact from its recorded coordinates.",
+  "tokenEstimate": 205
+}

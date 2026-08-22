@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "atlas-adversarial-press",
+  "version": "1.0.0",
+  "description": "Attack a proposal's hidden trust, circularity, and easiest counterexample before implementation.",
+  "triggers": [
+    "adversarial",
+    "attack",
+    "circular",
+    "trust",
+    "falsify",
+    "press deeper"
+  ],
+  "exclusions": [
+    "copy edit"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "hypotheses",
+    "candidate-change",
+    "claim-freeze"
+  ],
+  "produces": [
+    "falsifiers"
+  ],
+  "evidenceRoute": "Boundary, Wall, and direct counterexample probes",
+  "falsifier": "The proposal fails if its evidence can be manufactured by the same actor it evaluates.",
+  "tokenEstimate": 205
+}

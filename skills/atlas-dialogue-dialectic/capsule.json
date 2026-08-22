@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "atlas-dialogue-dialectic",
+  "version": "1.0.0",
+  "description": "Use disagreement between capable models as an experiment that yields sharper artifacts rather than consensus prose.",
+  "triggers": [
+    "dialogue",
+    "another model",
+    "GLM",
+    "debate",
+    "disagreement",
+    "probe Atlas"
+  ],
+  "exclusions": [
+    "simple factual answer"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "model-disagreement",
+    "hypotheses"
+  ],
+  "produces": [
+    "synthesis",
+    "falsifiers"
+  ],
+  "evidenceRoute": "attributed claims plus an executed discriminating artifact",
+  "falsifier": "The exchange changes vocabulary but produces no test whose result could favor one position.",
+  "tokenEstimate": 205
+}

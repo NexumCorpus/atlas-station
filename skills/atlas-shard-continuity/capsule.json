@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-shard-continuity",
+  "version": "1.0.0",
+  "description": "Protect load-bearing memory and recover exact bytes from partial surviving fragments.",
+  "triggers": [
+    "shard",
+    "recover",
+    "continuity",
+    "corruption",
+    "durable memory"
+  ],
+  "exclusions": [
+    "temporary cache"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "context-root",
+    "crystal",
+    "verified-artifacts"
+  ],
+  "produces": [
+    "recovered-context"
+  ],
+  "evidenceRoute": "Reed-Solomon shard and continuity receipts",
+  "falsifier": "Recovery from any promised k-of-n fragment set differs by one byte or reports stale coverage as current.",
+  "tokenEstimate": 185
+}

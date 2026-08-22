@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-skill-breeder",
+  "version": "1.0.0",
+  "description": "Turn repeated witnessed skill failures into staged variants and admit only externally witnessed improvements.",
+  "triggers": [
+    "skill",
+    "breed",
+    "compound",
+    "learn capability",
+    "self rewrite"
+  ],
+  "exclusions": [
+    "generic prompt collection"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "failure-receipts",
+    "settlement"
+  ],
+  "produces": [
+    "skill-variant",
+    "candidate-change"
+  ],
+  "evidenceRoute": "fitness ledger plus external GAUNTLET settlement",
+  "falsifier": "The variant does not beat its incumbent on frozen cases or lacks independent witnessing.",
+  "tokenEstimate": 230
+}

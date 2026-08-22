@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "atlas-residual-hunter",
+  "version": "1.0.0",
+  "description": "Find concrete remaining work after apparent completion and distinguish residue from repeated churn.",
+  "triggers": [
+    "continue",
+    "remaining",
+    "residual",
+    "no work left",
+    "complete"
+  ],
+  "exclusions": [
+    "explicit stop"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "completed-work",
+    "spiral-receipt",
+    "verified-artifacts"
+  ],
+  "produces": [
+    "residuals",
+    "candidate-change"
+  ],
+  "evidenceRoute": "source, runtime, proposal, and acceptance-surface scans",
+  "falsifier": "A named residual has no reachable failing observation or repeats a closed item unchanged.",
+  "tokenEstimate": 180
+}

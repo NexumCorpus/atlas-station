@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "atlas-economic-hunt",
+  "version": "1.0.0",
+  "description": "Find machine-legible economic asymmetries and reduce them to permissioned value experiments.",
+  "triggers": [
+    "profit",
+    "money",
+    "economic",
+    "lucrative",
+    "market",
+    "value"
+  ],
+  "exclusions": [
+    "guaranteed return",
+    "unauthorized trading"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "observations",
+    "settlement",
+    "market-surface"
+  ],
+  "produces": [
+    "value-hypotheses",
+    "permissioned-opportunity"
+  ],
+  "evidenceRoute": "buyer or market receipt tied to avoided loss or captured surplus",
+  "falsifier": "No authorized beneficiary changes a decision or pays after the proposed information is delivered.",
+  "tokenEstimate": 225
+}

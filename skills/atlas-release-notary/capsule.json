@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "name": "atlas-release-notary",
+  "version": "1.0.0",
+  "description": "Bind verified artifacts, claim ceilings, provenance, and remote state into a release receipt.",
+  "triggers": [
+    "release",
+    "commit",
+    "push",
+    "seal",
+    "notary",
+    "v1"
+  ],
+  "exclusions": [
+    "unverified draft"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "verified-artifacts",
+    "settlement",
+    "spiral-receipt"
+  ],
+  "produces": [
+    "release-receipt",
+    "completed-work"
+  ],
+  "evidenceRoute": "clean diff, acceptance output, commit hash, remote hash, and CI state",
+  "falsifier": "Tracked bytes differ from witnessed bytes, a secret enters the diff, or the remote does not contain the claimed commit.",
+  "tokenEstimate": 210
+}

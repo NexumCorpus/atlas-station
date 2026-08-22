@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "atlas-abductive-hunt",
+  "version": "1.0.0",
+  "description": "Generate discriminating hypotheses from anomalies when the cause or opportunity is unknown.",
+  "triggers": [
+    "unknown cause",
+    "anomaly",
+    "discover",
+    "strange pattern",
+    "opportunity"
+  ],
+  "exclusions": [
+    "known mechanical fix"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "observations"
+  ],
+  "produces": [
+    "hypotheses"
+  ],
+  "evidenceRoute": "source-sight + real probes",
+  "falsifier": "A hypothesis survives only if it predicts an observation its alternatives do not.",
+  "tokenEstimate": 190
+}

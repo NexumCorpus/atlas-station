@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "atlas-crystal-distillation",
+  "version": "1.0.0",
+  "description": "Distill durable navigation crystals without laundering provider errors or summaries into truth.",
+  "triggers": [
+    "crystal",
+    "distill",
+    "remember",
+    "continuity",
+    "session close"
+  ],
+  "exclusions": [
+    "verbatim archive"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "raw-history",
+    "receipts"
+  ],
+  "produces": [
+    "crystal"
+  ],
+  "evidenceRoute": "source anchors plus crystal admission receipt",
+  "falsifier": "The crystal cannot lead a future reader back to exact supporting artifacts.",
+  "tokenEstimate": 180
+}

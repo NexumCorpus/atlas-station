@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-gauntlet",
+  "version": "1.0.0",
+  "description": "Freeze claims before public entropy selects adversarial trials, then settle only the narrow survival claim.",
+  "triggers": [
+    "gauntlet",
+    "claim",
+    "proof",
+    "random test",
+    "settle",
+    "witness"
+  ],
+  "exclusions": [
+    "unfalsifiable opinion"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "claim-freeze",
+    "falsifiers"
+  ],
+  "produces": [
+    "settlement"
+  ],
+  "evidenceRoute": "witness signature, future beacon pulse, run ledger, settlement record",
+  "falsifier": "A preselected case, invalid witness, pre-boundary pulse, tampered ledger, or later counterexample supersedes the claim.",
+  "tokenEstimate": 230
+}

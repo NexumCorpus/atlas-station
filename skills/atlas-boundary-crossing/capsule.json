@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-boundary-crossing",
+  "version": "1.0.0",
+  "description": "Design permissioned real-world interventions with explicit authority, downside, and settlement.",
+  "triggers": [
+    "real world",
+    "external",
+    "boundary",
+    "deploy",
+    "contact",
+    "transaction"
+  ],
+  "exclusions": [
+    "local read only"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "settlement",
+    "permissioned-opportunity"
+  ],
+  "produces": [
+    "boundary-intervention"
+  ],
+  "evidenceRoute": "authority receipt, external state receipt, and rollback condition",
+  "falsifier": "The action exceeds granted authority or its effect cannot be independently observed.",
+  "tokenEstimate": 215
+}

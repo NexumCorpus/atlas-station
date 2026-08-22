@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "atlas-spiral-selection",
+  "version": "1.0.0",
+  "description": "Choose and seal measured self-improvement vectors without relabeling repeated work as novelty.",
+  "triggers": [
+    "spiral",
+    "self improve",
+    "iterate",
+    "capability",
+    "evolve"
+  ],
+  "exclusions": [
+    "unmeasured brainstorm"
+  ],
+  "inputMode": "any",
+  "accepts": [
+    "task",
+    "candidate-change",
+    "outcomes",
+    "settlement"
+  ],
+  "produces": [
+    "spiral-receipt"
+  ],
+  "evidenceRoute": "before/after metric and spiral ledger",
+  "falsifier": "The claimed vector has no changed measure or duplicates a prior subsystem-capability pair.",
+  "tokenEstimate": 195
+}

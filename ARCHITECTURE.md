@@ -80,6 +80,27 @@ over exact SEC bytes for a real five-party obligation rewrite and active contrac
 - `scripts/mission-run.mjs` executes the mission seam and preserves certified,
   rejected, and honest-null outcomes.
 
+## GAUNTLET
+
+`gauntlet-protocol.cjs`, `gauntlet-ledger.cjs`, and `gauntlet-rfc8259.cjs`
+turn consequential claims into temporally ordered obstruction trials. A claim,
+evidence boundary, loss rule, and multiple generator implementations are frozen
+first. An Ed25519 witness then signs that exact freeze digest. Only a later
+public beacon pulse may derive concrete trials. Results enter an append-only
+ledger, and later counterexamples supersede rather than erase prior receipts.
+
+The instrument never emits `correct`. Its maximum verdict is: survived every
+trial derived from these frozen generators under this recorded pulse. A local
+self-witnessed diagnostic proves mechanics only. Counterparty independence and
+NIST pulse-signature verification remain separately visible facts rather than
+being inferred from a hash chain.
+
+## Skill ecology: typed catalytic organs
+
+`skill-capsule.cjs` treats repo-local `skills/atlas-*` packages as typed transducers rather than a flat prompt library. Metadata-only selection finds a small accepts/produces graph under a context budget; only selected `SKILL.md` bodies enter the Atlas turn as untrusted user-context suggestions. `fleethost.mjs` keeps authority in its system role and emits a content-addressed routing receipt.
+
+`skill-fitness.cjs` stores selection-bound outcome history as an append-only hash chain without promoting reported value to verified value. `skill-evolution.cjs` stages descendants outside the active library and admits a version only after a complete candidate-bound GAUNTLET chain signed by a pinned external witness. See `docs/SKILL_ECOLOGY.md` for the compound cycle and claim ceiling.
+
 ## Release truth
 
 `v1.contract.json` is the machine-readable release boundary.
