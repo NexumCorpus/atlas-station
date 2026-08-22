@@ -196,6 +196,7 @@ let orchSessionProvider = null; // prevents a Claude session id being resumed by
 let orchSessionModel = null; // prevents an env change from silently swapping a resumed Codex thread's model
 const sessionStats = { startTs: new Date().toISOString(), agentCount: 0, totalCost: 0, topics: [] };
 let pulseCount = 0;
+let dreamRetryAt = 0; // epoch-ms of next exhaustion-retry dream (one-shot; DREAM-408 follow-up)
 let orchTurnCount = 0;
 let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // Terminal-record idempotency: the SDK can emit more than one terminal result event
@@ -395,7 +396,7 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
       final = String(m.result ?? agents.get(id)?.summary ?? "");
       flushThinking(true);
-      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
+      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final.slice(0, 8000), failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
       // Record which files this build agent modified — feeds mutation_map churn analysis
@@ -4396,7 +4397,8 @@ async function runPulse() {
     send('pulse', snapshot);
 
     // Every 4th pulse, run a dream reflection
-    if (pulseCount % 4 === 0 && _dream) {
+    if (_dream && (pulseCount % 4 === 0 || (dreamRetryAt > 0 && Date.now() >= dreamRetryAt))) {
+      if (dreamRetryAt > 0) dreamRetryAt = 0; // one-shot retry consumed
       try {
         const memDir = path.join(REPO, 'memory');
 
@@ -4518,6 +4520,10 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         abortControllers.delete(dreamId);
         const dreamTerminal = agents.get(dreamId) || {};
         if (dreamTerminal.state !== 'done') {
+          if (dreamTerminal.failSubtype === 'error_max_turns') {
+            dreamRetryAt = Date.now() + 15 * 60 * 1000; // retry in 15min instead of the full 100min cycle
+            send('dream_retry_scheduled', { dreamId, pulseCount, retryInMs: 15 * 60 * 1000 });
+          }
           if (_dream.writeDreamReceipt) {
             try {
               _dream.writeDreamReceipt({
@@ -4528,7 +4534,7 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
                 task: `dream protocol (pulse ${pulseCount})`,
                 input: dreamPrompt,
                 output: dreamText,
-                error: { name: 'DreamRunFailed', message: dreamText || dreamTerminal.summary || 'dream run failed' },
+                error: { name: 'DreamRunFailed', subtype: dreamTerminal.failSubtype || null, message: (dreamTerminal.failSubtype ? '[' + dreamTerminal.failSubtype + '] ' : '') + (dreamText || dreamTerminal.summary || 'dream run failed') },
                 exit: { state: dreamTerminal.state || 'failed', code: null, signal: null },
               }, memDir);
             } catch {}
