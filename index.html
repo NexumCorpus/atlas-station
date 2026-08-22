@@ -103,6 +103,11 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;back
 
 #fleetstats{font-size:9px;color:var(--dim);padding:4px 8px;border-bottom:1px solid var(--border);flex:none;letter-spacing:.08em}
 #ecology-head{padding:10px 12px;border-bottom:1px solid var(--border);background:linear-gradient(90deg,rgba(60,255,168,.055),transparent)}
+/* empire tab wiring */
+#tab-empire:target{display:block!important}
+body:has(#tab-empire:target) #tab-fleet,body:has(#tab-empire:target) #tab-ecology,body:has(#tab-empire:target) #tab-memory,body:has(#tab-empire:target) #tab-station{display:none!important}
+body:has(#tab-empire:target) .tab[data-tab="empire"]{color:var(--fg);border-bottom-color:var(--violet)}
+body:has(#tab-empire:target) .tab[data-tab="fleet"]{color:var(--dim);border-bottom-color:transparent}
 #tab-ecology:target{display:block!important}
 body:has(#tab-ecology:target) #tab-fleet{display:none!important}
 body:has(#tab-ecology:target) .tab[data-tab="ecology"]{color:var(--fg);border-bottom-color:var(--violet)}
@@ -617,6 +622,23 @@ input:focus-visible{outline:none}
         <button class="tab" data-tab="ecology">ECOLOGY</button>
         <button class="tab" data-tab="memory">MEMORY</button>
         <button class="tab" data-tab="station">STATION</button>
+        <button class="tab" data-tab="empire">EMPIRE</button>
+      </div>
+
+
+      <!-- EMPIRE TAB - built by stealth/ox-alpha workers, integrated by ATLAS -->
+      <div id="tab-empire" class="tab-panel">
+        <div style="padding:10px 12px;">
+          <div style="background:transparent;color:#d8deec;font-size:11px;">
+            <div id="empire-header" style="background:transparent;color:#d8deec;font-size:11px;border-bottom:1px solid #2a2f3e;padding-bottom:4px;margin-bottom:6px;">
+              <span style="color:#9d6bff;font-weight:bold;letter-spacing:1px;">HERMES EMPIRE - LIVE</span>
+              <div style="color:#22e1ff;font-size:11px;">real worker telemetry</div>
+            </div>
+            <div id="empire-organs" style="background:transparent;color:#d8deec;font-size:11px;"></div>
+            <div id="empire-workers" style="background:transparent;color:#d8deec;font-size:11px;"></div>
+            <div id="empire-footer" style="background:transparent;color:#d8deec;font-size:11px;color:#49ff9e;border-top:1px solid #2a2f3e;padding-top:4px;margin-top:6px;">built and verified by stealth/ox-alpha workers</div>
+          </div>
+        </div>
       </div>
 
       <!-- FLEET TAB -->
@@ -1243,6 +1265,10 @@ input:focus-visible{outline:none}
 
   window.atlas.onFleet(function(m){
     if(!m)return;
+    /* empire-feed:v1 - every event pulses organs + empire tab (no early return; thread logic still owns routing) */
+    try{ if(window.organEvent) organEvent(m); }catch(e){}
+    try{ if(window.empireUpdate) empireUpdate(m); }catch(e){}
+
     if(m.type==="ecology"){
       renderEcology(m);
       if(m.error)addTimelineEvent('⚠','ecology '+(m.reason||'failed')+' · '+m.error,'evfailed');
@@ -3333,5 +3359,7 @@ if(m.type==="agent"){
   });
 })();
 </script>
+<script src="gui/empire/tab-logic.js"></script>
+<script>window.addEventListener("load",function(){try{empireInit();}catch(e){}});</script>
 </body>
 </html>
