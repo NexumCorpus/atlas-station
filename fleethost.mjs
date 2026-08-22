@@ -4482,6 +4482,10 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
               model: MODEL_SONNET,
               ...dreamOptions,
               permissionMode: 'bypassPermissions',
+            // Reflection should read, not act: deny every verb class that can burn
+            // provider tool-rounds into loops (DREAM-408 died to OpenRouter's
+            // 24-round ceiling). Keep Read/Grep/Glob for grounded reflection.
+            disallowedTools: ['mcp__*','Bash','Edit','Write','NotebookEdit','WebFetch','WebSearch','Task','Agent'],
               abortSignal: dreamCtrl.signal,
             },
           });
