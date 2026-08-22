@@ -12,6 +12,7 @@ import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/clau
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
+import { createOrchestrationLanes } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
 import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
@@ -213,12 +214,10 @@ let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // Each provider session is stateful and must be serialized, but the organism's
 // mouth must not queue behind its metabolism. These lanes own distinct sessions
 // and agent records so live speech remains available during autonomous work.
-let _mouthQueue = Promise.resolve();
-let _metabolismQueue = Promise.resolve();
+const _orchestrationLanes = createOrchestrationLanes();
 function enqueueOrchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
   const mouth = source === 'user';
-  const prior = mouth ? _mouthQueue : _metabolismQueue;
-  const turn = prior.then(async () => {
+  return _orchestrationLanes.enqueue(mouth ? 'mouth' : 'metabolism', async () => {
     // Persist Daniel's words at the exact execution seam. Queueing elsewhere
     // would scramble dialogue order when several UI messages arrive together.
     if (source === 'user' && _sessionLog) {
@@ -226,9 +225,6 @@ function enqueueOrchestrate(userText, source = 'user', executionHooks = {}, atta
     }
     return orchestrate(userText, source, executionHooks, attachments);
   });
-  if (mouth) _mouthQueue = turn.catch(() => {});
-  else _metabolismQueue = turn.catch(() => {});
-  return turn;
 }
 
 // Restore persistent session counters from prior runs
@@ -4313,7 +4309,7 @@ let _draining = false;
 async function gracefulDrain(reason = 'shutdown') {
   if (_draining) return; _draining = true;
   send('lease', { state: 'draining', reason, epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
-  try { await Promise.allSettled([_mouthQueue, _metabolismQueue]); } catch {}
+  try { await _orchestrationLanes.drain(); } catch {}
   try { _sidecarLease?.release(); } catch {}
   send('lease', { state: 'released', epoch: _sidecarLease?.owner?.epoch, pid: process.pid });
   process.exit(0);

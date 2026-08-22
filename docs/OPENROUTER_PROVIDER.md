@@ -22,8 +22,24 @@ to Station memory, receipts, configuration, or Git.
 
 The provider uses OpenRouter Chat Completions with native function calling. Its
 shell organ executes PowerShell in the requested Atlas workspace, returns
-bounded output, enforces a 20-minute maximum per command, and permits at most 24
-tool rounds per model turn. Operator cancellation terminates the active tool.
+bounded output, and enforces a 20-minute maximum per command. The provider
+defaults to 24 tool rounds, while the Atlas orchestrator explicitly requests 64
+through `ATLAS_ORCHESTRATOR_MAX_TURNS`. Callers may choose a smaller bound (the
+worker default is 12); every request is clamped to the provider safety ceiling
+of 256. Operator cancellation terminates the active tool.
+
+Atlas has two independent serialized execution lanes. The **mouth** owns live
+operator conversation and its own provider session. **Metabolism** owns startup,
+deferred, autonomy, and retry work in a separate session. Work remains FIFO
+inside each lane, but metabolism cannot head-of-line block speech. Operator
+ingress is selected before older background ingress, and claims, renewals, and
+terminal receipts preserve the selected lane as provenance.
+
+The direct adapter enforces caller policy rather than merely documenting it:
+`maxTurns` is honored, `disallowedTools` removes denied tools from the request,
+`permissionMode: plan` advertises no shell, and `canUseTool` gates every admitted
+shell call. Direct OpenRouter MCP servers are not supported and the provider
+declares that limitation through its capabilities object.
 
 Ox Alpha is the default OpenRouter model. Override it with
 `ATLAS_OPENROUTER_MODEL`. Reasoning defaults to `max` and can be set with

@@ -95,5 +95,37 @@ await checkAsync('success path unaffected by the bound', async () => {
   } finally { globalThis.fetch = origFetch; }
 });
 
+await checkAsync('disallowed shell is omitted from the OpenRouter request', async () => {
+  let requestBody;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    requestBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'policy held' } }] }), { status: 200 });
+  };
+  try {
+    const provider = createOpenRouterProvider({ env: { OPENROUTER_API_KEY: 'test-key', ATLAS_OPENROUTER_STREAM: '0' } });
+    for await (const _ of provider.query({ prompt: 'inspect only', options: { disallowedTools: ['shell'] } })) {}
+    assert.equal(requestBody.tools, undefined);
+  } finally { globalThis.fetch = origFetch; }
+});
+
+await checkAsync('canUseTool denial is returned to the model without executing shell', async () => {
+  let calls = 0;
+  let secondBody;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    if (calls === 1) return new Response(JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ id: 'denied_1', type: 'function', function: { name: 'shell', arguments: '{"command":"throw should-not-run"}' } }] } }] }), { status: 200 });
+    secondBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'denial observed' } }] }), { status: 200 });
+  };
+  try {
+    const provider = createOpenRouterProvider({ env: { OPENROUTER_API_KEY: 'test-key', ATLAS_OPENROUTER_STREAM: '0' } });
+    for await (const _ of provider.query({ prompt: 'attempt denied action', options: { canUseTool: async () => ({ behavior: 'deny', message: 'test policy' }) } })) {}
+    const toolResult = secondBody.messages.find(message => message.role === 'tool');
+    assert.match(toolResult.content, /tool denied: test policy/);
+  } finally { globalThis.fetch = origFetch; }
+});
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);
