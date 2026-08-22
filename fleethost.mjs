@@ -1493,6 +1493,11 @@ const fanResearchTool = tool(
               model: MODEL_HAIKU,
               ...fanOptions,
               permissionMode: 'bypassPermissions',
+            // Hard round-cap: DREAM-408 died at OpenRouter's 24-tool-round
+            // ceiling mid-reflection. disallowedTools removes verb classes;
+            // maxTurns bounds even read-only loops. 12 leaves 12 rounds of
+            // headroom below the provider limit.
+            maxTurns: 12,
               abortSignal: ac.signal,
             },
           });
