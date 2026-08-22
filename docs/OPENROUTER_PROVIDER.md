@@ -58,5 +58,9 @@ The provider card reports `active: openrouter`, the exact model, credential
 presence as a boolean, and the `chat-completions` API route. Remote errors are
 bounded before reaching the UI and never include the authorization header.
 
+A transport rejection before response admission is retried once. HTTP errors,
+operator aborts, and failures after response admission are terminal, so the
+recovery path cannot duplicate a completed model response.
+
 Closing Station destroys the only copy of an ephemerally supplied credential.
 Launching it again requires supplying the credential again.

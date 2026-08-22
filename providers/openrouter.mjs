@@ -33,7 +33,21 @@ function bounded(value, limit = MAX_TOOL_OUTPUT) {
 
 function safeError(error) {
   const status = error?.status ? `HTTP ${error.status}: ` : "";
-  return bounded(`${status}${error?.message || error || "OpenRouter request failed"}`, 1_200);
+  const cause = error?.cause?.code || error?.cause?.message;
+  const detail = cause ? ` (${cause})` : "";
+  return bounded(`${status}${error?.message || error || "OpenRouter request failed"}${detail}`, 1_200);
+}
+
+async function fetchBeforeResponse(url, init) {
+  let firstError;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return await fetch(url, init); }
+    catch (error) {
+      firstError ||= error;
+      if (attempt || init.signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
+    }
+  }
+  throw firstError;
 }
 
 function systemPrompt(options) {
@@ -106,7 +120,7 @@ async function request(messages, env, signal, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const response = await fetch(API_URL, {
+  const response = await fetchBeforeResponse(API_URL, {
     method: "POST",
     signal: requestSignal,
     headers: authHeaders(env),
@@ -128,7 +142,7 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  const response = await fetch(API_URL, {
+  const response = await fetchBeforeResponse(API_URL, {
     method: "POST",
     signal: requestSignal,
     headers: authHeaders(env),
