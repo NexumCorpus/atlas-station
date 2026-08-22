@@ -64,6 +64,14 @@ docs/Atlas-Capstone.pdf
 .gm/turn-state.json
 .atlas/*.log
 .atlas/*.done.json
+.atlas/tmp/
+.atlas/empire/
+.atlas/*restart*.ps1
+.atlas/*restart*.json
+.atlas/gen*-kill-receipt.txt
+.atlas/screen-*.png
+.atlas/screen-*.jpg
+.atlas/taps.ndjson
 .atlas/gm-content-crystal.txt
 .atlas/v1-readiness.json
 .atlas/activation-manifests/
