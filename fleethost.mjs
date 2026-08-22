@@ -4750,3 +4750,14 @@ try {
 try {
   setTimeout(() => { if (_notif) _notif.markRead('*', path.join(REPO, 'memory')); }, 10000);
 } catch (_) {}
+
+// Credential-expiry sentinel: surface expiring/expired provider keys once at boot.
+try {
+  const _keysMod = _require('./provider-keys.cjs');
+  for (const k of _keysMod.check()) {
+    const label = k.label || k.provider || 'unknown';
+    const detail = k.daysLeft != null ? ' - ' + k.daysLeft + ' days left' : '';
+    try { if (_notif) _notif.notify('Provider key [' + label + '] is ' + k.state + detail, 'key-expiry'); } catch (_) {}
+    send('notification', { text: 'Provider key [' + label + '] is ' + k.state + detail, type: 'key-expiry', read: false });
+  }
+} catch (_) {}
