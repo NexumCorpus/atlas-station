@@ -412,6 +412,10 @@ input:focus-visible{outline:none}
 #say:focus{border-color:rgba(157,107,255,.55);background:rgba(157,107,255,.05);
   box-shadow:0 0 0 1px rgba(157,107,255,.18),0 0 10px -4px rgba(157,107,255,.3),inset 0 1px 4px rgba(157,107,255,.05)}
 #say::placeholder{color:rgba(90,88,112,.6);opacity:1}
+#say-image-tray{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0}
+.say-chip{position:relative;display:inline-block;border:1px solid var(--border);border-radius:5px;overflow:hidden;line-height:0}
+.say-chip img{width:64px;height:48px;object-fit:cover;display:block}
+.say-chip-x{position:absolute;top:1px;right:1px;background:rgba(20,18,30,.85);color:var(--fg);font-size:10px;padding:0 4px;cursor:pointer;border-radius:3px}
 /* ── send button ──────────────────────────────── */
 #sendbtn:hover{background:rgba(157,107,255,.22);border-color:rgba(157,107,255,.5);color:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.2)}
 #sendbtn:active{transform:translateY(1px);background:rgba(157,107,255,.3)}
@@ -771,7 +775,8 @@ input:focus-visible{outline:none}
 
   <div class="bar boot-seq">
     <span class="to" id="barprefix">↳ ATLAS</span>
-    <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;"></textarea>
+    <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;">
+            <div id="say-image-tray" title="pasted images attach to your next message"></div></textarea>
     <button id="sendbtn" title="Send (Enter)" aria-label="Send message" disabled style="flex:none;font-family:inherit;font-size:11px;padding:5px 10px;background:rgba(157,107,255,.13);border:1px solid rgba(157,107,255,.3);border-radius:4px;color:rgba(157,107,255,.9);cursor:pointer;transition:all .15s;letter-spacing:.06em;line-height:1">↵</button>
     <span id="say-counter"></span>
     <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
@@ -2271,17 +2276,17 @@ if(m.type==="agent"){
     });
   }
 
-  function say(text){
-    thread.push({role:"user",text:text,ts:Date.now()});
+  function say(text, images){
+    thread.push({role:"user",text:text,images:images||null,ts:Date.now()});
     thread.push({role:"atlas",text:"",pending:true,activity:"thinking",lastTool:null,ts:Date.now()});
-    window.atlas.say(text);
+    window.atlas.say(text, images);
     renderThread();
   }
 
   // The single door for a UI-originated submission — composer Enter OR a clicked
   // command-packet option. @build/@read verbs spawn agents; everything else goes
   // to ATLAS. A clicked choice is indistinguishable from Daniel typing it.
-  function submitFromUI(text){
+  function submitFromUI(text, images){
     text = (text || '').trim();
     if (!text) return;
     var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
@@ -2293,7 +2298,7 @@ if(m.type==="agent"){
       renderThread();
       return;
     }
-    say(text);
+    say(text, images);
   }
 
   // One submission path for Enter and the send button. Keeping routing and
@@ -2302,8 +2307,11 @@ if(m.type==="agent"){
     var input = document.getElementById('say');
     if (!input) return false;
     var text = input.value.trim();
-    if (!text) return false;
-    submitFromUI(text);
+    var imgs = (window.__sayImages && window.__sayImages.length) ? window.__sayImages.slice(0, 4) : null;
+    if (!text && !imgs) return false;
+    if (!text) text = 'analyze this';
+    submitFromUI(text, imgs);
+    window.__sayImages = []; renderSayChips();
     input.value = '';
     input.style.height = 'auto';
     savePrefs({ draft: '' });
@@ -2316,7 +2324,7 @@ if(m.type==="agent"){
     var input = document.getElementById('say');
     var button = document.getElementById('sendbtn');
     if (!input || !button) return;
-    var ready = !!input.value.trim();
+    var ready = !!input.value.trim() || !!(window.__sayImages && window.__sayImages.length);
     button.disabled = !ready;
     button.setAttribute('aria-disabled', ready ? 'false' : 'true');
   }
@@ -2766,6 +2774,47 @@ if(m.type==="agent"){
     if (_savedDraft) { sayEl.value = _savedDraft; sayEl.dispatchEvent(new Event('input')); }
   }
 
+  // Paste-image analysis (spec 98f8861): images ride with the next send
+  (function initPasteImages(){
+    window.__sayImages = [];
+    var tray = document.getElementById('say-image-tray');
+    var MAXI = 4, MAXB = 4500000; // 4 images, ~4.5MB decoded each
+    window.renderSayChips = function(){
+      if (!tray) return;
+      if (!window.__sayImages.length) { tray.innerHTML=''; return; }
+      tray.innerHTML = window.__sayImages.map(function(im,i){
+        return '<span class="say-chip" data-i="'+i+'"><img src="'+im.durl+'" alt=""><a class="say-chip-x" data-x="'+i+'">\u00d7</a></span>';
+      }).join('');
+      tray.querySelectorAll('.say-chip-x').forEach(function(x){
+        x.addEventListener('click',function(ev){ ev.stopPropagation();
+          window.__sayImages.splice(parseInt(x.getAttribute('data-x'),10),1); renderSayChips(); });
+      });
+    };
+    function addFromClipboard(items){
+      var added = 0;
+      Array.prototype.forEach.call(items,function(it){
+        if (!it.type || it.type.indexOf('image/') !== 0) return;
+        if (window.__sayImages.length >= MAXI) return;
+        var blob = it.getAsFile(); if (!blob) return;
+        var fr = new FileReader();
+        fr.onload = function(){
+          if (String(fr.result).length > MAXB) {
+            thread.push({role:'system',text:'\u26a0 image too large (>4.5MB) \u2014 skipped',error:true,ts:Date.now()}); renderThread(); return; }
+          window.__sayImages.push({ durl: String(fr.result), mime: it.type });
+          renderSayChips(); updateComposerState();
+        };
+        fr.readAsDataURL(blob);
+      });
+    };
+    document.addEventListener('paste', function(e){
+      var target = e.target && e.target.id;
+      if (target !== 'say') return;
+      if (e.clipboardData && e.clipboardData.items && e.clipboardData.items.length) {
+        var hasImg = Array.prototype.some.call(e.clipboardData.items, function(i){ return i.type && i.type.indexOf('image/')===0; });
+        if (hasImg) { e.preventDefault(); addFromClipboard(e.clipboardData.items); }
+      }
+    });
+  })();
   $('say').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey && $('say').value.trim()) {
       e.preventDefault();

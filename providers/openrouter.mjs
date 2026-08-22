@@ -236,7 +236,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       }
       const sessionId = options.resume && sessions.has(options.resume) ? options.resume : `openrouter:${randomUUID()}`;
       const messages = sessions.get(sessionId) || [{ role: "system", content: systemPrompt(options) }];
-      messages.push({ role: "user", content: String(prompt || "") });
+      messages.push({ role: "user", content: Array.isArray(prompt) ? prompt : String(prompt || "") }); // arrays = multimodal blocks (paste-image spec 98f8861)
       sessions.set(sessionId, messages);
       yield { type: "system", subtype: "init", session_id: sessionId };
       options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter" });

@@ -172,8 +172,26 @@ ipcMain.on("reply", (_e, p) => {
 });
 
 ipcMain.on("say", (_e, p) => {
-  if (!fleet || !p || !p.text) return;
-  try { fleet.send({ t: "say", text: p.text }); } catch (_) {}
+  if (!fleet || !p || (!p.text && !(Array.isArray(p.images) && p.images.length))) return;
+  try {
+    let imagePaths;
+    if (Array.isArray(p.images) && p.images.length) {
+      // Paste-image spec 98f8861: persist dataURLs to disk, pass PATHS downstream
+      const mediaDir = path.join(__dirname, ".atlas", "say-inbox-media");
+      fs.mkdirSync(mediaDir, { recursive: true });
+      imagePaths = [];
+      for (const [i, durl] of p.images.slice(0, 4).entries()) {
+        const m = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/s.exec(String(durl || ""));
+        if (!m) continue;
+        const ext = m[1].split("/")[1].replace("jpeg", "jpg");
+        const file = path.join(mediaDir, `${Date.now()}-${i}.${ext}`);
+        fs.writeFileSync(file, Buffer.from(m[2], "base64"));
+        imagePaths.push(file);
+      }
+      if (!imagePaths.length) imagePaths = undefined;
+    }
+    fleet.send({ t: "say", text: p.text, images: imagePaths });
+  } catch (_) {}
 });
 
 ipcMain.on("set-autonomy", (_e, p) => {

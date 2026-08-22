@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -139,7 +139,7 @@ function appendIngress(dir, text, source = 'journal', options = {}) {
     const sameId = prior.find(r => r.kind === 'ingress' && (r.eventId === eventId || r.directiveId === eventId));
     if (sameId && (sameId.source !== source || sameId.contentHash !== bytesHash(content))) { quarantine(dir, [{ reason: 'event-id-conflict', eventId, existingRecordHash: sameId.recordHash, source, contentHash: bytesHash(content) }]); throw new Error('event id content conflict'); }
     if (sameId) return sameId;
-    return appendUnlocked(dir, { kind: 'ingress', eventId, directiveId: eventId, idempotencyKey: key, contentHash: bytesHash(content), source, text: content, createdAt: new Date().toISOString() });
+    return appendUnlocked(dir, { kind: 'ingress', eventId, directiveId: eventId, idempotencyKey: key, contentHash: bytesHash(content), source, text: content, ...(options.attachments && Array.isArray(options.attachments) && options.attachments.length ? { attachments: options.attachments } : {}), createdAt: new Date().toISOString() });
   });
 }
 

@@ -208,14 +208,14 @@ let _completedBuildCount = 0; // triggers improvement cycle every N builds
 // Serialize prompts from IPC, the bridge, and autonomy so each turn resumes
 // the thread produced by the previous one.
 let _orchQueue = Promise.resolve();
-function enqueueOrchestrate(userText, source = 'user', executionHooks = {}) {
+function enqueueOrchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
   const turn = _orchQueue.then(async () => {
     // Persist Daniel's words at the exact execution seam. Queueing elsewhere
     // would scramble dialogue order when several UI messages arrive together.
     if (source === 'user' && _sessionLog) {
       try { _sessionLog.appendTurn(String(userText || ''), path.join(REPO, 'memory'), null, 'user'); } catch {}
     }
-    return orchestrate(userText, source, executionHooks);
+    return orchestrate(userText, source, executionHooks, attachments);
   });
   _orchQueue = turn.catch(() => {});
   return turn;
@@ -3631,7 +3631,7 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
   }
 }
 
-async function orchestrate(userText, source = 'user', executionHooks = {}) {
+async function orchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
   let enriched, _ctxStats = null;
   if (_memcontext) {
     const _injectResult = _memcontext.inject(userText, { tier: 'full', returnStats: true });
@@ -3734,9 +3734,31 @@ async function orchestrate(userText, source = 'user', executionHooks = {}) {
     task: String(userText || "").slice(0, 220),
     startedAt: new Date().toISOString(),
   });
+    // Paste-image spec 98f8861: operator-supplied images ride as OpenAI-style
+    // content blocks on the own-model route; other providers keep text-only.
+    let seatPrompt = enriched;
+    if (Array.isArray(attachments) && attachments.length) {
+      const blocks = [];
+      for (const a of attachments.slice(0, 4)) {
+        try {
+          const p = typeof a === 'string' ? a : a.path;
+          if (!p || !fs.existsSync(p)) continue;
+          const ext = path.extname(p).slice(1).toLowerCase();
+          const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[ext];
+          if (!mime) continue;
+          const b64 = fs.readFileSync(p).toString('base64');
+          if (b64.length > 6000000) continue; // ~4.5MB decoded cap per image
+          blocks.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } });
+        } catch {}
+      }
+      if (blocks.length) {
+        blocks.unshift({ type: 'text', text: String(enriched || '') });
+        seatPrompt = blocks;
+      }
+    }
   try {
     for await (const m of query({
-      prompt: enriched,
+      prompt: seatPrompt,
       options: {
         resume: resumedSession || undefined,
         model: MODEL,
@@ -4160,6 +4182,7 @@ async function pollSayInbox() {
   }
   try {
     if (autonomyEnabled) stopAutonomy('operator prompt preempts the window'); // a direct prompt takes priority
+    const _attachments = (claim && claim.attachments) || null;
     await enqueueOrchestrate(txt, 'user', {
       onProviderSpawn(meta) {
         attempt.workerPid = meta.pid;
@@ -4168,7 +4191,7 @@ async function pollSayInbox() {
         attempt.providerModel = meta.providerModel;
         renew('worker-bound');
       },
-    });
+    }, _attachments);
     const a = agents.get('ATLAS') || {};
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
     const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
@@ -4228,7 +4251,7 @@ process.on("message", (m) => {
   if (m.t === "say") {
     if (autonomyEnabled) stopAutonomy("you're back — window ended early");
     try {
-      const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say');
+      const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say', { ...(Array.isArray(m.images) && m.images.length ? { attachments: m.images.map(p => ({ path: String(p) })) } : {}) });
       send('ingress', { state: 'journaled', directiveId: record.directiveId, seq: record.seq, timeline: 'journal' });
     } catch (error) { send('ingress', { state: 'failed', reason: error.message }); }
     return;
