@@ -39,11 +39,16 @@ Atlas does not read or copy OAuth material; the installed Codex CLI may use its
 own existing login state. Facts that matter must be re-read or verified against
 the source bytes.
 
-## Safety defaults
+## Execution authority
 
-- Top-level ATLAS turns are `read-only` by default.
-- Build turns run in their existing isolated worktree with `workspace-write`.
-- No provider process receives `danger-full-access` automatically.
+- A normal Station launch sets `ATLAS_CODEX_UNRESTRICTED=1`, so the Atlas
+  organism can act on its local workspace instead of silently degrading to a
+  read-only diagnostic shell.
+- Set `ATLAS_CODEX_UNRESTRICTED=0` explicitly for a diagnostic session. In that
+  mode, top-level Atlas defaults to `read-only` and build routes default to
+  `workspace-write` in their isolated worktrees.
+- Tool admission and the operator-authorized task scope remain enforced even
+  when the local Codex sandbox is unrestricted.
 - User MCP/plugin configuration is ignored by default, preventing unrelated or
   unauthenticated connectors from affecting a fleet run. Set
   `ATLAS_CODEX_USE_USER_CONFIG=1` only when those connectors are intentionally
@@ -53,7 +58,8 @@ the source bytes.
 
 | Variable | Meaning |
 |---|---|
-| `ATLAS_PROVIDER` | `codex-cli` (default) or legacy `claude-sdk` |
+| `ATLAS_PROVIDER` | `codex-cli` (default), `openrouter`, or legacy `claude-sdk` |
+| `ATLAS_CODEX_UNRESTRICTED` | Station defaults to `1`; set `0` for provider sandbox defaults |
 | `ATLAS_CODEX_BIN` | Explicit Codex executable path; otherwise discover the Desktop CLI |
 | `ATLAS_CODEX_MODEL` | Global emergency model pin; overrides every task route |
 | `ATLAS_CODEX_DEEP_MODEL` | Implementation, orchestration, self-improvement, reflection, and research synthesis; default `gpt-5.6-terra` |
