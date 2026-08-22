@@ -4175,7 +4175,7 @@ async function pollSayInbox() {
   }
   finish();
 }
-setInterval(pollSayInbox, 2500);
+setInterval(pollSayInbox, 700); // reflex poll: inbound latency 2.5s -> 0.7s (Daniel directive 2026-08-22)
 let _draining = false;
 async function gracefulDrain(reason = 'shutdown') {
   if (_draining) return; _draining = true;
