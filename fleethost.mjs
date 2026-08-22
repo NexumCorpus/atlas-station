@@ -118,6 +118,7 @@ let _deferred = null;
 try { _deferred = _require('./deferred.cjs'); } catch { _deferred = null; }
 let _notif = null;
 try { _notif = _require('./notifications.cjs'); } catch { _notif = null; }
+let _dialect = null; try { _dialect = _require('./dialect.cjs'); } catch { _dialect = null; }
 let _selfloop = null;
 try { _selfloop = _require('./selfloop.cjs'); } catch { _selfloop = null; }
 let _memgraph = null;
@@ -449,16 +450,17 @@ function _wrapBuildBrief(task) {
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
-async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId) {
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId, dialectName) {
   _maxCounter++; const id = (mode === "build" ? "B-" : "A-") + _maxCounter;
   sessionStats.agentCount++;
   const agentModel = model || MODEL_HAIKU; // workers default to Haiku (Sonnet head dispatches Haiku); ATLAS may override per-task
   const atlasMode = mode === "build" ? "build" : "read";
+  const dialectSet = dialectName && _dialect ? _dialect.toolSet(dialectName) : null;
   const atlasPurpose = mode === "build" ? "implementation" : "analysis";
   const routing = codexRouting({ atlasMode, atlasPurpose }, agentModel);
   const routedModel = routing.atlasAssignedModel || agentModel;
   let cwd = REPO, branch = null;
-  set(id, { state: "working", task, mode: atlasMode, parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: routedModel });
+  set(id, { state: "working", task, mode: dialectSet ? ("variant:" + dialectSet.name) : atlasMode, parent: "ATLAS", cwd, branch: null, lastTool: null, cost: null, summary: "", reply: "", turns: 0, session: null, timeoutMs: agentTimeout, timeoutHandle: null, model: routedModel });
   let enrichedTask = task;
   if (projectId && _projects) {
     try {
@@ -484,7 +486,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
-  const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...routing, ...(mode === "build" ? { permissionMode: "bypassPermissions" } : { canUseTool: readGate }) };
+  const options = { cwd, model: agentModel, systemPrompt: "claude_code", ...routing, ...(mode === "build" ? { permissionMode: "bypassPermissions" } : dialectSet ? { canUseTool: _dialect.makeGate(dialectSet) } : { canUseTool: readGate }) };
   let final = "";
   const ac = new AbortController();
   abortControllers.set(id, ac);
@@ -505,7 +507,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
         }
       } catch {}
     }
-    final = await consume(id, query({ prompt: resonantTask, options: { ...options, abortSignal: ac.signal } }), build, branch);
+    final = await consume(id, query({ prompt: resonantTask, options: dialectSet ? { ...options, mcpServers: { fleet: variantServer(dialectSet) }, abortSignal: ac.signal } : { ...options, abortSignal: ac.signal } }), build, branch);
   } catch (e) {
     if (e?.name === "AbortError" || e?.code === "ABORT_ERR") {
       set(id, { state: "interrupted", summary: "cancelled by user" });
@@ -3353,7 +3355,47 @@ const predictionAccuracyTool = tool(
   }
 );
 
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool] });
+// Dialect substrate: a filtered MCP server containing ONLY the verbs a
+// variant's dialect allows. Enforcement is structural - the blocked
+// tools do not exist in the variant's tool universe.
+const DIALECT_TOOL_VARS = {
+  recall_memory: recallMemoryTool,
+  journal_write: journalWriteTool,
+  capture_insight: captureInsightTool,
+  load_proposals: loadProposalsTool,
+  build_outcomes: buildOutcomesTool,
+  notify_self: notifySelfTool,
+  memory_health: memoryHealthTool,
+  crystallize: crystallizeTool,
+};
+function variantServer(set) {
+  const names = [...set.allowed];
+  if (_dialect) _dialect.assertCompliance(set, names);
+  const tools = names.map((n) => {
+    const t = DIALECT_TOOL_VARS[n];
+    if (!t) throw new Error('no tool var for dialect verb: ' + n);
+    return t;
+  });
+  return createSdkMcpServer({ name: 'fleet-dialect-' + set.name, version: '1.0.0', tools });
+}
+const runVariantTool = tool(
+  "run_variant",
+  "Execute a task against a population variant's dialect substrate (e.g. variant-B 'memory-only': context/memory tools only, native tools denied). Returns the variant's reply. Used for formal behavioral-suite measurement.",
+  {
+    task: z.string().describe("The task for the variant to perform"),
+    dialect: z.string().optional().describe("Dialect name (default 'memory-only')"),
+  },
+  async (args) => {
+    if (!_dialect) return { content: [{ type: 'text', text: 'dialect module not available' }] };
+    try {
+      const reply = await runSubagent(String(args.task || ''), 'variant:' + (args.dialect || 'memory-only'), DEFAULT_TIMEOUT_MS, MODEL_HAIKU, null);
+      return { content: [{ type: 'text', text: reply }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: 'run_variant error: ' + e.message }] };
+    }
+  }
+);
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool] });
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents — only you spawn and manage them.
 
