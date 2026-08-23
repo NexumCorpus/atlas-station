@@ -48,6 +48,16 @@ function safeError(error) {
   return bounded(`${status}${error?.message || error || "OpenRouter request failed"}${detail}`, 1_200);
 }
 
+export function decodePowerShellResponseEnvelope(stdout) {
+  const envelope = JSON.parse(stdout);
+  return {
+    ...envelope,
+    body: envelope.bodyB64
+      ? Buffer.from(String(envelope.bodyB64), "base64").toString("utf8")
+      : String(envelope.body || ""),
+  };
+}
+
 async function fetchBeforeResponse(url, init, env) {
   const transport = String(env.ATLAS_OPENROUTER_TRANSPORT || "global").toLowerCase();
   const requestFetch = transport === "native"
@@ -57,15 +67,7 @@ async function fetchBeforeResponse(url, init, env) {
     : transport === "isolated"
       ? (target, requestInit) => undiciFetch(target, { ...requestInit, dispatcher: isolatedDispatcher })
       : globalThis.fetch;
-  let firstError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { return await requestFetch(url, init); }
-    catch (error) {
-      firstError ||= error;
-      if (attempt || init.signal?.aborted || error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
-    }
-  }
-  throw firstError;
+  return requestFetch(url, init);
 }
 
 function powershellFetch(url, init = {}) {
@@ -93,12 +95,14 @@ function powershellFetch(url, init = {}) {
         return;
       }
       try {
-        const envelope = JSON.parse(stdout);
-        const responseBody = String(envelope.body || "");
+        const envelope = decodePowerShellResponseEnvelope(stdout);
+        const responseBody = envelope.body;
         resolve({
           ok: envelope.status >= 200 && envelope.status < 300,
           status: Number(envelope.status) || 0,
           statusText: String(envelope.statusText || ""),
+          admitted: envelope.admitted === true,
+          transportError: envelope.transportError ? bounded(envelope.transportError, 1_200) : null,
           body: Readable.from([responseBody]),
           async json() { return responseBody ? JSON.parse(responseBody) : {}; },
           async text() { return responseBody; },
@@ -107,7 +111,7 @@ function powershellFetch(url, init = {}) {
         reject(new Error(`PowerShell transport returned invalid JSON: ${error.message}`));
       }
     });
-    child.stdin.end(JSON.stringify({ url, headers: init.headers || {}, body: String(init.body || "") }));
+    child.stdin.end(JSON.stringify({ url, headers: init.headers || {}, body: String(init.body || ""), maxResponseBytes: 16_777_216 }));
   });
 }
 
@@ -159,10 +163,64 @@ function toolEnvironment(env) {
   return clean;
 }
 
-function runShell(input, cwd, env, signal) {
+export function boundedToolTimeout(input, ceilingMs = 1_200_000) {
+  const requested = Math.max(1_000, Number(input?.timeout_ms) || 120_000);
+  const ceiling = Math.max(1_000, Math.min(1_200_000, Number(ceilingMs) || 1_200_000));
+  return Math.min(requested, ceiling);
+}
+
+function validateToolInput(schema, input, at = 'input') {
+  if (!schema) return null;
+  if (schema.type === 'object') {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return `${at} must be an object`;
+    const properties = schema.properties || {};
+    for (const key of schema.required || []) if (!(key in input)) return `${at}.${key} is required`;
+    if (schema.additionalProperties === false) for (const key of Object.keys(input)) if (!(key in properties)) return `${at}.${key} is not allowed`;
+    for (const [key, value] of Object.entries(input)) {
+      const error = validateToolInput(properties[key], value, `${at}.${key}`);
+      if (error) return error;
+    }
+  } else if (schema.type === 'array') {
+    if (!Array.isArray(input)) return `${at} must be an array`;
+    if (schema.minItems != null && input.length < schema.minItems) return `${at} needs at least ${schema.minItems} items`;
+    if (schema.maxItems != null && input.length > schema.maxItems) return `${at} allows at most ${schema.maxItems} items`;
+    for (let i = 0; i < input.length; i++) {
+      const error = validateToolInput(schema.items, input[i], `${at}[${i}]`);
+      if (error) return error;
+    }
+  } else if (schema.type === 'string') {
+    if (typeof input !== 'string') return `${at} must be a string`;
+    if (schema.minLength != null && input.length < schema.minLength) return `${at} is too short`;
+    if (schema.maxLength != null && input.length > schema.maxLength) return `${at} is too long`;
+    if (schema.enum && !schema.enum.includes(input)) return `${at} is not an allowed value`;
+  } else if (schema.type === 'number' || schema.type === 'integer') {
+    if (typeof input !== 'number' || !Number.isFinite(input) || (schema.type === 'integer' && !Number.isInteger(input))) return `${at} must be a ${schema.type}`;
+    if (schema.minimum != null && input < schema.minimum) return `${at} is below ${schema.minimum}`;
+    if (schema.maximum != null && input > schema.maximum) return `${at} is above ${schema.maximum}`;
+  }
+  return null;
+}
+
+async function timeBoundTool(run, ceilingMs, parentSignal) {
+  const timeout = Math.max(1_000, Math.min(1_200_000, Number(ceilingMs) || 1_200_000));
+  const controller = new AbortController();
+  const signal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
+  let timer;
+  try {
+    if (signal.aborted) return "cancelled";
+    return await Promise.race([
+      Promise.resolve().then(() => run(signal)),
+      new Promise((resolve) => { timer = setTimeout(() => { controller.abort(); resolve(`timeout after ${timeout}ms`); }, timeout); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function runShell(input, cwd, env, signal, ceilingMs) {
   return new Promise((resolve) => {
     const command = String(input?.command || "");
-    const timeout = Math.min(1_200_000, Math.max(1_000, Number(input?.timeout_ms) || 120_000));
+    const timeout = boundedToolTimeout(input, ceilingMs);
     const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
       cwd, env: toolEnvironment(env), windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     });
@@ -224,24 +282,40 @@ function requestMetrics(messages, env, stream, tools) {
   };
 }
 
+function waitForRetry(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(false);
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(true); }, ms);
+    const abort = () => { clearTimeout(timer); resolve(false); };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
 async function request(messages, env, signal, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const requestJson = JSON.stringify(requestBody(messages, env, false, tools));
-  const response = await fetchBeforeResponse(API_URL, {
-    method: "POST",
-    signal: requestSignal,
-    headers: authHeaders(env),
-    body: requestJson,
-  }, env);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const configuredRetries = Number(env.ATLAS_OPENROUTER_HTTP_RETRIES);
+  const retries = Math.max(0, Math.min(3, Number.isFinite(configuredRetries) ? configuredRetries : 2));
+  const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
+  const transientStatuses = new Set([429]);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetchBeforeResponse(API_URL, {
+      method: "POST",
+      signal: requestSignal,
+      headers: authHeaders(env),
+      body: requestJson,
+    }, env);
+    if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return payload;
+    if (transientStatuses.has(response.status) && attempt < retries && await waitForRetry(retryBaseMs * (attempt + 1), requestSignal)) continue;
     const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
     error.status = response.status;
     throw error;
   }
-  return payload;
+  return {};
 }
 
 // Streaming variant: parses OpenRouter SSE chunks, forwards text / reasoning /
@@ -258,6 +332,7 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
     headers: authHeaders(env),
     body: requestJson,
   }, env);
+  if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({}));
     const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
@@ -355,7 +430,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
   const streamingEnabled = String(env.ATLAS_OPENROUTER_STREAM ?? "1") !== "0";
   return {
     name: "openrouter",
-    capabilities: Object.freeze({ maxTurns: true, disallowedTools: true, canUseTool: true, permissionMode: "caller-declared", mcpServers: false }),
+    capabilities: Object.freeze({ maxTurns: true, disallowedTools: true, canUseTool: true, permissionMode: "caller-declared", mcpServers: false, nativeTools: true }),
     assign() { return { purpose: "organism", route: "openrouter", model, source: "openrouter-directive" }; },
     probe() {
       return {
@@ -371,15 +446,28 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
         yield { type: "result", subtype: "error", result: "OPENROUTER_API_KEY is not configured", total_cost_usd: null };
         return;
       }
-      const sessionId = options.resume && sessions.has(options.resume) ? options.resume : `openrouter:${randomUUID()}`;
+      const statelessSession = options.atlasStatelessSession === true;
+      const sessionId = !statelessSession && options.resume && sessions.has(options.resume)
+        ? options.resume
+        : `openrouter:${randomUUID()}`;
       const messages = sessions.get(sessionId) || [{ role: "system", content: systemPrompt(options) }];
       const disallowed = new Set((options.disallowedTools || []).map((name) => String(name).toLowerCase()));
-      const shellAdvertised = !disallowed.has('shell') && !disallowed.has('bash') && options.permissionMode !== 'plan';
-      const availableTools = shellAdvertised ? TOOLS : [];
+      const toolsAdvertised = options.permissionMode !== 'plan';
+      const shellAdvertised = toolsAdvertised && !disallowed.has('shell') && !disallowed.has('bash');
+      const nativeTools = Array.isArray(options.openRouterTools)
+        ? options.openRouterTools.filter((item) => item?.definition?.function?.name && typeof item.execute === 'function')
+        : [];
+      const nativeByName = new Map(nativeTools.map((item) => [item.definition.function.name, item]));
+      const availableTools = [
+        ...(shellAdvertised ? TOOLS : []),
+        ...(toolsAdvertised ? nativeTools : [])
+          .filter((item) => !disallowed.has(item.definition.function.name.toLowerCase()))
+          .map((item) => item.definition),
+      ];
       messages.push({ role: "user", content: Array.isArray(prompt) ? prompt : String(prompt || "") }); // arrays = multimodal blocks (paste-image spec 98f8861)
-      sessions.set(sessionId, messages);
+      if (!statelessSession) sessions.set(sessionId, messages);
       yield { type: "system", subtype: "init", session_id: sessionId };
-      options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter" });
+      options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter", statelessSession, toolCount: availableTools.length });
       try {
         const configuredDefault = Number(env.ATLAS_OPENROUTER_MAX_ROUNDS) || DEFAULT_ROUNDS;
         const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || configuredDefault));
@@ -403,7 +491,22 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             const payload = await request(messages, env, options.abortSignal, availableTools);
             message = payload?.choices?.[0]?.message;
             usage = payload?.usage || null;
-            if (!message) throw new Error("OpenRouter returned no assistant message");
+            if (!message) {
+              const diagnostic = {
+                keys: Object.keys(payload || {}).slice(0, 12),
+                choices: Array.isArray(payload?.choices) ? payload.choices.length : null,
+                error: bounded(payload?.error?.message || payload?.error?.code || "", 300),
+                provider: bounded(payload?.provider || "", 120),
+              };
+              const metrics = requestMetrics(messages, env, streamingEnabled, availableTools);
+              yield {
+                type: "result",
+                subtype: "error",
+                result: `OpenRouter returned no assistant message ${JSON.stringify(diagnostic)} [transport=${metrics.transport} stream=${Number(metrics.stream)} messages=${metrics.messages} requestBytes=${metrics.requestBytes} tools=${metrics.tools}]`,
+                total_cost_usd: null,
+              };
+              return;
+            }
           }
           messages.push({ role: "assistant", content: message.content || null, tool_calls: message.tool_calls || undefined });
           if (message.content) yield { type: "assistant", message: { content: [{ type: "text", text: String(message.content) }] } };
@@ -412,25 +515,62 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             yield { type: "result", subtype: "success", result: String(message.content || ""), total_cost_usd: usage?.cost ?? 0, usage: usage || null };
             return;
           }
-          for (const call of calls) {
+          const prepared = calls.map((call) => {
             let input = {};
-            try { input = JSON.parse(call.function?.arguments || "{}"); } catch {}
-            yield { type: "assistant", message: { content: [{ type: "tool_use", name: call.function?.name || "shell", input }] } };
-            let output;
-            if (call.function?.name !== "shell") output = `unsupported tool: ${call.function?.name}`;
-            else if (!shellAdvertised) output = "tool denied by provider capability policy";
-            else {
+            let parseError = null;
+            try { input = JSON.parse(call.function?.arguments || "{}"); } catch (error) { parseError = `invalid JSON: ${error.message}`; }
+            return { call, input, parseError, toolName: call.function?.name || 'shell' };
+          });
+          for (const item of prepared) yield { type: "assistant", message: { content: [{ type: "tool_use", name: item.toolName, input: item.input }] } };
+          const completed = [];
+          let serialToolTail = Promise.resolve();
+          const outputs = await Promise.all(prepared.map(({ call, input, parseError, toolName }, index) => {
+            const nativeTool = nativeByName.get(toolName);
+            const runPrepared = async () => {
+            const startedAt = Date.now();
+            try {
+              if (parseError) return `tool denied: ${parseError}`;
+              const schema = nativeTool?.definition?.function?.parameters || (toolName === 'shell' ? TOOLS[0].function.parameters : null);
+              const validationError = validateToolInput(schema, input);
+              if (validationError) return `tool denied: ${validationError}`;
               let admittedInput = input;
               if (typeof options.canUseTool === 'function') {
-                const verdict = await options.canUseTool('shell', input, { provider: 'openrouter', sessionId });
-                if (!verdict || verdict.behavior !== 'allow') {
-                  output = `tool denied: ${verdict?.message || 'caller policy'}`;
-                } else if (verdict.updatedInput && typeof verdict.updatedInput === 'object') admittedInput = verdict.updatedInput;
+                const verdict = await options.canUseTool(toolName, input, { provider: 'openrouter', sessionId });
+                if (!verdict || verdict.behavior !== 'allow') return `tool denied: ${verdict?.message || 'caller policy'}`;
+                if (verdict.updatedInput && typeof verdict.updatedInput === 'object') admittedInput = verdict.updatedInput;
               }
-              if (output == null) output = await runShell(admittedInput, options.cwd || env.ATLAS_REPO || process.cwd(), env, options.abortSignal);
+              if (nativeTool) {
+                try {
+                  const nativeTimeout = Math.max(1_000, Math.min(1_200_000, Number(options.atlasToolTimeoutMs) || 1_200_000));
+                  const deadlineAt = Date.now() + nativeTimeout;
+                  return bounded(await timeBoundTool(
+                    signal => nativeTool.execute(admittedInput, { signal, sessionId, deadlineAt }),
+                    nativeTimeout,
+                    options.abortSignal,
+                  ), MAX_TOOL_OUTPUT);
+                } catch (error) {
+                  return `tool error: ${safeError(error)}`;
+                }
+              }
+              if (toolName !== 'shell') return `unsupported tool: ${toolName}`;
+              if (!shellAdvertised) return "tool denied by provider capability policy";
+              return runShell(admittedInput, options.cwd || env.ATLAS_REPO || process.cwd(), env, options.abortSignal, options.atlasToolTimeoutMs);
+            } finally {
+              completed.push({ index, name: toolName, durationMs: Date.now() - startedAt });
             }
-            messages.push({ role: "tool", tool_call_id: call.id, content: output });
-          }
+            };
+            if (nativeTool?.parallelSafe === true) return runPrepared();
+            const scheduled = serialToolTail.then(runPrepared, runPrepared);
+            serialToolTail = scheduled.then(() => undefined, () => undefined);
+            return scheduled;
+          }));
+          for (let i = 0; i < prepared.length; i++) messages.push({ role: "tool", tool_call_id: prepared[i].call.id, content: outputs[i] });
+          options.onToolBatch?.({
+            sessionId,
+            emittedOrder: prepared.map((item, index) => ({ index, name: item.toolName })),
+            completionOrder: completed,
+            receiptOrder: prepared.map((item, index) => ({ index, name: item.toolName })),
+          });
         }
         // Loop exited by round-cap => exhaustion. Classified distinctly so the
         // station can one-shot-retry the run class (matches SDK error_max_turns).

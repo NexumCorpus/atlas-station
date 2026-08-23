@@ -34,6 +34,7 @@ verify*.cjs
 .atlas/sidecar-lease-fence-error.ndjson
 .atlas/supervisor-registry.ndjson
 .atlas/ingress*.ndjson
+.atlas/provider-tool-batches.ndjson
 .atlas/ingress-migration-anchor.json
 .atlas/ingress.lock
 orch_test.mjs

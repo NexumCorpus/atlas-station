@@ -40,22 +40,70 @@ defaults to 24 tool rounds. The conversational mouth requests 6 through
 `ATLAS_ORCHESTRATOR_MAX_TURNS`; and workers default to 12. Every request is
 clamped to the provider safety ceiling of 256. The mouth also has a 45-second
 wall-clock fuse, configurable with `ATLAS_MOUTH_TIMEOUT_MS` from 5 through 120
-seconds. If either mouth bound is exhausted, it releases speech with a bounded
+seconds. OpenRouter shell calls made by the mouth have a separate 15-second
+ceiling, preserving time for the model to interpret the result and speak; the
+same work can continue with the wider metabolism budget after a bounded handoff.
+If either mouth bound is exhausted, it releases speech with a bounded
 acknowledgement and queues exactly one continuation on metabolism. Operator
 cancellation terminates the active tool.
 
 Atlas has two independent serialized execution lanes. The **mouth** owns live
 operator conversation and its own provider session. **Metabolism** owns startup,
 deferred, autonomy, and retry work in a separate session. Work remains FIFO
-inside each lane, but metabolism cannot head-of-line block speech. Operator
-ingress is selected before older background ingress, and claims, renewals, and
+inside each lane, but metabolism cannot head-of-line block speech. Deep-context
+swarm readers receive the
+already hashed corpus directly instead of passing it through the ordinary 6K
+memory envelope; their fleet receipts bind each worker to the corpus root.
+Operator ingress is selected before older background ingress, and claims, renewals, and
 terminal receipts preserve the selected lane as provenance.
+
+OpenRouter mouth calls are intentionally provider-stateless across operator
+turns. Context Mycelium supplies the bounded hot context and authenticated
+recovery root on every turn; retaining those enriched prompts again in the
+provider session would recursively grow the request until ordinary dialogue
+timed out. Tool-call rounds within one turn still share their local message
+history. Metabolism retains its resumable session for long-running work.
 
 The direct adapter enforces caller policy rather than merely documenting it:
 `maxTurns` is honored, `disallowedTools` removes denied tools from the request,
-`permissionMode: plan` advertises no shell, and `canUseTool` gates every admitted
-shell call. Direct OpenRouter MCP servers are not supported and the provider
-declares that limitation through its capabilities object.
+`permissionMode: plan` advertises no tools, and `canUseTool` gates shell and
+native calls. Function arguments are validated against their schemas at runtime.
+Parallel calls execute concurrently and their tool receipts retain model order.
+Native execution shares the caller's timeout and abort signal. Direct OpenRouter
+MCP servers are not supported and the provider declares that limitation through
+its capabilities object.
+
+OpenRouter cannot consume the in-process Claude MCP server, so Station bridges a
+small native organ set directly through OpenRouter function calling:
+`spawn_agent`, `check_fleet`, and `deep_context_swarm`. Spawn calls return a
+visible fleet id immediately; workers run as the same configured Ox Alpha model,
+and build workers retain isolated-worktree behavior.
+
+`deep_context_swarm` is the explicit large-context path. It deterministically
+packs allowlisted repository text under character and UTF-8 byte ceilings. Each
+byte is charged as one conservative token, a tokenizer-independent upper bound,
+reserving at least 248,000 tokens of the
+supplied 1,048,576-token window for trusted instructions, reasoning, tool calls,
+and output. It excludes case variants of `.env`, credential and private-key
+files, runtime memory, `.git`, `.gm`, `.atlas`, dependencies, generated output,
+lock files, binary content, content containing credential signatures, and
+oversized files before allocation. Directory entries and admitted files are
+bounded. Directory enumeration is incremental; rejected-file reads have byte and
+wall-time ceilings; packing stops once saturated instead of hashing the repository tail. Every launch
+returns the corpus and manifest hashes, included/omitted counts, byte/character/
+token measurements, worker ids, angles, model, and packing time. The exact user
+payload is hash-verified at worker entry; mission and angle occupy the trusted
+system role, while repository contents remain explicitly untrusted data. Deep
+readers receive no shell tool: the authenticated corpus is their complete evidence
+surface, eliminating a contradictory read gate and preventing repository text from
+acquiring tool authority.
+
+One through eight distinct read workers can examine the same corpus concurrently.
+Atomic reservations limit the organism to eight active deep readers and 8,000,000 aggregate
+context characters, reducing the per-worker corpus when necessary or returning a
+typed rejection. Identical active swarms are rejected. Retry records retain the
+authenticated execution receipt, and `check_fleet` exposes bounded cursor pages
+rather than serializing the entire historical fleet.
 
 Ox Alpha is the default OpenRouter model. Override it with
 `ATLAS_OPENROUTER_MODEL`. Reasoning defaults to `max` and can be set with
@@ -70,15 +118,19 @@ The provider card reports `active: openrouter`, the exact model, credential
 presence as a boolean, and the `chat-completions` API route. Remote errors are
 bounded before reaching the UI and never include the authorization header.
 
-A transport rejection before response admission is retried once. HTTP errors,
-operator aborts, and failures after response admission are terminal, so the
-recovery path cannot duplicate a completed model response.
+A transport rejection is terminal because process death can hide whether remote
+admission occurred. Operator aborts, failures after response admission, and HTTP
+errors other than an explicit 429 are also terminal. Non-streaming 429 responses
+have two abort-aware admission retries at three and six seconds by default.
+`ATLAS_OPENROUTER_HTTP_RETRIES` bounds attempts from zero
+through three, and `ATLAS_OPENROUTER_RETRY_BASE_MS` bounds the base delay.
 
 `ATLAS_OPENROUTER_TRANSPORT=powershell` sends the request through Windows
 `HttpClient`, avoiding the supervised sidecar's unreliable Node socket path. The
 credential crosses only the helper's standard input; it is never placed on the
-command line or written by the transport. `isolated`, `native`, and the default
-process-global fetch remain available as diagnostic alternatives.
+command line or written by the transport. The helper streams response bytes into
+a 16 MiB bounded buffer before Base64 framing them for Node. `isolated`, `native`,
+and the default process-global fetch remain available as diagnostic alternatives.
 
 The mouth carries a 2,500-character hot context selected by Context Mycelium.
 Anything omitted is not summarized away: it is content-addressed, Reed-Solomon
