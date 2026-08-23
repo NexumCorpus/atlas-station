@@ -292,7 +292,7 @@ function waitForRetry(ms, signal) {
 }
 
 async function request(messages, env, signal, tools) {
-  const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
+  const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 1_200_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const requestJson = JSON.stringify(requestBody(messages, env, false, tools));
@@ -322,7 +322,7 @@ async function request(messages, env, signal, tools) {
 // tool_call deltas to onDelta as they arrive, and resolves with the assembled
 // message + usage. Handles both delta.reasoning and delta.reasoning_content.
 async function requestStreaming(messages, env, signal, onDelta, tools) {
-  const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 300_000));
+  const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 1_200_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const requestJson = JSON.stringify(requestBody(messages, env, true, tools));

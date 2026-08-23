@@ -38,3 +38,9 @@ Goal (G): leave Atlas operational, pushed, and honestly sealed after adding boun
 What drifted / what went wrong: the release gate required browser-hash witnesses, but the installed runner lacked its browser plugin; Chrome witnesses could not satisfy the narrower event classifier, and upgrading only the runner briefly exposed a host-plugin ABI mismatch.
 Fix / resolution: checkpointed the already-green Atlas commit and live process, installed the matching official GM skill and runner pair, then re-witnessed every touched file through the required browser transport and bound the completed independent review to the exact HEAD.
 Generalizes to: treat verifier binaries, plugins, and their ABI as one versioned apparatus; upgrade the matched set before interpreting missing witness events as product defects.
+
+## 2026-08-23 -- operator pulse and durable lease are different clocks
+Goal (G): keep Atlas responsive and truthful through long mouth and metabolism work
+What drifted / what went wrong: the UI used journal-backed claim renewal as its progress signal, coupling human-visible responsiveness to lock contention and durable-write cadence; removing renewal noise also invalidated a renderer assertion that treated that noise as required provenance.
+Fix / resolution: separated one-second ephemeral execution heartbeats from durable claim renewal, kept renewal evidence in the append-only journal, and changed the renderer contract to require visible elapsed work without timeline churn.
+Generalizes to: human feedback loops and durability protocols need distinct clocks; test each at its own boundary instead of forcing one transport to serve both.

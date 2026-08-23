@@ -20,7 +20,7 @@ export function createOrchestrationLanes() {
 }
 
 export function laneTurnBound(lane, env = process.env) {
-  const fallback = lane === 'mouth' ? 6 : 64;
+  const fallback = 64;
   const raw = lane === 'mouth'
     ? env.ATLAS_MOUTH_MAX_TURNS
     : env.ATLAS_ORCHESTRATOR_MAX_TURNS;
@@ -29,7 +29,9 @@ export function laneTurnBound(lane, env = process.env) {
 
 export function laneTimeoutMs(lane, env = process.env) {
   if (lane !== 'mouth') return 0;
-  return Math.max(5_000, Math.min(120_000, Number(env.ATLAS_MOUTH_TIMEOUT_MS) || 45_000));
+  const configured = Number(env.ATLAS_MOUTH_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return 0;
+  return Math.max(5_000, Math.min(1_200_000, configured));
 }
 
 // Speech carries only the hottest working set. Context Mycelium authenticates and

@@ -1234,9 +1234,10 @@ input:focus-visible{outline:none}
     var state=m.state||'idle';
     rail.className=state;
     $('exec-state').textContent=state;
-    $('exec-route').textContent=(m.provider||'provider')+' · '+(m.model||'model')+' · '+(m.route||'route');
-    $('exec-task').textContent=m.task||m.summary||'No active Atlas turn.';
-    $('exec-sandbox').textContent=m.sandbox||'—';
+    if(m.provider||m.model||m.route)$('exec-route').textContent=(m.provider||'provider')+' · '+(m.model||'model')+' · '+(m.route||'route');
+    if(m.task||m.summary)$('exec-task').textContent=m.task||m.summary;
+    else if(Number.isFinite(m.elapsedMs))$('exec-task').textContent=(m.lane||'Atlas')+' working · '+Math.max(0,Math.round(m.elapsedMs/1000))+'s';
+    if(m.sandbox)$('exec-sandbox').textContent=m.sandbox;
   }
 
   // ── fleet IPC listener ──────────────────────────────
@@ -1285,7 +1286,6 @@ input:focus-visible{outline:none}
       return;
     }
     if(m.type==="lease"||m.type==="ingress"){
-      if(m.type==='ingress' && m.state==='renewed') addTimelineEvent('↻','claim-renewal · '+(m.directiveId||'')+' · attempt '+(m.attemptId||'')+' · seq '+(m.seq||'')+' · expires '+(m.expiresAt||''),'');
       var _pendingSubmissions=window.__pendingComposerSubmissions||{};
       var _pendingSubmission=m.submissionId?_pendingSubmissions[m.submissionId]:null;
       if(m.type==='ingress' && m.state==='journaled' && m.submissionId) delete _pendingSubmissions[m.submissionId];
@@ -1311,8 +1311,6 @@ input:focus-visible{outline:none}
         renderThread();
       }
       if(m.state==='telemetry'){
-        if(m.renewalCount) addTimelineEvent('↻','claim renewals '+m.renewalCount+' · active '+(m.activeClaimExpiry||'none'),'');
-        addTimelineEvent('↻','journal '+(m.queueDepth||0)+' pending · depth '+(m.journalDepth||0)+' · replay '+(m.replayCount||0)+' · quarantine '+(m.quarantineBytes||0)+' bytes · lease '+(m.leaseEpoch||'')+' · active '+(m.activeClaimExpiry||'none'),'');
         return;
       }
       var _estate = m.type === 'lease' ? ('sidecar lease · '+(m.state||'')+' · generation '+(m.generation||'')+' · epoch '+(m.epoch||'')+' · pid '+(m.pid||'')+' · token '+(m.tokenFingerprint||m.fencingToken||'')) : ('ingress '+(m.state||'')+' · '+(m.directiveId||'')+' · seq '+(m.seq||''));
@@ -1321,7 +1319,8 @@ input:focus-visible{outline:none}
     }
     if(m.type==="execution"){
       renderExecution(m);
-      if(m.state==='working'){window.__otl={lines:[],map:{}};window.__thk={tail:''};var _sth=document.getElementById('stream-think');if(_sth)_sth.innerHTML='';}
+      if(m.state==='working'&&!m.heartbeatAt){window.__otl={lines:[],map:{}};window.__thk={tail:''};var _sth=document.getElementById('stream-think');if(_sth)_sth.innerHTML='';}
+      if(m.heartbeatAt)return;
       addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',
         'Atlas '+(m.state||'state')+' · '+(m.model||'model')+' · '+(m.sandbox||'sandbox'),
         m.state==='done'?'evdone':m.state==='failed'?'evfailed':'');

@@ -3914,7 +3914,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   const lane = mouth ? 'mouth' : 'metabolism';
   const maxTurns = laneTurnBound(lane, process.env);
   const timeoutMs = laneTimeoutMs(lane, process.env);
-  const mouthAbort = mouth ? new AbortController() : null;
+  const mouthAbort = mouth && timeoutMs > 0 ? new AbortController() : null;
   let mouthTimedOut = false;
   const mouthTimer = mouthAbort ? setTimeout(() => { mouthTimedOut = true; mouthAbort.abort(); }, timeoutMs) : null;
   mouthTimer?.unref?.();
@@ -4067,7 +4067,9 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         model: MODEL,
         ...orchestrationRouting,
         atlasStatelessSession: statelessOpenRouterMouth,
-        atlasToolTimeoutMs: mouth ? 15_000 : 1_200_000,
+        atlasToolTimeoutMs: mouth
+          ? Math.max(15_000, Math.min(1_200_000, Number(process.env.ATLAS_MOUTH_TOOL_TIMEOUT_MS) || 120_000))
+          : 1_200_000,
         ...(ACTIVE_PROVIDER === 'openrouter' ? { openRouterTools: openRouterOrganTools } : {}),
         onProviderSpawn: executionHooks.onProviderSpawn,
         onToolBatch: batch => {
@@ -4140,6 +4142,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           finishedAt: new Date().toISOString(),
         });
         set(agentId, { state: m.subtype === "success" ? "done" : "failed", lane, cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full.slice(0, 8000), lastToolArg: null, session: laneSession });
+        if (m.subtype !== "success" && !handoff) throw new Error(full || `provider ended with ${m.subtype || 'error'}`);
         if (full) {
           try {
             const _extractor = _require("./fact-extractor.cjs");
@@ -4213,6 +4216,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       send('execution', { state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', timeoutMs, task: String(userText || '').slice(0, 220) });
     } else {
       set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) });
+      throw e;
     }
   } finally {
     if (mouthTimer) clearTimeout(mouthTimer);
@@ -4488,7 +4492,7 @@ async function pollSayInbox() {
   if (mouthClaim) _mouthBusy = true; else _metabolismIngressBusy = true;
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
     workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel,
-    lane: mouthClaim ? 'mouth' : 'metabolism' };
+    lane: mouthClaim ? 'mouth' : 'metabolism', startedAt: Date.now() };
   const renew = (state = 'renewed') => {
     const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000);
     send('ingress', { state, directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt,
@@ -4497,7 +4501,16 @@ async function pollSayInbox() {
   };
   const renewalTimer = setInterval(() => { try { renew(); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
   renewalTimer.unref?.();
-  const finish = () => { clearInterval(renewalTimer); if (mouthClaim) _mouthBusy = false; else _metabolismIngressBusy = false; };
+  const emitProgress = () => send('execution', { state: 'working', lane: attempt.lane, directiveId: claim.directiveId,
+    elapsedMs: Math.max(0, Date.now() - attempt.startedAt), heartbeatAt: new Date().toISOString() });
+  const progressTimer = setInterval(emitProgress, 1000);
+  progressTimer.unref?.();
+  emitProgress();
+  const finish = () => {
+    clearInterval(renewalTimer);
+    clearInterval(progressTimer);
+    if (mouthClaim) _mouthBusy = false; else _metabolismIngressBusy = false;
+  };
   send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
   // control commands: !autonomy <min> grants a window; !stop ends it
   const am = txt.match(/^!autonomy\s+(\d+)/i);

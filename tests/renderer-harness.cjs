@@ -93,10 +93,12 @@ app.whenReady().then(async () => {
       if (!document.body.innerText.includes('autonomy forced discovery')) throw new Error('autonomy discovery progress was not visible');
       window.atlas.emitFleet({ type: 'fleet_lifecycle', state: 'started', generation: 7, pid: 12345, startedAt: new Date().toISOString() });
       window.atlas.emitFleet({ type: 'ingress', state: 'renewed', directiveId: 'event:test', attemptId: 'attempt:test', seq: 9, expiresAt: Date.now() + 30000 });
-      if (!document.getElementById('timeline').innerText.includes('claim-renewal') || !document.getElementById('timeline').innerText.includes('attempt:test')) throw new Error('claim provenance was not visible');
+      if (document.getElementById('timeline').innerText.includes('claim-renewal')) throw new Error('claim-renewal noise leaked into the operator timeline');
+      window.atlas.emitFleet({ type: 'execution', state: 'working', lane: 'mouth', directiveId: 'event:test', elapsedMs: 4200, heartbeatAt: new Date().toISOString() });
+      if (!document.getElementById('exec-task').textContent.includes('mouth working · 4s')) throw new Error('live execution heartbeat was not visible');
       if (!document.body.innerText.includes('fleet sidecar started · generation 7 · pid 12345')) throw new Error('fleet generation was not visible');
 
-      return { enterSent: true, shiftEnterPreserved: true, buildMode: 'build', readMode: 'read', cancelRouted: true, failureVisible: true, autonomyProgressVisible: true, fleetGenerationVisible: true };
+      return { enterSent: true, shiftEnterPreserved: true, buildMode: 'build', readMode: 'read', cancelRouted: true, failureVisible: true, autonomyProgressVisible: true, executionHeartbeatVisible: true, fleetGenerationVisible: true };
     })()`);
     console.log('renderer harness: ALL PASS', JSON.stringify(result));
     win.destroy();

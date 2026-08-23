@@ -65,6 +65,9 @@ docs/Atlas-Capstone.pdf
 .gm/long-gap-retry-state
 .gm/turn-state.json
 .atlas/*.log
+.atlas/sidecar-errors.ndjson
+.atlas/ui-capture/
+ui-*.png
 .atlas/*.done.json
 .atlas/tmp/
 .atlas/empire/
