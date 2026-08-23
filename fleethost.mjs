@@ -3908,6 +3908,9 @@ Be dense and specific. No padding. No hedging. Write in past tense. Output only 
 
 async function orchestrate(userText, source = 'user', executionHooks = {}, attachments = null) {
   const mouth = source === 'user';
+  const admittedAttachments = attachments == null ? [] : _ingress.admitImageAttachments(INGRESS_DIR, attachments);
+  if (admittedAttachments.length && !mouth) return Promise.reject(new Error('image attachments are admitted only on operator mouth ingress'));
+  if (admittedAttachments.length && ACTIVE_PROVIDER !== 'openrouter') return Promise.reject(new Error('image attachments require the OpenRouter vision route'));
   const lane = mouth ? 'mouth' : 'metabolism';
   const maxTurns = laneTurnBound(lane, process.env);
   const timeoutMs = laneTimeoutMs(lane, process.env);
@@ -4048,28 +4051,14 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     task: String(userText || "").slice(0, 220),
     startedAt: new Date().toISOString(),
   });
-    // Paste-image spec 98f8861: operator-supplied images ride as OpenAI-style
-    // content blocks on the own-model route; other providers keep text-only.
-    let seatPrompt = enriched;
-    if (Array.isArray(attachments) && attachments.length) {
-      const blocks = [];
-      for (const a of attachments.slice(0, 4)) {
-        try {
-          const p = typeof a === 'string' ? a : a.path;
-          if (!p || !fs.existsSync(p)) continue;
-          const ext = path.extname(p).slice(1).toLowerCase();
-          const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[ext];
-          if (!mime) continue;
-          const b64 = fs.readFileSync(p).toString('base64');
-          if (b64.length > 6000000) continue; // ~4.5MB decoded cap per image
-          blocks.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } });
-        } catch {}
-      }
-      if (blocks.length) {
-        blocks.unshift({ type: 'text', text: String(enriched || '') });
-        seatPrompt = blocks;
-      }
+  let seatPrompt = enriched;
+  if (admittedAttachments.length) {
+    seatPrompt = [{ type: 'text', text: String(enriched || '') }];
+    for (const attachment of admittedAttachments) {
+      const image = _ingress.readImageAttachment(INGRESS_DIR, attachment);
+      seatPrompt.push({ type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.data.toString('base64')}` } });
     }
+  }
   try {
     for await (const m of query({
       prompt: seatPrompt,
@@ -4540,9 +4529,10 @@ async function pollSayInbox() {
     finish();
     return;
   }
+  const _attachments = item.attachments || null;
+  let _attachmentsTerminalized = false;
   try {
     if (mouthClaim && autonomyEnabled) stopAutonomy('operator prompt preempts the window');
-    const _attachments = (claim && claim.attachments) || null;
     await enqueueOrchestrate(txt, mouthClaim ? 'user' : 'system', {
       onProviderSpawn(meta) {
         attempt.workerPid = meta.pid;
@@ -4555,16 +4545,29 @@ async function pollSayInbox() {
     const a = agents.get(mouthClaim ? 'ATLAS' : 'ATLAS-METABOLISM') || {};
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
     const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
-    send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
+    _attachmentsTerminalized = true;
+    send('ingress', { state: 'acked', directiveId: claim.directiveId, submissionId: claim.idempotencyKey, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
   } catch (e) {
     const failure = String((e && e.message) || e);
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, error: failure });
     const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model' });
-    send('ingress', { state: 'failed', directiveId: claim.directiveId, seq: fail.seq, outboxRecordHash: out && out.recordHash, reason: failure, timeline: 'fail' });
+    _attachmentsTerminalized = true;
+    send('ingress', { state: 'failed', directiveId: claim.directiveId, submissionId: claim.idempotencyKey, seq: fail.seq, outboxRecordHash: out && out.recordHash, reason: failure, timeline: 'fail' });
+  } finally {
+    if (_attachmentsTerminalized) _ingress.removeImageAttachments(INGRESS_DIR, _attachments);
   }
   finish();
 }
+function sweepIngressImages() {
+  try { return _ingress.sweepImageAttachments(INGRESS_DIR); }
+  catch (error) {
+    try { _ingress.appendError(INGRESS_DIR, error, { phase: 'image-sweep' }); } catch {}
+    return null;
+  }
+}
+sweepIngressImages();
 setInterval(pollSayInbox, 700); // reflex poll: inbound latency 2.5s -> 0.7s (Daniel directive 2026-08-22)
+setInterval(sweepIngressImages, 60_000);
 
 // Tap ganglion sensory half: workers tap by appending to .atlas/taps.ndjson;
 const tapsFile = path.join(REPO, '.atlas', 'taps.ndjson');
@@ -4611,9 +4614,9 @@ process.on("message", (m) => {
   if (m.t === "say") {
     if (autonomyEnabled) stopAutonomy("you're back — window ended early");
     try {
-      const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say', { ...(Array.isArray(m.images) && m.images.length ? { attachments: m.images.map(p => ({ path: String(p) })) } : {}) });
-      send('ingress', { state: 'journaled', directiveId: record.directiveId, seq: record.seq, timeline: 'journal' });
-    } catch (error) { send('ingress', { state: 'failed', reason: error.message }); }
+      const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say', { idempotencyKey: m.submissionId, ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments } : {}) });
+      send('ingress', { state: 'journaled', directiveId: record.directiveId, submissionId: record.idempotencyKey, seq: record.seq, timeline: 'journal' });
+    } catch (error) { send('ingress', { state: 'failed', submissionId: m.submissionId, reason: error.message }); }
     return;
   }
   else if (m.t === "autonomy") { if (m.on) startAutonomy(m.minutes); else stopAutonomy("stopped by you"); }

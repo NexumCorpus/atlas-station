@@ -512,6 +512,14 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
           if (message.content) yield { type: "assistant", message: { content: [{ type: "text", text: String(message.content) }] } };
           const calls = message.tool_calls || [];
           if (!calls.length) {
+            if (!String(message.content || "").trim()) {
+              if (round + 1 < turnCap) {
+                messages.push({ role: "user", content: "Your prior response contained no visible content. Return a non-empty direct answer to the operator now." });
+                continue;
+              }
+              yield { type: "result", subtype: "error_max_turns", result: "OpenRouter exhausted the turn bound without visible assistant content", total_cost_usd: usage?.cost ?? null, usage: usage || null };
+              return;
+            }
             yield { type: "result", subtype: "success", result: String(message.content || ""), total_cost_usd: usage?.cost ?? 0, usage: usage || null };
             return;
           }

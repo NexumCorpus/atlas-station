@@ -3,7 +3,65 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+const assert = require('assert');
 const MAX_CLAIM_TTL_MS = 86400000;
+const IMAGE_COUNT_LIMIT = 4;
+const IMAGE_BYTES_LIMIT = 4 * 1024 * 1024;
+const IMAGE_TOTAL_BYTES_LIMIT = 12 * 1024 * 1024;
+const IMAGE_DIMENSION_LIMIT = 8192;
+const IMAGE_PIXEL_LIMIT = 20_000_000;
+const IMAGE_TOTAL_PIXEL_LIMIT = 32_000_000;
+const IMAGE_ORPHAN_GRACE_MS = 5 * 60 * 1000;
+const IMAGE_RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const imageSweepDirectories = new Map();
+const imageVerificationCache = new Map();
+const PNG_CRC_TABLE = Uint32Array.from({ length: 256 }, (_, value) => {
+  let crc = value;
+  for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  return crc >>> 0;
+});
+function pngCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = (crc >>> 8) ^ PNG_CRC_TABLE[(crc ^ byte) & 0xff];
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function pngShape(bytes, inflate = true) {
+  if (bytes.length < 33 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) assert.fail('image magic bytes do not match image/png');
+  if (bytes.readUInt32BE(8) !== 13 || !bytes.subarray(12, 16).equals(Buffer.from('IHDR', 'ascii'))) assert.fail('image/png does not begin with a canonical IHDR chunk');
+  const width = bytes.readUInt32BE(16); const height = bytes.readUInt32BE(20);
+  if (!width || !height || width > IMAGE_DIMENSION_LIMIT || height > IMAGE_DIMENSION_LIMIT || width * height > IMAGE_PIXEL_LIMIT) assert.fail('image dimensions exceed screenshot limits');
+  const bitDepth = bytes[24]; const colorType = bytes[25];
+  const depths = { 0: [1, 2, 4, 8], 2: [8], 3: [1, 2, 4, 8], 4: [8], 6: [8] };
+  if (!depths[colorType]?.includes(bitDepth) || bytes[26] !== 0 || bytes[27] !== 0 || bytes[28] !== 0) assert.fail('image/png IHDR fields are invalid or interlaced');
+  let offset = 8; let sawIhdr = false; let sawIdat = false; let sawIend = false; let sawPlte = false; let idatClosed = false; const idat = [];
+  while (offset < bytes.length) {
+    if (offset + 12 > bytes.length) assert.fail('image/png chunk framing is truncated');
+    const length = bytes.readUInt32BE(offset); const dataEnd = offset + 12 + length;
+    if (length > IMAGE_BYTES_LIMIT || dataEnd > bytes.length) assert.fail('image/png chunk length exceeds the admitted payload');
+    const type = bytes.subarray(offset + 4, offset + 8).toString('ascii'); const data = bytes.subarray(offset + 8, offset + 8 + length);
+    if (bytes.readUInt32BE(offset + 8 + length) !== pngCrc32(bytes.subarray(offset + 4, offset + 8 + length))) assert.fail('image/png chunk CRC is invalid');
+    if (!sawIhdr && type !== 'IHDR' || sawIhdr && type === 'IHDR') assert.fail('image/png IHDR ordering is invalid');
+    if (type === 'IHDR') sawIhdr = true;
+    else if (type === 'PLTE') { if (sawIdat) assert.fail('image/png PLTE follows image data'); sawPlte = true; }
+    else if (type === 'IDAT') { if (idatClosed) assert.fail('image/png IDAT chunks are not contiguous'); sawIdat = true; idat.push(data); }
+    else if (type === 'IEND') { if (length !== 0 || !sawIdat || dataEnd !== bytes.length) assert.fail('image/png IEND is invalid'); sawIend = true; }
+    else { if (sawIdat) idatClosed = true; if (/^[A-Z]/.test(type)) assert.fail('image/png contains an unknown critical chunk'); }
+    offset = dataEnd;
+  }
+  if (!sawIhdr || !sawIdat || !sawIend || colorType === 3 && !sawPlte) assert.fail('image/png required chunks are missing');
+  const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType]; const rowBytes = Math.ceil(width * channels * bitDepth / 8); const decodedBytes = height * (rowBytes + 1);
+  if (decodedBytes > 80 * 1024 * 1024) assert.fail('image/png decoded byte size exceeds screenshot limits');
+  if (inflate) {
+    let inflated; try { inflated = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: decodedBytes }); } catch { assert.fail('image/png image data is not decodable'); }
+    if (inflated.length !== decodedBytes) assert.fail('image/png decoded image size is invalid');
+    for (let row = 0; row < height; row++) if (inflated[row * (rowBytes + 1)] > 4) assert.fail('image/png row filter is invalid');
+  }
+  return { width, height, decodedBytes };
+}
+const IMAGE_TYPES = Object.freeze({
+  'image/png': { ext: 'png', shape: pngShape },
+});
 
 function bytesHash(value) { return `sha256:${crypto.createHash('sha256').update(Buffer.from(String(value), 'utf8')).digest('hex')}`; }
 function hash(value) { return bytesHash(JSON.stringify(value)); }
@@ -21,6 +79,158 @@ function canonicalDir(dir) {
 function paths(dir) { const root = canonicalDir(dir); return { journal: path.join(root, 'ingress.ndjson'), quarantine: path.join(root, 'ingress-quarantine.ndjson'), migration: path.join(root, 'ingress-migration-anchor.json'), lock: path.join(root, 'ingress.lock'), errors: path.join(root, 'sidecar-errors.ndjson') }; }
 function readJsonLines(file) { if (!fs.existsSync(file)) return []; return fs.readFileSync(file, 'utf8').split(/\n/).filter(Boolean).map(line => JSON.parse(line)); }
 function appendFileSync(file, body) { fs.mkdirSync(path.dirname(file), { recursive: true }); const fd = fs.openSync(file, 'a'); try { fs.writeSync(fd, body, null, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+function appendImageCleanupReceipt(dir, record) { try { appendFileSync(paths(dir).errors, JSON.stringify(record) + '\n'); return true; } catch { return false; } }
+
+function imageHash(bytes) { return `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`; }
+function inside(child, parent) { const relative = path.relative(parent, child); return relative && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative); }
+function decodeImageDataUrl(value, inflate = true) {
+  const dataUrl = typeof value === 'string' ? value : value && typeof value === 'object' ? value.durl : '';
+  if (typeof dataUrl !== 'string' || dataUrl.length > Math.ceil(IMAGE_BYTES_LIMIT / 3) * 4 + 64) assert.fail('image payload exceeds encoded byte limit');
+  const match = /^data:(image\/png);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match || match[2].length % 4 !== 0) assert.fail('image payload must be canonical PNG base64');
+  const bytes = Buffer.from(match[2], 'base64');
+  const canonical = bytes.toString('base64');
+  if (!bytes.length || bytes.length > IMAGE_BYTES_LIMIT || canonical !== match[2]) assert.fail('image payload failed canonical size validation');
+  const type = IMAGE_TYPES[match[1]];
+  const shape = type.shape(bytes, inflate);
+  return { bytes, mime: match[1], ext: type.ext, ...shape };
+}
+function persistImageDataUrls(dir, values) {
+  if (!Array.isArray(values) || !values.length || values.length > IMAGE_COUNT_LIMIT) assert.fail(`image count must be from 1 through ${IMAGE_COUNT_LIMIT}`);
+  dir = canonicalDir(dir);
+  const mediaDir = path.join(dir, 'say-inbox-media');
+  fs.mkdirSync(mediaDir, { recursive: true });
+  const admitted = values.map(value => decodeImageDataUrl(value, false));
+  const total = admitted.reduce((sum, image) => sum + image.bytes.length, 0);
+  if (total > IMAGE_TOTAL_BYTES_LIMIT) assert.fail(`image batch exceeds ${IMAGE_TOTAL_BYTES_LIMIT} bytes`);
+  const pixels = admitted.reduce((sum, image) => sum + image.width * image.height, 0);
+  if (pixels > IMAGE_TOTAL_PIXEL_LIMIT) assert.fail(`image batch exceeds ${IMAGE_TOTAL_PIXEL_LIMIT} decoded pixels`);
+  const decodedBytes = admitted.reduce((sum, image) => sum + image.decodedBytes, 0);
+  if (decodedBytes > 128 * 1024 * 1024) assert.fail('image batch exceeds decoded byte limits');
+  for (const image of admitted) IMAGE_TYPES[image.mime].shape(image.bytes, true);
+  const written = [];
+  try {
+    for (const image of admitted) {
+      const file = path.join(mediaDir, `${Date.now()}-${crypto.randomUUID()}.${image.ext}`);
+      fs.writeFileSync(file, image.bytes, { flag: 'wx', mode: 0o600 });
+      written.push({ path: file, mime: image.mime, bytes: image.bytes.length, sha256: imageHash(image.bytes), width: image.width, height: image.height, decodedBytes: image.decodedBytes });
+    }
+    return written;
+  } catch (error) {
+    for (const image of written) try { fs.unlinkSync(image.path); } catch {}
+    assert.fail(error);
+  }
+}
+function readImageAttachment(dir, value, inflate = true) {
+  const mediaDir = path.join(canonicalDir(dir), 'say-inbox-media');
+  let mediaRoot;
+  try { mediaRoot = fs.realpathSync(mediaDir); } catch { assert.fail('image media root is unavailable'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) assert.fail('image attachment metadata must be an object');
+  const mime = String(value.mime || ''); const expected = IMAGE_TYPES[mime];
+  if (!expected) assert.fail('image attachment MIME is not admitted');
+  const candidate = path.resolve(String(value.path || ''));
+  let stat; try { stat = fs.lstatSync(candidate); } catch { assert.fail('image attachment is unavailable'); }
+  if (!stat.isFile() || stat.isSymbolicLink()) assert.fail('image attachment must be a regular file');
+  const real = fs.realpathSync(candidate);
+  if (!inside(real, mediaRoot)) assert.fail('image attachment escaped the media root');
+  let handle;
+  try {
+    handle = fs.openSync(real, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const before = fs.fstatSync(handle);
+    if (!before.isFile() || before.size < 1 || before.size > IMAGE_BYTES_LIMIT || Number(value.bytes) !== before.size) assert.fail('image attachment byte receipt mismatch');
+    const data = Buffer.allocUnsafe(before.size); let total = 0;
+    while (total < data.length) { const count = fs.readSync(handle, data, total, data.length - total, null); if (!count) break; total += count; }
+    const after = fs.fstatSync(handle);
+    if (total !== before.size || after.size !== total) assert.fail('image attachment changed during read');
+    const sha256 = imageHash(data); const identity = [real, before.dev, before.ino, before.size, before.mtimeMs, before.ctimeMs, sha256].join('|');
+    let shape = imageVerificationCache.get(identity);
+    if (!shape) {
+      shape = expected.shape(data, inflate);
+      if (inflate) {
+        if (imageVerificationCache.size >= 128) imageVerificationCache.delete(imageVerificationCache.keys().next().value);
+        imageVerificationCache.set(identity, shape);
+      }
+    }
+    if (String(value.sha256 || '') !== sha256 || (value.width != null && Number(value.width) !== shape.width) || (value.height != null && Number(value.height) !== shape.height) || (value.decodedBytes != null && Number(value.decodedBytes) !== shape.decodedBytes)) assert.fail('image attachment receipt mismatch');
+    return { path: real, mime, bytes: total, sha256, ...shape, data };
+  } finally { try { if (handle !== undefined) fs.closeSync(handle); } catch {} }
+}
+function admitImageAttachments(dir, values) {
+  if (!Array.isArray(values) || !values.length || values.length > IMAGE_COUNT_LIMIT) assert.fail(`image attachment count must be from 1 through ${IMAGE_COUNT_LIMIT}`);
+  let total = 0; let pixels = 0; let decodedBytes = 0;
+  const inspected = values.map((value) => {
+    const image = readImageAttachment(dir, value, false); total += image.bytes;
+    if (total > IMAGE_TOTAL_BYTES_LIMIT) assert.fail(`image batch exceeds ${IMAGE_TOTAL_BYTES_LIMIT} bytes`);
+    pixels += image.width * image.height;
+    if (pixels > IMAGE_TOTAL_PIXEL_LIMIT) assert.fail(`image batch exceeds ${IMAGE_TOTAL_PIXEL_LIMIT} decoded pixels`);
+    decodedBytes += image.decodedBytes;
+    if (decodedBytes > 128 * 1024 * 1024) assert.fail('image batch exceeds decoded byte limits');
+    return image;
+  });
+  return inspected.map((_, index) => {
+    const image = readImageAttachment(dir, values[index], true);
+    return Object.freeze({ path: image.path, mime: image.mime, bytes: image.bytes, sha256: image.sha256, width: image.width, height: image.height, decodedBytes: image.decodedBytes });
+  });
+}
+function removeImageAttachments(dir, values) {
+  if (!Array.isArray(values)) return 0;
+  const mediaDir = path.join(canonicalDir(dir), 'say-inbox-media');
+  let root; try { root = fs.realpathSync(mediaDir); } catch { return 0; }
+  let removed = 0; let failed = 0;
+  for (const value of values.slice(0, IMAGE_COUNT_LIMIT)) {
+    try {
+      const candidate = path.resolve(String(value && value.path || '')); const stat = fs.lstatSync(candidate);
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      const real = fs.realpathSync(candidate); if (!inside(real, root)) continue;
+      fs.unlinkSync(real); removed++;
+    } catch (error) { if (error && error.code !== 'ENOENT') failed++ }
+  }
+  if (failed) appendImageCleanupReceipt(dir, { kind: 'image-cleanup', ts: new Date().toISOString(), removed, failed });
+  return removed;
+}
+
+function sweepImageAttachments(dir, graceMs = IMAGE_ORPHAN_GRACE_MS) {
+  dir = canonicalDir(dir);
+  const mediaDir = path.join(dir, 'say-inbox-media');
+  const names = [];
+  let directory = imageSweepDirectories.get(mediaDir);
+  let directoryFailed = false;
+  try {
+    if (!directory) { directory = fs.opendirSync(mediaDir); imageSweepDirectories.set(mediaDir, directory); }
+    while (names.length < 512) {
+      const entry = directory.readSync();
+      if (!entry) { directory.closeSync(); imageSweepDirectories.delete(mediaDir); directory = null; break; }
+      names.push(entry.name);
+    }
+  } catch { directoryFailed = true; return { scanned: 0, removed: 0, failed: 0, deferred: 0 }; }
+  finally {
+    if (directoryFailed) {
+      try { directory?.closeSync(); } catch {}
+      imageSweepDirectories.delete(mediaDir);
+    }
+  }
+  let snapshot;
+  try { snapshot = entries(dir); }
+  catch {
+    appendImageCleanupReceipt(dir, { kind: 'image-sweep', ts: new Date().toISOString(), scanned: names.length, removed: 0, failed: 1, deferred: names.length, reason: 'journal-unreadable' });
+    return { scanned: names.length, removed: 0, failed: 1, deferred: names.length };
+  }
+  const active = new Set();
+  for (const item of snapshot.byId.values()) if (item.ingress && (!item.terminal || (item.terminal.blocked && item.terminal.recoverable && Date.now() - Date.parse((item.replayRecoveries.at(-1) || item.terminal).ts) <= IMAGE_RECOVERY_RETENTION_MS))) {
+    for (const image of Array.isArray(item.ingress.attachments) ? item.ingress.attachments : []) active.add(path.resolve(String(image.path || '')));
+  }
+  let removed = 0; let failed = 0; let deferred = 0; const cutoff = Date.now() - Math.max(60_000, Number(graceMs) || IMAGE_ORPHAN_GRACE_MS);
+  for (const name of names) {
+    const candidate = path.join(mediaDir, name);
+    try {
+      const stat = fs.lstatSync(candidate);
+      if (!stat.isFile() || stat.isSymbolicLink() || active.has(path.resolve(candidate)) || stat.mtimeMs > cutoff) { deferred++; continue; }
+      fs.unlinkSync(candidate); removed++;
+    } catch { failed++ }
+  }
+  if (removed || failed) appendImageCleanupReceipt(dir, { kind: 'image-sweep', ts: new Date().toISOString(), scanned: names.length, removed, failed, deferred });
+  return { scanned: names.length, removed, failed, deferred };
+}
 
 function withLock(dir, fn) {
   dir = canonicalDir(dir);
@@ -132,14 +342,17 @@ function assertLease(root, leaseOrOwner, token, epoch) {
 
 function appendIngress(dir, text, source = 'journal', options = {}) {
   const content = String(text == null ? '' : text); if (!content) throw new Error('empty directive');
+  const attachments = options.attachments == null ? null : admitImageAttachments(dir, options.attachments);
+  const attachmentsHash = attachments ? hash(attachments) : null;
   return withLock(dir, () => {
     const prior = parseJournal(dir, false).records; const key = options.idempotencyKey == null ? null : String(options.idempotencyKey);
-    if (key) { const existing = prior.find(r => r.kind === 'ingress' && r.idempotencyKey === key); if (existing) { if (existing.source !== source || existing.contentHash !== bytesHash(content)) { quarantine(dir, [{ reason: 'idempotency-conflict', idempotencyKey: key, existingRecordHash: existing.recordHash, source, contentHash: bytesHash(content) }]); throw new Error('idempotency key content conflict'); } return existing; } }
+    if (key) { const existing = prior.find(r => r.kind === 'ingress' && r.idempotencyKey === key); if (existing) { const existingAttachmentsHash = existing.attachmentsHash || (existing.attachments ? hash(existing.attachments) : null); if (existing.source !== source || existing.contentHash !== bytesHash(content) || existingAttachmentsHash !== attachmentsHash) { quarantine(dir, [{ reason: 'idempotency-conflict', idempotencyKey: key, existingRecordHash: existing.recordHash, source, contentHash: bytesHash(content), attachmentsHash }]); assert.fail('idempotency key content conflict'); } return existing; } }
     const eventId = options.eventId || (key ? `event:${bytesHash(key)}` : `event:${crypto.randomUUID()}`);
     const sameId = prior.find(r => r.kind === 'ingress' && (r.eventId === eventId || r.directiveId === eventId));
-    if (sameId && (sameId.source !== source || sameId.contentHash !== bytesHash(content))) { quarantine(dir, [{ reason: 'event-id-conflict', eventId, existingRecordHash: sameId.recordHash, source, contentHash: bytesHash(content) }]); throw new Error('event id content conflict'); }
+    const sameAttachmentsHash = sameId && (sameId.attachmentsHash || (sameId.attachments ? hash(sameId.attachments) : null));
+    if (sameId && (sameId.source !== source || sameId.contentHash !== bytesHash(content) || sameAttachmentsHash !== attachmentsHash)) { quarantine(dir, [{ reason: 'event-id-conflict', eventId, existingRecordHash: sameId.recordHash, source, contentHash: bytesHash(content), attachmentsHash }]); assert.fail('event id content conflict'); }
     if (sameId) return sameId;
-    return appendUnlocked(dir, { kind: 'ingress', eventId, directiveId: eventId, idempotencyKey: key, contentHash: bytesHash(content), source, text: content, ...(options.attachments && Array.isArray(options.attachments) && options.attachments.length ? { attachments: options.attachments } : {}), createdAt: new Date().toISOString() });
+    return appendUnlocked(dir, { kind: 'ingress', eventId, directiveId: eventId, idempotencyKey: key, contentHash: bytesHash(content), source, text: content, ...(attachments ? { attachments, attachmentsHash } : {}), createdAt: new Date().toISOString() });
   });
 }
 
@@ -341,4 +554,4 @@ function telemetry(dir) {
 }
 function appendError(dir, error, context = {}) { return append(canonicalDir(dir), { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
 
-module.exports = { hash, bytesHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, repairReplayLimit, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress };
+module.exports = { hash, bytesHash, imageHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, repairReplayLimit, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress, persistImageDataUrls, readImageAttachment, admitImageAttachments, removeImageAttachments, sweepImageAttachments, IMAGE_COUNT_LIMIT, IMAGE_BYTES_LIMIT, IMAGE_TOTAL_BYTES_LIMIT, IMAGE_DIMENSION_LIMIT, IMAGE_PIXEL_LIMIT, IMAGE_TOTAL_PIXEL_LIMIT };

@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 let _fleetListener = null;
 
 contextBridge.exposeInMainWorld("atlas", {
-  say: (text, images) => ipcRenderer.send("say", { text, images }),
+  say: (text, images, submissionId) => ipcRenderer.send("say", { text, images, submissionId }),
   setAutonomy: (on, minutes) => ipcRenderer.send("set-autonomy", { on, minutes }),
   resolveGoal: (id, outcome) => ipcRenderer.send("resolve-goal", { id, outcome }),
   dispatch: (task, cwd, mode) => ipcRenderer.send("dispatch", { task, cwd, mode }),

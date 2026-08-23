@@ -172,26 +172,31 @@ ipcMain.on("reply", (_e, p) => {
 });
 
 ipcMain.on("say", (_e, p) => {
-  if (!fleet || !p || (!p.text && !(Array.isArray(p.images) && p.images.length))) return;
+  if (!p || (!p.text && !(Array.isArray(p.images) && p.images.length))) return;
+  if (!fleet) {
+    if (win && !win.isDestroyed()) win.webContents.send("fleet", { type: "ingress", state: "failed", submissionId: p.submissionId, reason: "Atlas sidecar is unavailable" });
+    return;
+  }
+  let attachments;
   try {
-    let imagePaths;
     if (Array.isArray(p.images) && p.images.length) {
-      // Paste-image spec 98f8861: persist dataURLs to disk, pass PATHS downstream
-      const mediaDir = path.join(__dirname, ".atlas", "say-inbox-media");
-      fs.mkdirSync(mediaDir, { recursive: true });
-      imagePaths = [];
-      for (const [i, durl] of p.images.slice(0, 4).entries()) {
-        const m = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/s.exec(String(durl || ""));
-        if (!m) continue;
-        const ext = m[1].split("/")[1].replace("jpeg", "jpg");
-        const file = path.join(mediaDir, `${Date.now()}-${i}.${ext}`);
-        fs.writeFileSync(file, Buffer.from(m[2], "base64"));
-        imagePaths.push(file);
-      }
-      if (!imagePaths.length) imagePaths = undefined;
+      attachments = ingressJournal.persistImageDataUrls(path.join(__dirname, ".atlas"), p.images);
     }
-    fleet.send({ t: "say", text: p.text, images: imagePaths });
-  } catch (_) {}
+    const message = { t: "say", text: String(p.text || "").trim() || "Analyze the attached image.", submissionId: p.submissionId, ...(attachments ? { attachments } : {}) };
+    const sent = fleet.send(message, (error) => {
+      if (!error || !attachments) return;
+      ingressJournal.removeImageAttachments(path.join(__dirname, ".atlas"), attachments);
+      if (win && !win.isDestroyed()) win.webContents.send("fleet", { type: "ingress", state: "failed", submissionId: p.submissionId, reason: String(error.message || error).slice(0, 240) });
+    });
+    if (sent === false && !fleet.connected) {
+      if (attachments) ingressJournal.removeImageAttachments(path.join(__dirname, ".atlas"), attachments);
+      if (win && !win.isDestroyed()) win.webContents.send("fleet", { type: "ingress", state: "failed", submissionId: p.submissionId, reason: "Atlas sidecar is unavailable" });
+      return;
+    }
+  } catch (error) {
+    if (attachments) ingressJournal.removeImageAttachments(path.join(__dirname, ".atlas"), attachments);
+    if (win && !win.isDestroyed()) win.webContents.send("fleet", { type: "ingress", state: "failed", submissionId: p.submissionId, reason: String(error.message || error).slice(0, 240) });
+  }
 });
 
 ipcMain.on("set-autonomy", (_e, p) => {
