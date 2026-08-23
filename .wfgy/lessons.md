@@ -32,3 +32,9 @@ Generalizes to: once a protocol defines canonicalization, every identity compari
 An independent adversarial review found two circular proofs: settlement assurance labels were mutable after hashing, and a locally generated witness could authorize its own skill replacement. The repair hash-binds assurance fields, pins trusted external witness keys, binds settlement to exact incumbent and candidate hashes, consumes settlements once, and keeps staged variants inactive until that chain verifies.
 
 Generalizes to: recursive systems may propose, test, and stage their own mutations, but the evidence that changes active authority must cross an independently controlled boundary.
+
+## 2026-08-23 -- verification transports are part of the release apparatus
+Goal (G): leave Atlas operational, pushed, and honestly sealed after adding bounded screenshot vision
+What drifted / what went wrong: the release gate required browser-hash witnesses, but the installed runner lacked its browser plugin; Chrome witnesses could not satisfy the narrower event classifier, and upgrading only the runner briefly exposed a host-plugin ABI mismatch.
+Fix / resolution: checkpointed the already-green Atlas commit and live process, installed the matching official GM skill and runner pair, then re-witnessed every touched file through the required browser transport and bound the completed independent review to the exact HEAD.
+Generalizes to: treat verifier binaries, plugins, and their ABI as one versioned apparatus; upgrade the matched set before interpreting missing witness events as product defects.
