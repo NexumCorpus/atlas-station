@@ -84,5 +84,6 @@ docs/Atlas-Capstone.pdf
 docs/SELF_STATE.md
 .gm/disciplines/codeinsight/
 .gm/disciplines/codeinsight-manifest/
+.gm/disciplines/default/fiber-state.json
 .gm/browser-profile/
 .gm/browser-profile-*/
