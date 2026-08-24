@@ -1226,7 +1226,7 @@ const selfAssessTool = tool(
       const fs = _require('fs');
       const memDir = path.join(REPO, 'memory');
       const files = fs.existsSync(memDir) ? fs.readdirSync(memDir) : [];
-      const factFile = path.join(memDir, 'facts.ndjson');
+      const factFile = path.join(memDir, 'facts.jsonl');
       const factCount = fs.existsSync(factFile) ? fs.readFileSync(factFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
       const runFile = path.join(memDir, 'runs.ndjson');
       const runCount = fs.existsSync(runFile) ? fs.readFileSync(runFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
@@ -1279,7 +1279,7 @@ const capabilityManifestTool = tool(
       "skill_catalog", "skill_route", "skill_outcome", "skill_stage_variant", "skill_admit_variant"
     ];
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log", "predict", "work-eater", "paid-problem-radar", "skill-capsule", "skill-fitness", "skill-evolution"];
-    const memory = ["facts.ndjson", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson", "work-eater.ndjson", "skill-fitness.ndjson", "skill-candidates/", "skill-variants/"];
+    const memory = ["facts.jsonl", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson", "work-eater.ndjson", "skill-fitness.ndjson", "skill-candidates/", "skill-variants/"];
     if (!full) {
       return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length — stays accurate automatically
     }
@@ -2144,12 +2144,12 @@ const runTestsTool = tool(
 
 const validateFactsTool = tool(
   "validate_facts",
-  "Scan memory/facts.ndjson for facts that reference Windows file paths matching *.mjs, *.cjs, *.js, *.html, *.json, or *.md. Removes facts where any referenced path no longer exists on disk. Rewrites the file with only valid facts. Use to prune stale path references after major file moves or deletions.",
+  "Scan memory/facts.jsonl for facts that reference Windows file paths matching *.mjs, *.cjs, *.js, *.html, *.json, or *.md. Removes facts where any referenced path no longer exists on disk. Rewrites the file with only valid facts. Use to prune stale path references after major file moves or deletions.",
   {},
   async (_args) => {
     try {
       const fs = _require('fs');
-      const factsFile = path.join(REPO, 'memory', 'facts.ndjson');
+      const factsFile = path.join(REPO, 'memory', 'facts.jsonl');
       if (!fs.existsSync(factsFile)) {
         return { content: [{ type: 'text', text: 'validate_facts: 0 total, 0 paths checked, 0 stale removed, 0 remain' }] };
       }
@@ -2634,7 +2634,7 @@ const pruneFactsTool = tool(
     try {
       const memDir = path.join(REPO, 'memory');
       const fs = _require('fs');
-      const factsFile = path.join(memDir, 'facts.ndjson');
+      const factsFile = path.join(memDir, 'facts.jsonl');
       if (!fs.existsSync(factsFile)) return { content: [{ type: 'text', text: 'No facts file.' }] };
       const maxAgeMs = (args.maxAgeDays || 30) * 24 * 60 * 60 * 1000;
       const confFilter = (args.confidenceFilter || 'inferred').toLowerCase();
@@ -3343,8 +3343,8 @@ const memoryHealthDetailTool = tool(
       // Stale and duplicate analysis on facts file
       let staleFacts = 0;
       let duplicateFacts = 0;
-      const factsFile = fs.existsSync(path.join(memDir, 'facts.ndjson'))
-        ? path.join(memDir, 'facts.ndjson')
+      const factsFile = fs.existsSync(path.join(memDir, 'facts.jsonl'))
+        ? path.join(memDir, 'facts.jsonl')
         : fs.existsSync(path.join(memDir, 'facts.jsonl'))
         ? path.join(memDir, 'facts.jsonl')
         : null;
@@ -4069,7 +4069,7 @@ signal_propagate(factKey) — propagate a fact's signal through memory graph; re
 generate_tool(toolName,description,inputSchema,behavior,rationale?) — meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
 verify_build(files?,agentId?) — syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
 run_tests() — run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
-validate_facts() — scan facts.ndjson for Windows file-path refs, remove facts whose paths no longer exist, return count summary
+validate_facts() — scan facts.jsonl for Windows file-path refs, remove facts whose paths no longer exist, return count summary
 shard_memory(file,k?,n?) — shard a memory file into k-of-n RS fragments via estate CLI; returns PIN for recovery
 recover_shard(pin) — recover a sharded memory file from any k surviving fragments; byte-exact reconstruction
 staged_verify_build(agentId) — merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail — never touches master; call before a real merge

@@ -71,7 +71,7 @@ function listClusters(memDir) {
 
 // Recluster: re-read all facts and rebuild clusters from scratch
 function recluster(memDir, factsFile) {
-  const factsPath = factsFile || path.join(memDir, 'facts.ndjson');
+  const factsPath = factsFile || path.join(memDir, 'facts.jsonl');
   if (!fs.existsSync(factsPath)) return { message: 'No facts file found', clusters: 0 };
   // Clear clusters
   saveClusters([], memDir);

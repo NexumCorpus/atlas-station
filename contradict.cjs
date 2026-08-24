@@ -1,7 +1,7 @@
 // contradict.cjs — contradiction detector for facts.ndjson
 'use strict';
 const fs = require('fs'), path = require('path');
-const FACTS_FILE = d => path.join(d, 'facts.ndjson');
+const FACTS_FILE = d => path.join(d, 'facts.jsonl');
 
 const NEGATION = ['not','never','no','cannot','cant',"can't",'neither','nor','without','false','wrong','incorrect','fail','failed'];
 const STOP = new Set(['the','a','an','is','are','was','were','it','in','on','at','to','of','and','or','but','for','with','this','that']);

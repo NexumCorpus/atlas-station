@@ -257,7 +257,7 @@ ipcMain.handle("activate-candidate", async (_e, manifest) => {
 
 ipcMain.on("read-memory", async (_e) => {
   try {
-    const file = path.join(__dirname, "memory", "facts.ndjson");
+    const file = path.join(__dirname, "memory", "facts.jsonl");
     let data;
     try { data = await fs.promises.readFile(file, "utf8"); } catch { if (win) win.webContents.send("fleet", { type: "memory_facts", facts: [] }); return; }
     const lines = data.trim().split("\n").filter(Boolean);
