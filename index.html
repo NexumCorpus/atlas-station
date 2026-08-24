@@ -416,6 +416,8 @@ input:focus-visible{outline:none}
 #say::placeholder{color:rgba(90,88,112,.6);opacity:1}
 .composer-stack{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
 .composer-stack #say{width:100%}
+.bar.dz-active{border-top:1px solid var(--violet);background:rgba(157,107,255,.07);box-shadow:inset 0 0 24px rgba(157,107,255,.15)}
+#say-addimg:hover{background:rgba(157,107,255,.2);border-color:var(--violet);color:#fff;box-shadow:0 0 8px rgba(157,107,255,.35)}
 #say-image-tray{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0}
 .say-chip{position:relative;display:inline-block;border:1px solid var(--border);border-radius:5px;overflow:hidden;line-height:0}
 .say-chip img{width:64px;height:48px;object-fit:cover;display:block}
@@ -783,7 +785,8 @@ input:focus-visible{outline:none}
 
   <div class="bar boot-seq">
     <span class="to" id="barprefix">↳ ATLAS</span>
-    <div class="composer-stack">
+    <button id="say-addimg" type="button" title="Attach screenshots (PNG, up to 4)" aria-label="Attach images" style="flex:none;align-self:flex-end;font-family:inherit;font-size:16px;line-height:1;width:28px;height:28px;padding:0;background:rgba(157,107,255,.08);border:1px solid rgba(157,107,255,.3);border-radius:6px;color:var(--violet);cursor:pointer;transition:all .15s">+</button>
+<div class="composer-stack">
       <div id="say-image-tray" title="Pasted images attach to your next message" aria-live="polite"></div>
       <textarea id="say" rows="1" placeholder="tell ATLAS what to do… (or @build / @read to dispatch)" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;"></textarea>
     </div>
@@ -2004,6 +2007,11 @@ if(m.type==="agent"){
             '</div>' +
             '<div class="msg-text">' + ((msg.role === 'atlas' && msg.tools && msg.tools.length) ? otlFromList(msg.tools) : '') + ((msg.role === 'atlas' && msg.thinking && msg.thinking.length) ? thinkFromList(msg.thinking) : '') + renderMd(pk.prose) + '</div>' +
             packetHtml +
+'</div>' +
+            ((isUser && msg.thumbs && msg.thumbs.length) ?
+              '<div class="thumb-strip">' + msg.thumbs.map(function(th, ti) {
+                return '<img class="thumb" src="' + th.durl + '" alt="screenshot '+(ti+1)+'" onclick="openLightbox(this.src)" style="height:56px;max-width:96px;object-fit:cover;border-radius:4px;border:1px solid rgba(157,107,255,.35);cursor:zoom-in;margin:3px 6px 0 0">';
+              }).join('') + '</div>' : '') +
           '</div>' +
           '<button type="button" class="msg-copy" aria-label="Copy message" onclick="copyMsg(' + i + ')">copy</button>' +
         '</div>' + seam;
@@ -2437,7 +2445,7 @@ if(m.type==="agent"){
     rememberSubmission(submissionId,'pending');
     window.__pendingComposerSubmissions=window.__pendingComposerSubmissions||{};
     window.__pendingComposerSubmissions[submissionId]=window.__composerSnapshot||{text:text,images:[]};
-    thread.push({role:"user",text:text,attachmentCount:images ? images.length : 0,ts:Date.now()});
+    thread.push({role:"user",text:text,attachmentCount:images ? images.length : 0,thumbs:(images||[]).map(function(im){return {durl:im.durl,w:im.width,h:im.height};}),ts:Date.now()});
     thread.push({role:"atlas",text:"",pending:true,submissionId:submissionId,activity:"thinking",lastTool:null,ts:Date.now()});
     window.atlas.say(text, images, submissionId);
     renderThread();
@@ -3011,6 +3019,50 @@ if(m.type==="agent"){
         }).catch(function(error){ imageError('Image skipped: ' + String(error.message || error)); release(); });
       });
     };
+    window.__addSayImages = addFromClipboard;
+    var picker = document.getElementById('say-addimg');
+    if (picker) {
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = 'image/png'; fileInput.multiple = true;
+      fileInput.style.display = 'none';
+      fileInput.addEventListener('change', function(){
+        if (fileInput.files && fileInput.files.length) {
+          addFromClipboard(Array.prototype.map.call(fileInput.files, function(f){ return { type: f.type, getAsFile: function(){ return f; } }; }));
+        }
+        fileInput.value = '';
+      });
+      picker.addEventListener('click', function(){ fileInput.click(); });
+      document.body.appendChild(fileInput);
+    }
+    window.openLightbox = function(src){
+      var lb = document.createElement('div');
+      lb.id = 'atlas-lightbox';
+      lb.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(4,3,8,.92);display:flex;align-items:center;justify-content:center;cursor:zoom-out';
+      var img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'max-width:94vw;max-height:94vh;border-radius:6px;box-shadow:0 0 40px rgba(157,107,255,.35)';
+      lb.appendChild(img);
+      function close(){ document.removeEventListener('keydown', onKey); if (lb.parentNode) lb.parentNode.removeChild(lb); }
+      function onKey(e){ if (e.key === 'Escape') close(); }
+      lb.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(lb);
+    };
+    var dz = document.querySelector('.bar') || document.body;
+    ['dragenter','dragover'].forEach(function(ev){
+      dz.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); dz.classList.add('dz-active'); });
+    });
+    ['dragleave','dragend'].forEach(function(ev){
+      dz.addEventListener(ev, function(e){ if (e.target === dz) dz.classList.remove('dz-active'); });
+    });
+    dz.addEventListener('drop', function(e){
+      e.preventDefault(); e.stopPropagation(); dz.classList.remove('dz-active');
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      var pngs = Array.prototype.filter.call(files, function(f){ return f.type === 'image/png'; });
+      if (!pngs.length) { imageError('Drop skipped: only PNG screenshots are admitted.'); return; }
+      addFromClipboard(pngs.map(function(f){ return { type: f.type, getAsFile: function(){ return f; } }; }));
+    });
     window.addEventListener('paste', function(e){
       var target = e.target && e.target.id;
       if (target !== 'say') return;
