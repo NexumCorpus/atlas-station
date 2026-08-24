@@ -1,7 +1,10 @@
 ﻿// Class-wide turn bound for worker seats (DREAM-408 / B-155 failure class).
 // Every query() call site gets a hard tool-round cap unless it declares its own
 // (maxTurns) or is the conversational orchestrator seat. Pure module.
-export const WORKER_TURN_BOUND = 12;
+// Raised from 12 (B-278): A-271/A-276/A-277 autopsies show read tasks doing
+// multi-step investigation exhaust 12 rounds before reaching an answer.
+// 24 aligns with the provider's own DEFAULT_ROUNDS ceiling.
+export const WORKER_TURN_BOUND = 24;
 // Build agents do multi-file work that deterministically needs >12 rounds
 // (B-167..B-174/B-215 autopsies: error_max_turns exhaustion, not crashes).
 export const BUILD_TURN_BOUND = 30;
