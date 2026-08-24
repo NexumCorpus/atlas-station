@@ -3743,6 +3743,7 @@ const daemonHealthTool = tool(
         `Daemon Health: ${health.toUpperCase()} â€” ${message}`,
         `Scheduler: ${schedulerStatus}${nextRunTime ? ' | Next: ' + nextRunTime : ''}`,
         lastRunTs ? `Last start: ${lastRunTs}` : 'Last start: never',
+        (() => { try { const m = require('./retention.cjs').holdoutMetrics(); return `Holdout gate: ${m.accepted} accepted / ${m.rejected} rejected`; } catch (_) { return null; } })(),
         recentSessions.length ? `Recent sessions (${recentSessions.length}):` : 'No sessions recorded.',
         ...recentSessions.map((s, i) => `  ${i + 1}. [${s.state}] ${s.startTs || '?'}${s.replyExcerpt ? ' â€” "' + s.replyExcerpt + '"' : ''}`),
       ].filter(l => l !== '');
