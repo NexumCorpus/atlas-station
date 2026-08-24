@@ -59,6 +59,16 @@ xenobiotic ecology, stores a hash-chained receipt, seals full evidence tissue
 through Context Mycelium and Reed-Solomon shards, and writes only a compact
 navigation crystal. Atlas exposes the same route as `abolish_work`.
 
+## Paid-Problem Radar
+
+`paid-problem-radar.cjs` is Hermes's evidence-bound economic sensor. The native
+`economic_radar` tool freezes public Algora listings before ranking, verifies
+their GitHub issue/repository state, and emits one hash-bound local preflight
+packet. It cannot perform an outward action or treat an advertised reward as
+revenue. The state ladder is deliberately external: listing (`E0`), maintainer
+engagement (`E1`), acceptance (`E2`), and settled cash (`E3`). Only `E3` may
+update revenue evidence. See `docs/PAID_PROBLEM_RADAR.md`.
+
 ## Obligation compiler
 
 `obligation-compiler.cjs` treats typed contractual promises as a directed graph

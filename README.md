@@ -46,6 +46,10 @@ To inspect or run the local Work-Eater organ:
 npm run work:eat:dry
 npm run work:eat
 node scripts/atlas-tool.cjs abolish_work --limit=3 --dry-run
+
+# Freeze and verify a read-only sample of public $100+ code bounties.
+# This produces an unapproved local preflight packet; it never submits work.
+npm run economic:scan
 node scripts/atlas-tool.cjs inspect_source --query=obligation --path=scripts
 npm run obligations:proof
 ```
