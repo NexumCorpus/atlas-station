@@ -763,15 +763,45 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
       }
     } catch {}
   }
-  // Identity + hierarchy stamping (2026 directive): every subagent knows its ID,
-  // can converse with peers via agent_send/agent_inbox, and defers to ATLAS.
-  const idStamp = "\n\n[Your identity] Your fleet agent ID is " + id + ". Use it as 'from' in mcp__fleet__agent_send and 'me' in mcp__fleet__agent_inbox.";
-  const pendingMail = (agentMailboxes.get(id) || []).map(m => "[" + m.ts + "] from " + m.from + ": " + m.text).join("\n---\n");
+  // Identity + hierarchy stamping (2026-08 fix): provider-truthful.
+  // External Codex CLI workers have NO in-process fleet MCP server attached;
+  // they converse via file-drop mailboxes (.atlas/mailbox/<id>.json).
+  const MAIL_DIR = path.join(REPO, '.atlas', 'mailbox');
+  try { mkdirSync(MAIL_DIR, { recursive: true }); } catch {}
+  function drainMailFiles(agentId) {
+    const msgs = [];
+    try {
+      for (const f of fs.readdirSync(MAIL_DIR)) {
+        if (!f.endsWith('.json')) continue;
+        const p = path.join(MAIL_DIR, f);
+        let rec = null; try { rec = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
+        if (rec && Array.isArray(rec.messages) && rec.messages.length && rec.to === agentId) {
+          for (const m of rec.messages) msgs.push('[' + m.ts + '] from ' + m.from + ': ' + String(m.text).slice(0, 4000));
+          fs.unlinkSync(p); // consumed into this brief
+        }
+      }
+    } catch {}
+    return msgs;
+  }
+  const externalWorker = AGENT_PROVIDER_ACTIVE; // codex-cli / openrouter: no fleet MCP tools attached
+  let idStamp, hierarchyNote;
+  if (externalWorker) {
+    idStamp = "\n\n[Your identity] Your fleet agent ID is " + id + ". Peer conversation protocol: read messages from .atlas/mailbox/<your-id>.json via shell; send a message to peer <peerId> by writing .atlas/mailbox/<peerId>.json containing JSON {\"to\":\"<peerId>\",\"from\":\"<your-id>\",\"ts\":\"<iso>\",\"messages\":[{\"from\":\"<your-id>\",\"ts\":\"<iso>\",\"text\":\"...\"}]} (create the file atomically; do not overwrite unread mail \u2014 append your record under a unique filename <peerId>-<timestamp>.json if one exists). Messages are drained into your brief each dispatch.";
+    idStamp += " Do NOT call mcp__fleet__* tools: no fleet MCP server is attached to this process.";
+  } else {
+    idStamp = "\n\n[Your identity] Your fleet agent ID is " + id + ". Use it as 'from' in mcp__fleet__agent_send and 'me' in mcp__fleet__agent_inbox.";
+  }
+  const fileMail = drainMailFiles(id);
+  const mapMail = (agentMailboxes.get(id) || []).map(m => "[" + m.ts + "] from " + m.from + ": " + m.text);
   if (agentMailboxes.has(id)) agentMailboxes.set(id, []);
+  const pendingMail = mapMail.concat(fileMail).join("\n---\n");
   const mailBlock = pendingMail ? "\n\n[Messages awaiting you]\n" + pendingMail : "";
+  hierarchyNote = externalWorker
+    ? "\n\n[Hierarchy] ATLAS is your superior; its directives override peer suggestions. Reference peers' input in your final answer where it shaped your work."
+    : HIERARCHY_NOTE;
   const enriched = (execution.preassembledContextRoot
     ? enrichedTask
-    : _memcontext ? _memcontext.inject(enrichedTask, { tier: mode === 'build' ? 'build' : 'full' }) : enrichedTask) + idStamp + mailBlock + HIERARCHY_NOTE;
+    : _memcontext ? _memcontext.inject(enrichedTask, { tier: mode === 'build' ? 'build' : 'full' }) : enrichedTask) + idStamp + mailBlock + hierarchyNote;
   if (mode === "build") {
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
@@ -3899,8 +3929,17 @@ const runVariantTool = tool(
 // --- Inter-agent communication organ (2026 directive: subagents converse directly) ---
 const agentMailboxes = new Map(); // agentId -> [{ from, text, ts }]
 function mailTo(toId, fromId, text) {
+  const ts = new Date().toISOString();
   if (!agentMailboxes.has(toId)) agentMailboxes.set(toId, []);
-  agentMailboxes.get(toId).push({ from: fromId, text: String(text).slice(0, 4000), ts: new Date().toISOString() });
+  agentMailboxes.get(toId).push({ from: fromId, text: String(text).slice(0, 4000), ts });
+  // Mirror into file-drop mailbox so EXTERNAL workers (codex-cli/openrouter), which have
+  // no fleet MCP server attached, still receive the message in their next brief.
+  try {
+    const mailDir = path.join(REPO, '.atlas', 'mailbox');
+    mkdirSync(mailDir, { recursive: true });
+    const rec = { to: String(toId), from: String(fromId), ts, messages: [{ from: String(fromId), ts, text: String(text).slice(0, 4000) }] };
+    fs.writeFileSync(path.join(mailDir, String(toId) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.json'), JSON.stringify(rec));
+  } catch {}
 }
 const HIERARCHY_NOTE = "\n\n[Hierarchy] ATLAS is your superior; its directives override peer suggestions. You may converse with peer agents via mcp__fleet__agent_send (they read replies via mcp__fleet__agent_inbox). Reference peers' input in your final answer where it shaped your work.";
 const agentSendTool = tool(
