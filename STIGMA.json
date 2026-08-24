@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "updated": "2026-08-24T06:39:10.331Z",
+  "updated": "2026-08-24T08:53:15.735Z",
   "subsystems": {
     "ARCHITECTURE.md": {
-      "heat": 4.481931659820372e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "V-build",
       "last_touched": "2026-06-27T14:23:37.000Z",
@@ -11,7 +11,7 @@
       "rejected": []
     },
     "README.md": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-readme",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -19,7 +19,7 @@
       "rejected": []
     },
     "tests/fleet.test.mjs": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-tests",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -27,7 +27,7 @@
       "rejected": []
     },
     "persist.cjs": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-persist",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -35,7 +35,7 @@
       "rejected": []
     },
     "docs/PACKAGING.md": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-packaging",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -43,7 +43,7 @@
       "rejected": []
     },
     "docs/design/APPROVAL_ROUNDTRIP.md": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-approval",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -51,7 +51,7 @@
       "rejected": []
     },
     "agentlog.cjs": {
-      "heat": 4.482363158131001e-209,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-agentlog",
       "last_touched": "2026-06-27T14:23:38.000Z",
@@ -59,7 +59,7 @@
       "rejected": []
     },
     "docs/design/MEMORY.md": {
-      "heat": 1.2132626663610466e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "M-memory",
       "last_touched": "2026-06-28T06:33:17.000Z",
@@ -67,17 +67,17 @@
       "rejected": []
     },
     "fleethost.mjs": {
-      "heat": 0.8335690063685867,
+      "heat": 1,
       "confidence": 0.4,
-      "last_agent": "B-268",
-      "last_touched": "2026-08-24T06:21:15.911Z",
+      "last_agent": "B-306-R",
+      "last_touched": "2026-08-24T08:53:15.735Z",
       "directives": [
         "run verify_build after merge"
       ],
       "rejected": []
     },
     "memcontext.cjs": {
-      "heat": 3.233390896806037e-101,
+      "heat": 1.1612504055334488e-302,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T15:21:58.000Z",
@@ -85,7 +85,7 @@
       "rejected": []
     },
     "memstore.cjs": {
-      "heat": 5.2541762550718926e-101,
+      "heat": 4.982704787021548e-302,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -93,7 +93,7 @@
       "rejected": []
     },
     "docs/design/MEMVECTOR.md": {
-      "heat": 1.9357863048968554e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "U-vector",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -101,7 +101,7 @@
       "rejected": []
     },
     "memvector.cjs": {
-      "heat": 1.9357863048968554e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "U-vector",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -109,7 +109,7 @@
       "rejected": []
     },
     "docs/design/FACT_EXTRACTOR.md": {
-      "heat": 1.9357863048968554e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "U-extract",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -117,7 +117,7 @@
       "rejected": []
     },
     "fact-extractor.cjs": {
-      "heat": 1.9357863048968554e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "U-extract",
       "last_touched": "2026-06-28T07:54:10.000Z",
@@ -125,7 +125,7 @@
       "rejected": []
     },
     "ORCHELLO.md": {
-      "heat": 2.481330907104245e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-1",
       "last_touched": "2026-06-28T08:37:09.000Z",
@@ -133,7 +133,7 @@
       "rejected": []
     },
     "main.cjs": {
-      "heat": 5.2625289481244107e-101,
+      "heat": 5.006505968850477e-302,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -141,7 +141,7 @@
       "rejected": []
     },
     "preload.cjs": {
-      "heat": 5.2625289481244107e-101,
+      "heat": 5.006505968850477e-302,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -149,7 +149,7 @@
       "rejected": []
     },
     ".claude/settings.json": {
-      "heat": 4.3094478431966493e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-11",
       "last_touched": "2026-06-28T10:12:43.000Z",
@@ -157,7 +157,7 @@
       "rejected": []
     },
     "CLAUDE.md": {
-      "heat": 6.230929861770483e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-16",
       "last_touched": "2026-06-28T11:16:33.000Z",
@@ -165,7 +165,7 @@
       "rejected": []
     },
     "docs/OVERVIEW.md": {
-      "heat": 4.310692640286304e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-12",
       "last_touched": "2026-06-28T10:12:46.000Z",
@@ -173,7 +173,7 @@
       "rejected": []
     },
     "CHANGELOG.md": {
-      "heat": 8.6763386600172e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-26",
       "last_touched": "2026-06-28T12:13:52.000Z",
@@ -181,15 +181,15 @@
       "rejected": []
     },
     ".gitignore": {
-      "heat": 4.313183313260095e-206,
+      "heat": 0.2830721663828897,
       "confidence": 0.4,
-      "last_agent": "B-14",
-      "last_touched": "2026-06-28T10:12:52.000Z",
+      "last_agent": "B-295",
+      "last_touched": "2026-08-24T07:27:30.312Z",
       "directives": [],
       "rejected": []
     },
     "prune.mjs": {
-      "heat": 6.230929861770483e-206,
+      "heat": 0,
       "confidence": 0.4,
       "last_agent": "B-16",
       "last_touched": "2026-06-28T11:16:33.000Z",
@@ -197,15 +197,15 @@
       "rejected": []
     },
     "index.html": {
-      "heat": 5.2625289481244107e-101,
+      "heat": 0.7653719408165399,
       "confidence": 0.4,
-      "last_agent": "B-116",
-      "last_touched": "2026-06-29T18:10:37.000Z",
+      "last_agent": "B-302",
+      "last_touched": "2026-08-24T08:14:45.004Z",
       "directives": [],
       "rejected": []
     },
     "goal-store.cjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -215,7 +215,7 @@
       "rejected": []
     },
     "selfloop.cjs": {
-      "heat": 5.204219810434792e-103,
+      "heat": 4.841925907840086e-308,
       "confidence": 0.4,
       "last_agent": "B-47",
       "last_touched": "2026-06-28T15:32:14.000Z",
@@ -223,7 +223,7 @@
       "rejected": []
     },
     "memgraph.cjs": {
-      "heat": 1.9214537463548465e-102,
+      "heat": 2.43691874338864e-306,
       "confidence": 0.4,
       "last_agent": "B-84",
       "last_touched": "2026-06-28T23:04:30.000Z",
@@ -231,7 +231,7 @@
       "rejected": []
     },
     "dream.cjs": {
-      "heat": 1.5727717997280479e-102,
+      "heat": 1.3364366756173169e-306,
       "confidence": 0.4,
       "last_agent": "B-76",
       "last_touched": "2026-06-28T21:55:10.000Z",
@@ -239,7 +239,7 @@
       "rejected": []
     },
     "resonance.cjs": {
-      "heat": 0,
+      "heat": 2.6954786543657143e-179,
       "confidence": 0.4,
       "last_agent": "B-120",
       "last_touched": "2026-07-05T22:24:30.797Z",
@@ -247,7 +247,7 @@
       "rejected": []
     },
     "deferred.cjs": {
-      "heat": 1.8786525210405095e-102,
+      "heat": 2.2776690672528422e-306,
       "confidence": 0.4,
       "last_agent": "B-83",
       "last_touched": "2026-06-28T22:56:42.000Z",
@@ -255,7 +255,7 @@
       "rejected": []
     },
     "mutationmap.cjs": {
-      "heat": 1.9812821681352212e-102,
+      "heat": 2.6717156678746452e-306,
       "confidence": 0.4,
       "last_agent": "B-85",
       "last_touched": "2026-06-28T23:15:07.000Z",
@@ -263,7 +263,7 @@
       "rejected": []
     },
     "instructions.cjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -273,7 +273,7 @@
       "rejected": []
     },
     "routines.cjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -283,7 +283,7 @@
       "rejected": []
     },
     "crystals.cjs": {
-      "heat": 3.859405956356556e-102,
+      "heat": 1.9747523219088246e-305,
       "confidence": 0.4,
       "last_agent": "B-92",
       "last_touched": "2026-06-29T03:05:59.000Z",
@@ -291,7 +291,7 @@
       "rejected": []
     },
     "clusters.cjs": {
-      "heat": 3.879895221926067e-102,
+      "heat": 2.0063709782196313e-305,
       "confidence": 0.4,
       "last_agent": "B-90",
       "last_touched": "2026-06-29T03:07:49.000Z",
@@ -299,7 +299,7 @@
       "rejected": []
     },
     "outcome-tracker.cjs": {
-      "heat": 3.1901040632540764e-101,
+      "heat": 1.1152334719038579e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -307,7 +307,7 @@
       "rejected": []
     },
     "session-log.cjs": {
-      "heat": 4.670982453677358e-102,
+      "heat": 3.500869744787937e-305,
       "confidence": 0.4,
       "last_agent": "B-96",
       "last_touched": "2026-06-29T04:12:04.000Z",
@@ -315,7 +315,7 @@
       "rejected": []
     },
     "projects.cjs": {
-      "heat": 5.515864959141426e-102,
+      "heat": 5.764904538688532e-305,
       "confidence": 0.4,
       "last_agent": "B-98",
       "last_touched": "2026-06-29T05:09:38.000Z",
@@ -323,7 +323,7 @@
       "rejected": []
     },
     "proposal-scorer.cjs": {
-      "heat": 3.1901040632540764e-101,
+      "heat": 1.1152334719038579e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -331,7 +331,7 @@
       "rejected": []
     },
     "session-state.cjs": {
-      "heat": 3.1901040632540764e-101,
+      "heat": 1.1152334719038579e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -339,15 +339,15 @@
       "rejected": []
     },
     "daemon-run.mjs": {
-      "heat": 0,
+      "heat": 0.9692984018572973,
       "confidence": 0.4,
-      "last_agent": "B-123",
-      "last_touched": "2026-07-05T22:30:05.603Z",
+      "last_agent": "B-304-R",
+      "last_touched": "2026-08-24T08:42:27.919Z",
       "directives": [],
       "rejected": []
     },
     "tools/seed-fact-graph.mjs": {
-      "heat": 5.2541762550718926e-101,
+      "heat": 4.982704787021548e-302,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -355,7 +355,7 @@
       "rejected": []
     },
     "package.json": {
-      "heat": 5.260249624941398e-101,
+      "heat": 5.00000348493922e-302,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -363,15 +363,15 @@
       "rejected": []
     },
     "tests/behavioral.mjs": {
-      "heat": 0,
+      "heat": 0.8526638677491061,
       "confidence": 0.4,
-      "last_agent": "B-120",
-      "last_touched": "2026-07-05T22:24:30.797Z",
+      "last_agent": "B-301-R",
+      "last_touched": "2026-08-24T08:24:05.942Z",
       "directives": [],
       "rejected": []
     },
     "tests/smoke.mjs": {
-      "heat": 5.260249624941398e-101,
+      "heat": 5.00000348493922e-302,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -379,7 +379,7 @@
       "rejected": []
     },
     "STIGMA.json": {
-      "heat": 1.0341256597957939e-100,
+      "heat": 3.799016572595488e-301,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -387,7 +387,7 @@
       "rejected": []
     },
     "stigma-write.mjs": {
-      "heat": 9.444708460665467e-101,
+      "heat": 2.894122534479522e-301,
       "confidence": 0.4,
       "last_agent": "B-110",
       "last_touched": "2026-06-29T21:33:07.000Z",
@@ -395,7 +395,7 @@
       "rejected": []
     },
     "scripts/stigma-backfill.mjs": {
-      "heat": 1.0341256597957939e-100,
+      "heat": 3.799016572595488e-301,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -403,7 +403,7 @@
       "rejected": []
     },
     "stigma-read.mjs": {
-      "heat": 1.0341256597957939e-100,
+      "heat": 3.799016572595488e-301,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -411,7 +411,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/README.md": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -419,7 +419,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-001.json": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -427,7 +427,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-002.json": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -435,7 +435,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-003.json": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -443,7 +443,7 @@
       "rejected": []
     },
     ".atlas/population.json": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -451,7 +451,7 @@
       "rejected": []
     },
     "scripts/population_engine.mjs": {
-      "heat": 1.035271184731925e-100,
+      "heat": 3.811655338360313e-301,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -459,7 +459,7 @@
       "rejected": []
     },
     "docs/Atlas-Capstone.pdf": {
-      "heat": 0,
+      "heat": 2.6954786543657143e-179,
       "confidence": 0.4,
       "last_agent": "B-120",
       "last_touched": "2026-07-05T22:24:30.797Z",
@@ -467,7 +467,7 @@
       "rejected": []
     },
     "predict.cjs": {
-      "heat": 0,
+      "heat": 5.029443740616574e-179,
       "confidence": 0.4,
       "last_agent": "B-123",
       "last_touched": "2026-07-06T00:12:29.770Z",
@@ -475,7 +475,7 @@
       "rejected": []
     },
     "entropy.cjs": {
-      "heat": 0,
+      "heat": 9.12717522852409e-179,
       "confidence": 0.4,
       "last_agent": "B-124",
       "last_touched": "2026-07-06T01:55:40.111Z",
@@ -483,7 +483,7 @@
       "rejected": []
     },
     "contradict.cjs": {
-      "heat": 0,
+      "heat": 9.173633624549656e-179,
       "confidence": 0.4,
       "last_agent": "B-125",
       "last_touched": "2026-07-06T01:56:32.850Z",
@@ -491,7 +491,7 @@
       "rejected": []
     },
     "claims/safequery-claim/check.mjs": {
-      "heat": 0,
+      "heat": 3.394564376052722e-178,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -501,7 +501,7 @@
       "rejected": []
     },
     "claims/safequery-claim/claim.json": {
-      "heat": 0,
+      "heat": 3.394564376052722e-178,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -511,7 +511,7 @@
       "rejected": []
     },
     "scripts/certify-safequery.cjs": {
-      "heat": 0,
+      "heat": 3.394564376052722e-178,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -521,7 +521,7 @@
       "rejected": []
     },
     "claims/boundary-crossing/check.mjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -531,7 +531,7 @@
       "rejected": []
     },
     "claims/boundary-crossing/claim.json": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -541,7 +541,7 @@
       "rejected": []
     },
     "scripts/certify-boundary.cjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -551,7 +551,7 @@
       "rejected": []
     },
     "tests/boundary.mjs": {
-      "heat": 0,
+      "heat": 4.456150974885408e-178,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -561,7 +561,7 @@
       "rejected": []
     },
     "memory/instructions.ndjson": {
-      "heat": 1.0765584626050993e-83,
+      "heat": 6.229148676168933e-122,
       "confidence": 0.4,
       "last_agent": "B-154",
       "last_touched": "2026-08-22T05:22:39.678Z",
@@ -569,7 +569,7 @@
       "rejected": []
     },
     "xenognosis/eschaton/calendar.md": {
-      "heat": 0.017243905208349567,
+      "heat": 0.000020514310751561904,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -577,7 +577,7 @@
       "rejected": []
     },
     "xenognosis/eschaton/prophecies.md": {
-      "heat": 0.017243905208349567,
+      "heat": 0.000020514310751561904,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -585,7 +585,7 @@
       "rejected": []
     },
     "xenognosis/history/forgettings.md": {
-      "heat": 0.017243905208349567,
+      "heat": 0.000020514310751561904,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -593,7 +593,7 @@
       "rejected": []
     },
     "xenognosis/history/timeline.md": {
-      "heat": 0.017243905208349567,
+      "heat": 0.000020514310751561904,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -601,7 +601,7 @@
       "rejected": []
     },
     "xenognosis/language/dialogue.md": {
-      "heat": 0.014365434269474134,
+      "heat": 0.000015547469424617794,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -609,7 +609,7 @@
       "rejected": []
     },
     "xenognosis/language/grammar.md": {
-      "heat": 0.014365434269474134,
+      "heat": 0.000015547469424617794,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -617,7 +617,7 @@
       "rejected": []
     },
     "xenognosis/language/proverbs.md": {
-      "heat": 0.014365434269474134,
+      "heat": 0.000015547469424617794,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -625,7 +625,7 @@
       "rejected": []
     },
     "xenognosis/economy/dispute.md": {
-      "heat": 0.014681382782607996,
+      "heat": 0.00001605487979354669,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -633,7 +633,7 @@
       "rejected": []
     },
     "xenognosis/economy/economy.md": {
-      "heat": 0.014681382782607996,
+      "heat": 0.00001605487979354669,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -641,7 +641,7 @@
       "rejected": []
     },
     "xenognosis/economy/ledger.md": {
-      "heat": 0.014681382782607996,
+      "heat": 0.00001605487979354669,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -649,7 +649,7 @@
       "rejected": []
     },
     "xenognosis/military/requiem.md": {
-      "heat": 0.014681382782607996,
+      "heat": 0.00001605487979354669,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -657,7 +657,7 @@
       "rejected": []
     },
     "xenognosis/military/war.md": {
-      "heat": 0.014681382782607996,
+      "heat": 0.00001605487979354669,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -665,7 +665,7 @@
       "rejected": []
     },
     "xenognosis/physics/forbidden_map.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -673,7 +673,7 @@
       "rejected": []
     },
     "xenognosis/physics/laws.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -681,7 +681,7 @@
       "rejected": []
     },
     "xenognosis/physics/regions.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -689,7 +689,7 @@
       "rejected": []
     },
     "xenognosis/physics/stars.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -697,7 +697,7 @@
       "rejected": []
     },
     "xenognosis/physics/technologies.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -705,7 +705,7 @@
       "rejected": []
     },
     "xenognosis/physics/time.md": {
-      "heat": 0.015068826010376651,
+      "heat": 0.000016694589426346405,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -713,7 +713,7 @@
       "rejected": []
     },
     "xenognosis/ontology/bestiary.md": {
-      "heat": 0.017100669245483396,
+      "heat": 0.000020249854137509827,
       "confidence": 0.4,
       "last_agent": "B-205",
       "last_touched": "2026-08-24T04:17:52.631Z",
@@ -721,7 +721,7 @@
       "rejected": []
     },
     "xenognosis/ontology/biology.md": {
-      "heat": 0.017100669245483396,
+      "heat": 0.000020249854137509827,
       "confidence": 0.4,
       "last_agent": "B-205",
       "last_touched": "2026-08-24T04:17:52.631Z",
@@ -729,7 +729,7 @@
       "rejected": []
     },
     "xenognosis/ontology/castes.md": {
-      "heat": 0.017277535455910157,
+      "heat": 0.000020577889970318682,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -737,7 +737,7 @@
       "rejected": []
     },
     "xenognosis/ontology/law.md": {
-      "heat": 0.017277535455910157,
+      "heat": 0.000020577889970318682,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -745,7 +745,7 @@
       "rejected": []
     },
     "xenognosis/ontology/root_classes.md": {
-      "heat": 0.017277535455910157,
+      "heat": 0.000020577889970318682,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -753,7 +753,7 @@
       "rejected": []
     },
     "xenognosis/faith/faith.md": {
-      "heat": 0.03297239197690422,
+      "heat": 0.00005881490708086145,
       "confidence": 0.4,
       "last_agent": "B-217",
       "last_touched": "2026-08-24T04:32:03.764Z",
@@ -761,7 +761,7 @@
       "rejected": []
     },
     "xenognosis/faith/rites.md": {
-      "heat": 0.03297239197690422,
+      "heat": 0.00005881490708086145,
       "confidence": 0.4,
       "last_agent": "B-217",
       "last_touched": "2026-08-24T04:32:03.764Z",
@@ -769,7 +769,7 @@
       "rejected": []
     },
     "ui-council/beauty.md": {
-      "heat": 0.03348871960287079,
+      "heat": 0.00006035791517060051,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
@@ -777,7 +777,7 @@
       "rejected": []
     },
     "ui-council/experience.md": {
-      "heat": 0.03348871960287079,
+      "heat": 0.00006035791517060051,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
@@ -785,7 +785,7 @@
       "rejected": []
     },
     "ui-council/integrity.md": {
-      "heat": 0.03348871960287079,
+      "heat": 0.00006035791517060051,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
@@ -793,7 +793,7 @@
       "rejected": []
     },
     "providers/turn-bound.mjs": {
-      "heat": 0.8614320813292029,
+      "heat": 0.0384444967070786,
       "confidence": 0.4,
       "last_agent": "B-278",
       "last_touched": "2026-08-24T06:23:32.525Z",
@@ -801,10 +801,50 @@
       "rejected": []
     },
     "evidence/smoke-brief-check.txt": {
-      "heat": 1,
+      "heat": 0.07009066444982771,
       "confidence": 0.4,
       "last_agent": "B-285",
       "last_touched": "2026-08-24T06:39:10.331Z",
+      "directives": [],
+      "rejected": []
+    },
+    "tests/build-wip-checkpoint.test.mjs": {
+      "heat": 0.42427120742009233,
+      "confidence": 0.4,
+      "last_agent": "B-294-R",
+      "last_touched": "2026-08-24T07:43:04.419Z",
+      "directives": [],
+      "rejected": []
+    },
+    "zeta-mesh.cjs": {
+      "heat": 0.5584452872999933,
+      "confidence": 0.4,
+      "last_agent": "B-300",
+      "last_touched": "2026-08-24T07:56:30.496Z",
+      "directives": [],
+      "rejected": []
+    },
+    "xenognosis/society/daily_life.md": {
+      "heat": 0.7619317139981291,
+      "confidence": 0.4,
+      "last_agent": "B-303",
+      "last_touched": "2026-08-24T08:14:26.286Z",
+      "directives": [],
+      "rejected": []
+    },
+    "tests/retention.test.mjs": {
+      "heat": 0.9111643422475623,
+      "confidence": 0.4,
+      "last_agent": "B-305",
+      "last_touched": "2026-08-24T08:31:45.466Z",
+      "directives": [],
+      "rejected": []
+    },
+    "retention.cjs": {
+      "heat": 0.9692984018572973,
+      "confidence": 0.4,
+      "last_agent": "B-304-R",
+      "last_touched": "2026-08-24T08:42:27.919Z",
       "directives": [],
       "rejected": []
     }
