@@ -6,6 +6,10 @@ import { join } from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
 
+// BEFORE-merge holdout gate (retention measurement stage). Optional module.
+let _holdout = null;
+try { _holdout = require("./holdout-gate.cjs"); } catch (_) { _holdout = null; }
+
 const NODE = "C:\\Program Files\\nodejs\\node.exe";
 const DIR  = "E:\\atlas-station";
 const LOG  = join(DIR, "memory", "daemon-log.ndjson");
@@ -73,6 +77,24 @@ try {
     } catch (_) {
       // Not yet in master — merge it
       try {
+        // BEFORE-merge holdout gate: stage the branch off master and verify it there.
+        if (_holdout) {
+          const agentId = branch.replace(/^fleet\//, "");
+          try {
+            const verdict = _holdout.stagedHoldout(agentId, DIR);
+            if (!verdict.pass) {
+              _holdout.recordReceipt(DIR, _holdout.receiptPath(DIR), { ts: new Date().toISOString(), agentId, reason: String(verdict.reason || "stagedHoldout failed").slice(0, 300), failedTests: verdict.failedTests || [] });
+              writeLog({ event: "holdout-reject", branch, reason: String(verdict.reason || "").slice(0, 200), failedTests: verdict.failedTests });
+              console.log("[daemon] holdout REJECTED unmerged branch:", branch);
+              continue;
+            } else {
+              _holdout.recordReceipt(DIR, _holdout.acceptPath(DIR), { ts: new Date().toISOString(), agentId, filesChecked: (verdict.filesChecked || []).length });
+              writeLog({ event: "holdout-accept", branch, filesChecked: (verdict.filesChecked || []).length });
+            }
+          } catch (gateErr) {
+            writeLog({ event: "holdout-gate-error", branch, error: String(gateErr.message || gateErr).slice(0, 200) });
+          }
+        }
         execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "daemon-startup: auto-merge " + branch, branch], { cwd: DIR });
         writeLog({ event: "startup-auto-merge", branch });
         console.log("[daemon] auto-merged unmerged branch:", branch);
