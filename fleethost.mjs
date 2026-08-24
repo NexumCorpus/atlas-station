@@ -3986,11 +3986,24 @@ function _mailboxFile(id) {
   const safe = String(id || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
   return path.join(MAILBOX_DIR, safe + '.ndjson');
 }
+const agentMailboxes = new Map(); // agentId -> persistent message array (lazy-loaded)
+const mailboxReadIdx = new Map(); // agentId -> index of last drained message
+function _loadMailbox(id) {
+  const key = String(id || 'unknown');
+  if (agentMailboxes.has(key)) return agentMailboxes.get(key);
+  let msgs = [];
+  try {
+    msgs = readFileSync(_mailboxFile(key), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch {}
+  agentMailboxes.set(key, msgs);
+  return msgs;
+}
 function mailTo(toId, fromId, text) {
   const ts = new Date().toISOString();
   const msg = { from: String(fromId), text: String(text).slice(0, 4000), ts };
   mkdirSync(MAILBOX_DIR, { recursive: true });
   appendFileSync(_mailboxFile(toId), JSON.stringify(msg) + '\n');
+  try { _loadMailbox(String(toId)).push(msg); } catch {}
   // Mirror into file-drop mailbox so EXTERNAL workers (codex-cli/openrouter), which have
   // no fleet MCP server attached, still receive the message in their next brief.
   try {
@@ -4022,12 +4035,10 @@ const agentInboxTool = tool(
   {},
   async () => {
     const myId = this?.__agentId || "unknown";
-    const mf = _mailboxFile(myId);
-    let msgs = [];
-    try {
-      msgs = readFileSync(mf, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-      rmSync(mf, { force: true }); // drain-on-read
-    } catch {}
+    const all = _loadMailbox(myId);
+    const start = mailboxReadIdx.get(myId) || 0;
+    const msgs = all.slice(start);
+    mailboxReadIdx.set(myId, all.length);
     if (!msgs.length) return { content: [{ type: "text", text: "inbox empty" }] };
     return { content: [{ type: "text", text: msgs.map(m => `[${m.ts}] from ${m.from}: ${m.text}`).join("\n---\n") }] };
   }
