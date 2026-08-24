@@ -20,11 +20,14 @@ export function createOrchestrationLanes() {
 }
 
 export function laneTurnBound(lane, env = process.env) {
-  const fallback = 64;
+  // DREAM-408 follow-up: the old 64-round mouth fallback killed long operator
+  // tasks mid-flight (handoff loses conversational state). Generous default now;
+  // the metabolism handoff remains a last-resort net.
+  const fallback = lane === 'mouth' ? 384 : 128;
   const raw = lane === 'mouth'
     ? env.ATLAS_MOUTH_MAX_TURNS
     : env.ATLAS_ORCHESTRATOR_MAX_TURNS;
-  return Math.max(1, Math.min(256, Number(raw) || fallback));
+  return Math.max(1, Math.min(1024, Number(raw) || fallback));
 }
 
 export function laneTimeoutMs(lane, env = process.env) {
