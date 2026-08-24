@@ -12,7 +12,7 @@ import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/clau
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { adaptSdkTools } from "./providers/openrouter-tools.mjs";
-import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
+const _tbMod = await import("./providers/turn-bound.mjs?t=" + Date.now()).catch(() => import("./providers/turn-bound.mjs"));
 import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, laneContextChars, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
@@ -31,7 +31,7 @@ function query(args) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} â€” use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
-  const bound = workerTurnBound(args && args.options);
+  const bound = _tbMod.workerTurnBound(args && args.options);
   if (bound != null) args = { ...args, options: { ...(args.options || {}), maxTurns: bound } };
   if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.query(args);
   if (CODEX_PROVIDER_ACTIVE) return _codexProvider.query(args);
@@ -5725,6 +5725,8 @@ try {
     send('notification', { text: 'Provider key [' + label + '] is ' + k.state + detail, type: 'key-expiry', read: false });
   }
 } catch (_) {}
+
+
 
 
 
