@@ -613,10 +613,20 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       set(id, patch);
     } else if (m.type === "result") {
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
+      // D-1787413765000: commit refs captured at agent terminalization
+      let commitRefs = null;
+      if (build && branch) {
+        try {
+          const headSha = gitC(["rev-parse", "HEAD"]).trim();
+          let dirty = 0;
+          try { dirty = gitC(["status", "--porcelain"]).split("\n").filter(l => l.trim()).length; } catch (_) {}
+          commitRefs = { branch, headSha, dirtyFiles: dirty };
+        } catch (_) {}
+      }
       final = String(m.result ?? agents.get(id)?.summary ?? "");
       flushThinking(true);
       set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
-      if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, transcriptPath: null,
+      if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, commitRefs, transcriptPath: null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
       // Record which files this build agent modified — feeds mutation_map churn analysis
       if (build && _mutmap) {
