@@ -446,6 +446,7 @@ function pruneAgent(id) {
 function set(id, patch) {
   const a = agents.get(id) || { id };
   // Clear timeout before transitioning to a terminal state
+  if ((patch.state === "done" || patch.state === "failed") && stallTimers.has(id)) { clearInterval(stallTimers.get(id)); stallTimers.delete(id); }
   if ((patch.state === "done" || patch.state === "failed") && timeoutHandles.has(id)) {
     clearTimeout(timeoutHandles.get(id));
     timeoutHandles.delete(id);
@@ -470,6 +471,24 @@ function set(id, patch) {
         if (ctrl) ctrl.abort();
         set(id, { state: "failed", summary: "timeout â€” agent exceeded " + Math.round(ms / 60000) + "min limit" });
       }, ms));
+      // Stall sentinel: observe-only. If still working with timeout handle armed but
+      // last tool call >10min ago, emit a suspicion event once. Never kills the agent.
+      const STALL_MS = 10 * 60 * 1000;
+      let stallReported = false;
+      const stallTimer = setInterval(() => {
+        try {
+          if (!timeoutHandles.has(id)) { clearInterval(stallTimer); stallTimers.delete(id); return; }
+          const ag = agents.get(id);
+          if (!ag || ag.state !== "working") { clearInterval(stallTimer); stallTimers.delete(id); return; }
+          if (typeof ag.lastTool !== "number") return;
+          const idleMs = Date.now() - ag.lastTool;
+          if (idleMs >= STALL_MS && !stallReported) {
+            stallReported = true;
+            send("agent_stall_suspected", { id, idleMinutes: Math.round((idleMs / 60000) * 10) / 10 });
+          }
+        } catch (_) {}
+      }, 60000);
+      stallTimers.set(id, stallTimer);
     }
   }
   send("agent", a);
