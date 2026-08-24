@@ -22,6 +22,7 @@ function parseFailureMode(stderr) {
   if (text.includes('merge conflict') || text.includes('conflict in') || text.includes('automatic merge failed')) return 'merge_conflict';
   if (text.includes('syntaxerror') || text.includes('error:') || text.includes('failed to')) return 'logic_error';
   if (text.includes('permission denied') || text.includes('enoent') || text.includes('eacces')) return 'environment';
+  if (/max[-_ ]?turns|tool[-_ ]round|exhausted|turn bound/.test(text)) return 'turn_exhaustion';
   return 'unknown';
 }
 
