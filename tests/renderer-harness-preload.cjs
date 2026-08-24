@@ -2,13 +2,14 @@ const { contextBridge } = require('electron');
 
 const calls = [];
 let fleetCallback = null;
+let lastSubmissionId = null;
 const api = {
-  say: (text) => calls.push({ type: 'say', text }),
+  say: (text, _images, submissionId) => { lastSubmissionId = submissionId || null; calls.push({ type: 'say', text }); },
   dispatch: (task, cwd, mode) => calls.push({ type: 'dispatch', task, cwd, mode }),
   setAutonomy: () => {},
   replyAgent: () => {},
   selfBuild: () => {},
-  cancel: (id) => calls.push({ type: 'cancel', id }),
+  cancel: (id, submissionId) => calls.push({ type: 'cancel', id, ...(submissionId ? { submissionId } : {}) }),
   readMemory: () => {},
   readRuns: () => {},
   exportConversation: () => {},
@@ -22,6 +23,7 @@ const api = {
   onFleet: (callback) => { fleetCallback = callback; },
   emitFleet: (message) => { if (fleetCallback) fleetCallback(message); },
   getCalls: () => calls.slice(),
+  getLastSubmissionId: () => lastSubmissionId,
   clearCalls: () => { calls.length = 0; },
 };
 

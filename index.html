@@ -330,6 +330,8 @@ body:has(#tab-ecology:target) .tab[data-tab="fleet"]{color:var(--dim);border-bot
 .msg:hover{background:rgba(255,255,255,.025)}
 .msg.atlas{border-left:2px solid rgba(157,107,255,.25);background:linear-gradient(90deg,rgba(157,107,255,.025) 0%,transparent 35%);padding-left:12px;margin-left:-2px}
 .msg.atlas .msg-avatar{box-shadow:0 0 8px rgba(157,107,255,.25)}
+.msg.atlas.interrupted{border-left-color:rgba(255,194,75,.55);background:linear-gradient(90deg,rgba(255,194,75,.07),transparent 42%)}
+.msg.atlas.interrupted .msg-role,.msg.atlas.interrupted .msg-text{color:rgba(255,210,120,.86)}
 .msg.user{border-left:2px solid rgba(100,180,255,.15);padding-left:12px;margin-left:-2px}
 .msg-avatar{width:18px;height:18px;border-radius:50%;flex-shrink:0;margin-top:2px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700;letter-spacing:0}
 .msg.atlas .msg-avatar{background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35)}
@@ -422,6 +424,9 @@ input:focus-visible{outline:none}
 #sendbtn:hover{background:rgba(157,107,255,.22);border-color:rgba(157,107,255,.5);color:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.2)}
 #sendbtn:active{transform:translateY(1px);background:rgba(157,107,255,.3)}
 #sendbtn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none;transform:none}
+#sendbtn.stop{color:var(--amber);border-color:rgba(255,194,75,.45);background:rgba(255,194,75,.1)}
+#sendbtn.stop:hover{background:rgba(255,194,75,.2);border-color:rgba(255,194,75,.7);color:var(--amber);box-shadow:0 0 8px rgba(255,194,75,.2)}
+#sendbtn.stopping{color:var(--dim);border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.04);cursor:wait}
 /* ── character counter ────────────────────────── */
 #say-counter{font-size:9px;color:var(--dim);letter-spacing:.04em;flex:none;font-variant-numeric:tabular-nums;transition:color .2s;min-width:24px;text-align:right}
 #say-counter.warn{color:var(--amber)}
@@ -502,6 +507,7 @@ input:focus-visible{outline:none}
 #executionrail.working #exec-dot{background:var(--cyan);box-shadow:0 0 9px rgba(34,225,255,.75);animation:vdot-pulse 1.2s ease-in-out infinite}
 #executionrail.done #exec-dot{background:var(--green)}
 #executionrail.failed #exec-dot{background:var(--red)}
+#executionrail.interrupted #exec-dot{background:var(--amber)}
 #exec-state{font-weight:700;text-transform:uppercase;color:#b9bed1;flex:none}
 #exec-route{color:var(--cyan);white-space:nowrap;flex:none}
 #exec-task{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;opacity:.8}
@@ -1106,6 +1112,10 @@ input:focus-visible{outline:none}
   var SEL=null;
   var atlasStreaming=false;
   var atlasStreamText='';
+  var atlasCancelRequested=false;
+  var submissionRegistry=Object.create(null);
+  var submissionRegistryOrder=[];
+  var SUBMISSION_REGISTRY_LIMIT=96;
   var particled=new Set();
   var seenAgentIds=new Set();
   var doneAgentIds=new Set();
@@ -1229,6 +1239,93 @@ input:focus-visible{outline:none}
     return null;
   }
 
+  function eventSubmissionId(m){
+    return m&&(m.submissionId||m.directiveId||m.idempotencyKey)||null;
+  }
+  function atlasForSubmission(id){
+    if(!id)return null;
+    for(var i=0;i<thread.length;i++){
+      if(thread[i].role==='atlas'&&thread[i].submissionId===id)return thread[i];
+    }
+    return null;
+  }
+  function rememberSubmission(id,state){
+    if(!id)return;
+    if(!submissionRegistry[id])submissionRegistryOrder.push(id);
+    submissionRegistry[id]=state;
+    while(submissionRegistryOrder.length>SUBMISSION_REGISTRY_LIMIT){
+      var old=submissionRegistryOrder.shift();
+      if(old)delete submissionRegistry[old];
+    }
+  }
+  function submissionState(id){return id?submissionRegistry[id]||null:null;}
+
+  function activeAtlasSubmissionId(){
+    var a=agents.get('ATLAS');
+    return a&&a.state==='working'?eventSubmissionId(a):null;
+  }
+
+  // The composer is also the mouth's stop surface. Keep this state derived from
+  // the pending turn/agent snapshot so renderer reconnects do not invent a new
+  // execution or leave a stale Stop button behind.
+  function atlasTurnActive(){
+    var a=agents.get('ATLAS');
+    return !!(firstPendingAtlas()||atlasStreaming||(a&&a.state==='working'));
+  }
+  function cancelAtlasTurn(){
+    if(!atlasTurnActive()||atlasCancelRequested)return false;
+    atlasCancelRequested=true;
+    // The live agent identity wins over FIFO: a prior bubble may still be
+    // pending in the renderer while the sidecar has already admitted B.
+    var activeSubmissionId=activeAtlasSubmissionId();
+    var target=activeSubmissionId?atlasForSubmission(activeSubmissionId):firstPendingAtlas();
+    var submissionId=activeSubmissionId||(target&&target.submissionId)||null;
+    if(submissionId)rememberSubmission(submissionId,'cancel-requested');
+    if(window.atlas&&typeof window.atlas.cancel==='function')window.atlas.cancel('ATLAS',submissionId);
+    // Stop rendering speculative text immediately, but do not mark the turn
+    // interrupted until the sidecar publishes the authoritative lifecycle.
+    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+    var status=$('status');if(status)status.textContent='overseer · stopping';
+    updateComposerState();
+    return true;
+  }
+  function reconcileExecutionInterrupted(m){
+    if(!m||m.state!=='interrupted')return false;
+    var sid=eventSubmissionId(m), prior=submissionState(sid);
+    if(sid&&prior==='settled')return true;
+    var pend=sid?atlasForSubmission(sid):firstPendingAtlas();
+    if(sid&&!pend){if(prior==='cancel-requested')rememberSubmission(sid,'settled');return false;}
+    if(!pend)return false;
+    var text=m.summary||'Interrupted by operator.';
+    pend.text=text;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.error=false;pend.interrupted=true;
+    rememberSubmission(pend.submissionId||sid,'settled');
+    agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:'interrupted',summary:text,reply:text});
+    atlasCancelRequested=false;
+    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+    var status=$('status');if(status)status.textContent='overseer · interrupted';
+    updateComposerState();renderThread();
+    return true;
+  }
+  function reconcileCancelTerminal(m){
+    if(!m||!m.submissionId||!['done','failed','interrupted'].includes(m.state))return false;
+    var sid=m.submissionId, prior=submissionState(sid), pend=atlasForSubmission(sid);
+    if(prior==='settled')return true;
+    if(!pend){if(prior==='cancel-requested')rememberSubmission(sid,'settled');atlasCancelRequested=false;updateComposerState();return false;}
+    var interrupted=m.state==='interrupted';
+    var text=m.reply||m.summary||(interrupted?'Interrupted by operator.':'(no reply)');
+    pend.text=text;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.error=m.state==='failed';pend.interrupted=interrupted;
+    rememberSubmission(sid,'settled');
+    var activeSubmissionId=activeAtlasSubmissionId();
+    if(!activeSubmissionId||activeSubmissionId===sid){
+      agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:m.state,submissionId:sid,summary:text,reply:text});
+      captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+      var status=$('status');if(status)status.textContent=interrupted?'overseer · interrupted':m.state==='failed'?'overseer · failed':'overseer · idle';
+    }
+    atlasCancelRequested=false;
+    updateComposerState();renderThread();
+    return true;
+  }
+
   function renderExecution(m){
     var rail=$('executionrail'); if(!rail)return;
     var state=m.state||'idle';
@@ -1291,7 +1388,7 @@ input:focus-visible{outline:none}
       if(m.type==='ingress' && m.state==='journaled' && m.submissionId) delete _pendingSubmissions[m.submissionId];
       if(m.type==='ingress' && m.state==='failed'){
         for(var _pi=thread.length-1;_pi>=0;_pi--){
-          if(thread[_pi].role==='atlas'&&thread[_pi].pending&&(!m.submissionId||thread[_pi].submissionId===m.submissionId)){
+          if(thread[_pi].role==='atlas'&&thread[_pi].pending&&m.submissionId&&thread[_pi].submissionId===m.submissionId){
             thread[_pi].pending=false;
             thread[_pi].error=true;
             thread[_pi].text='Ingress failed: '+(m.reason||'submission was not admitted');
@@ -1317,8 +1414,19 @@ input:focus-visible{outline:none}
       addTimelineEvent(m.state==='failed'||m.state==='blocked'?'⚠':'↳',_estate,m.state==='failed'||m.state==='blocked'?'evfailed':'');
       return;
     }
+    if(m.type==='cancel_reconcile'){
+      reconcileCancelTerminal(m);
+      return;
+    }
+    if(m.type==='cancel_error'){
+      if(m.submissionId&&submissionState(m.submissionId)==='cancel-requested')rememberSubmission(m.submissionId,'pending');
+      atlasCancelRequested=false;updateComposerState();
+      addTimelineEvent('⚠','Stop could not be made durable · '+(m.reason||'unknown error'),'evfailed');
+      return;
+    }
     if(m.type==="execution"){
       renderExecution(m);
+      reconcileExecutionInterrupted(m);
       if(m.state==='working'&&!m.heartbeatAt){window.__otl={lines:[],map:{}};window.__thk={tail:''};var _sth=document.getElementById('stream-think');if(_sth)_sth.innerHTML='';}
       if(m.heartbeatAt)return;
       addTimelineEvent(m.state==='working'?'◌':m.state==='done'?'✓':'✗',
@@ -1414,6 +1522,10 @@ if(m.type==="orchestrator_tool"||m.type==="orchestrator_toolresult"){
 if(m.type==="agent"){
       if(m.id==="ATLAS"){
         if(m.partial){
+          // Stop is authoritative for the active mouth turn. A buffered provider
+          // delta may still arrive after abort; never resurrect speculative text.
+          var partialSubmissionId=eventSubmissionId(m), partialState=submissionState(partialSubmissionId);
+          if((partialSubmissionId&&(partialState==='cancel-requested'||partialState==='settled'))||(!partialSubmissionId&&atlasCancelRequested))return;
           agents.set("ATLAS",m);
           // Prefer the LIVE summary over the full reply: reply holds the prior
           // turn's result and must not be rebroadcast as this turn's streaming.
@@ -1426,27 +1538,42 @@ if(m.type==="agent"){
           } else {
             setTyping(true);
           }
+          updateComposerState();
           updateVitals();
           return;
         }
+        var terminalSubmissionId=eventSubmissionId(m), terminalState=submissionState(terminalSubmissionId);
+        // Once a correlated turn is settled, late provider events must never
+        // fall through to the next pending bubble. A terminal provider result
+        // still wins if cancellation arrived too late to stop that turn.
+        if(terminalSubmissionId&&terminalState==='settled')return;
+        var pend=terminalSubmissionId?atlasForSubmission(terminalSubmissionId):firstPendingAtlas();
+        if(terminalSubmissionId&&!pend&&terminalState==='cancel-requested'&&m.state==='interrupted'){
+          rememberSubmission(terminalSubmissionId,'settled');
+          return;
+        }
         agents.set("ATLAS",m);
-        var pend=firstPendingAtlas();
         if(m.state==="working"){
           if(pend){pend.lastTool=m.lastTool||null;pend.lastToolArg=m.lastToolArg||null;pend.activity=m.summary||null;}
           setTyping(true);
           $('status').textContent="overseer · working";
-        } else if(m.state==="done"||m.state==="failed"){
+        } else if(m.state==="done"||m.state==="failed"||m.state==="interrupted"){
           captureOtlForFinal();captureThinkForFinal();clearStreamingMsg(); // remove live stream element before final render
-          var txt=m.reply||m.summary||"(no reply)";
+          var interrupted=m.state==="interrupted";
+          var txt=m.reply||m.summary||(interrupted?"Interrupted by operator.":"(no reply)");
           if(pend){
-            pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;pend.error=m.state==="failed";
+            pend.text=txt;pend.pending=false;pend.activity=null;pend.lastTool=null;pend.cost=m.cost;pend.error=m.state==="failed";pend.interrupted=interrupted;
+            rememberSubmission(pend.submissionId||terminalSubmissionId,'settled');
             attachOtlToMsg(pend);attachThinkToMsg(pend);
             pend.ts=pend.ts||Date.now();
           } else if(!(thread.length&&thread[thread.length-1].role==="atlas"&&thread[thread.length-1].text===txt)){
-            var _fm={role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",ts:Date.now()};attachOtlToMsg(_fm);attachThinkToMsg(_fm);thread.push(_fm);
+            var _fm={role:"atlas",text:txt,cost:m.cost,error:m.state==="failed",interrupted:interrupted,submissionId:terminalSubmissionId||null,ts:Date.now()};attachOtlToMsg(_fm);attachThinkToMsg(_fm);thread.push(_fm);
+            rememberSubmission(terminalSubmissionId,'settled');
           }
+          atlasCancelRequested=false;
           setTyping(false);
-          $('status').textContent=m.state==="failed"?"overseer · failed":"overseer · idle";
+          $('status').textContent=interrupted?"overseer · interrupted":m.state==="failed"?"overseer · failed":"overseer · idle";
+          updateComposerState();
         }
         renderThread();
       } else {
@@ -1829,6 +1956,7 @@ if(m.type==="agent"){
         var isUser = msg.role === 'user' || msg.role === 'you';
         var cls = msg.role === 'atlas' ? 'atlas' : isUser ? 'user' : 'system';
         if (msg.error) cls += ' error';
+        if (msg.interrupted) cls += ' interrupted';
         var avatar = msg.role === 'atlas' ? 'A' : isUser ? 'D' : '·';
         var roleLabel = msg.role === 'atlas' ? 'ATLAS' : isUser ? 'Daniel' : 'system';
         var isNew = (i === visible.length - 1);
@@ -1895,7 +2023,7 @@ if(m.type==="agent"){
       localStorage.setItem('atlas_thread', JSON.stringify(
         thread.filter(function(t) { return t.role !== 'atlas' || !t.pending; })
           .slice(-150)
-          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,ts:t.ts,chosen:t.chosen,tools:t.tools||null,thinking:t.thinking||null}; })
+          .map(function(t) { return {role:t.role,text:t.text||'',cost:t.cost,error:!!t.error,interrupted:!!t.interrupted,ts:t.ts,chosen:t.chosen,tools:t.tools||null,thinking:t.thinking||null}; })
       ));
     } catch(e) {}
     // Show/hide typing indicator based on pending atlas state
@@ -1949,7 +2077,7 @@ if(m.type==="agent"){
 
   function setTyping(on) {
     var t = $('typing');
-    if (t) t.style.display = on ? 'flex' : 'none';
+    if (t) t.style.display = (on && !atlasCancelRequested) ? 'flex' : 'none';
   }
 
   // ── streaming message (ATLAS reply building live) ────
@@ -2304,13 +2432,16 @@ if(m.type==="agent"){
   }
 
   function say(text, images){
+    atlasCancelRequested=false;
     var submissionId=(window.crypto&&window.crypto.randomUUID)?window.crypto.randomUUID():(Date.now()+'-'+Math.random().toString(16).slice(2));
+    rememberSubmission(submissionId,'pending');
     window.__pendingComposerSubmissions=window.__pendingComposerSubmissions||{};
     window.__pendingComposerSubmissions[submissionId]=window.__composerSnapshot||{text:text,images:[]};
     thread.push({role:"user",text:text,attachmentCount:images ? images.length : 0,ts:Date.now()});
     thread.push({role:"atlas",text:"",pending:true,submissionId:submissionId,activity:"thinking",lastTool:null,ts:Date.now()});
     window.atlas.say(text, images, submissionId);
     renderThread();
+    updateComposerState();
   }
 
   // The single door for a UI-originated submission — composer Enter OR a clicked
@@ -2358,8 +2489,14 @@ if(m.type==="agent"){
     var button = document.getElementById('sendbtn');
     if (!input || !button) return;
     var ready = !(window.__sayImagesLoading > 0) && (!!input.value.trim() || !!(window.__sayImages && window.__sayImages.length));
-    button.disabled = !ready;
-    button.setAttribute('aria-disabled', ready ? 'false' : 'true');
+    var canStop = atlasTurnActive() && !ready;
+    button.classList.toggle('stop', canStop && !atlasCancelRequested);
+    button.classList.toggle('stopping', canStop && atlasCancelRequested);
+    button.disabled = canStop ? atlasCancelRequested : !ready;
+    button.textContent = canStop ? (atlasCancelRequested ? '…' : '■') : '↵';
+    button.title = canStop ? (atlasCancelRequested ? 'Stopping Atlas…' : 'Stop Atlas (Escape)') : 'Send (Enter)';
+    button.setAttribute('aria-label', canStop ? (atlasCancelRequested ? 'Stopping Atlas' : 'Stop Atlas turn') : 'Send message');
+    button.setAttribute('aria-disabled', button.disabled ? 'true' : 'false');
   }
 
   // Parse a command packet out of an ATLAS reply. Returns {prose, options} —
@@ -3011,6 +3148,7 @@ if(m.type==="agent"){
         var s = $('say'); if (s) { s.focus(); }
       }
       if (e.key === 'Escape') {
+        if (atlasTurnActive()) { if (cancelAtlasTurn()) e.preventDefault(); return; }
         var kb = $('kbbox');
         if (kb && kb.classList.contains('open')) {
           toggleKb(); e.preventDefault(); return;
@@ -3019,6 +3157,7 @@ if(m.type==="agent"){
       return;
     }
     if (e.key === 'Escape') {
+      if (atlasTurnActive()) { if (cancelAtlasTurn()) e.preventDefault(); return; }
       var kb = $('kbbox');
       if (kb && kb.classList.contains('open')) { toggleKb(); return; }
       if (SEL) { SEL = null; renderBrood(); renderReply(); }
@@ -3396,6 +3535,9 @@ if(m.type==="agent"){
   var sendbtn = document.getElementById('sendbtn');
   if (sendbtn) {
     sendbtn.addEventListener('click', function() {
+      var input=document.getElementById('say');
+      var hasComposerContent=!!(input&&input.value.trim())||!!(window.__sayImages&&window.__sayImages.length);
+      if (atlasTurnActive()&&!hasComposerContent) { cancelAtlasTurn(); return; }
       submitComposer();
       return;
       /* Legacy duplicate routing retained below only as unreachable source

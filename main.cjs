@@ -15,6 +15,8 @@ const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
 let fleetGeneration = 0;
 let pendingActivationRestart = false;
+let intentionalFleetStop = false;
+let fleetWatchdog = null;
 let lastHistory = null; const lastAgents = new Map(); let reloadTimer = null;
 
 function createWindow() {
@@ -55,6 +57,7 @@ function watchIndexForReload() {
 
 function startFleet() {
   if (fleet) return;
+  intentionalFleetStop = false;
   const generation = ++fleetGeneration;
   const startedAt = new Date().toISOString();
   try {
@@ -79,36 +82,52 @@ function startFleet() {
     if (win) win.webContents.send("fleet", { type: "error", m: String((e && e.message) || e) });
     return;
   }
-  fleet.on("message", (m) => {
+  const child = fleet;
+  let exitSettled = false;
+  const settleFleetExit = (code, observedBy = 'exit-event') => {
+    if (exitSettled) return;
+    exitSettled = true;
+    if (fleetWatchdog) { clearInterval(fleetWatchdog); fleetWatchdog = null; }
+    const exitedPid = child.pid || null;
+    const exitedAt = new Date().toISOString();
+    const activationRestart = pendingActivationRestart;
+    const stoppedBySupervisor = intentionalFleetStop;
+    pendingActivationRestart = false;
+    intentionalFleetStop = false;
+    if (code !== 0 && code !== null) { try { ingressJournal.appendError(path.join(__dirname, '.atlas'), new Error(`supervised fleethost exit code=${code}`), { generation, code, exitedAt, observedBy, owner: 'electron-supervisor' }); } catch (_) {} }
+    if (fleet === child) fleet = null;
+    appendSupervisorReceipt({ kind: 'supervisor-exit', generation, pid: exitedPid, code, exitedAt, observedBy });
+    settleStaleAgents(generation, exitedAt);
+    if (win) {
+      const restarting = activationRestart || !stoppedBySupervisor;
+      win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, observedBy, restarting });
+      if (restarting) setTimeout(() => { if (!fleet) startFleet(); }, 0);
+    }
+  };
+  child.on("message", (m) => {
     if (!m) return;
     if (win) win.webContents.send("fleet", m);
     if (m.type === "agent" && m.id) lastAgents.set(m.id, m);
     else if (m.type === "history") lastHistory = m;
     else if (m.type === "counter" && typeof m.value === "number") counter = Math.max(counter, m.value);
   });
-  if (fleet.stderr) fleet.stderr.on("data", () => {});
-  fleet.on("exit", (code) => {
-    const generation = fleetGeneration;
-    const exitedPid = fleet?.pid || null;
-    const exitedAt = new Date().toISOString();
-    if (code !== 0 && code !== null) { try { ingressJournal.appendError(path.join(__dirname, '.atlas'), new Error(`supervised fleethost exit code=${code}`), { generation, code, exitedAt, owner: 'electron-supervisor' }); } catch (_) {} }
-    fleet = null;
-    appendSupervisorReceipt({ kind: 'supervisor-exit', generation, pid: exitedPid, code, exitedAt });
-    settleStaleAgents(generation, exitedAt);
-    if (win) {
-      const restarting = code !== 0 && code !== null;
-      const activationRestart = pendingActivationRestart;
-      pendingActivationRestart = false;
-      win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, restarting });
-      win.webContents.send("fleet", { type: "error", m: "fleet engine exited (generation " + generation + ", code " + (code ?? "?") + ")" });
-      if (restarting || activationRestart) setTimeout(() => { if (!fleet) startFleet(); }, 0); // instant respawn (Daniel directive 2026-08-22: restarts must be instant)
-    }
-  });
+  if (child.stderr) child.stderr.on("data", () => {});
+  child.on("exit", (code) => settleFleetExit(code, 'exit-event'));
+  child.on("error", () => { if (!child.pid) settleFleetExit(null, 'spawn-error'); });
+  // Windows can occasionally lose/delay a ChildProcess exit notification after
+  // an external tree kill. The supervisor therefore verifies the owned PID;
+  // settlement is idempotent, so event and watchdog may safely race.
+  fleetWatchdog = setInterval(() => {
+    if (exitSettled || fleet !== child) return;
+    try { process.kill(child.pid, 0); }
+    catch { settleFleetExit(null, 'pid-watchdog'); }
+  }, 1000);
 }
 
 function stopFleet() {
   const current = fleet;
   if (!current) return;
+  intentionalFleetStop = true;
   try { current.send({ t: "shutdown" }); } catch (_) {}
   setTimeout(() => { try { if (fleet === current) terminateFleetTree(current.pid); } catch (_) {} }, 15000);
 }
@@ -216,7 +235,7 @@ ipcMain.on("resolve-goal", (_e, p) => {
 
 ipcMain.on("cancel", (_e, p) => {
   if (!fleet || !p || !p.id) return;
-  try { fleet.send({ t: "cancel", id: p.id }); } catch (_) {}
+  try { fleet.send({ t: "cancel", id: p.id, ...(p.submissionId ? { submissionId: p.submissionId } : {}) }); } catch (_) {}
 });
 
 ipcMain.handle("activate-candidate", async (_e, manifest) => {

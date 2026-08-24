@@ -48,6 +48,16 @@ function safeError(error) {
   return bounded(`${status}${error?.message || error || "OpenRouter request failed"}${detail}`, 1_200);
 }
 
+function mergeUsage(total, usage) {
+  const merged = { ...(total || {}) };
+  if (!usage || typeof usage !== 'object') return merged;
+  for (const [key, value] of Object.entries(usage)) {
+    if (typeof value === 'number' && Number.isFinite(value)) merged[key] = Number(merged[key] || 0) + value;
+    else if (!(key in merged)) merged[key] = value;
+  }
+  return merged;
+}
+
 export function decodePowerShellResponseEnvelope(stdout) {
   const envelope = JSON.parse(stdout);
   return {
@@ -299,7 +309,7 @@ async function request(messages, env, signal, tools) {
   const configuredRetries = Number(env.ATLAS_OPENROUTER_HTTP_RETRIES);
   const retries = Math.max(0, Math.min(3, Number.isFinite(configuredRetries) ? configuredRetries : 2));
   const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
-  const transientStatuses = new Set([429]);
+  const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
   for (let attempt = 0; attempt <= retries; attempt++) {
     const response = await fetchBeforeResponse(API_URL, {
       method: "POST",
@@ -326,15 +336,22 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const requestJson = JSON.stringify(requestBody(messages, env, true, tools));
-  const response = await fetchBeforeResponse(API_URL, {
-    method: "POST",
-    signal: requestSignal,
-    headers: authHeaders(env),
-    body: requestJson,
-  }, env);
-  if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
-  if (!response.ok || !response.body) {
+  const configuredRetries = Number(env.ATLAS_OPENROUTER_HTTP_RETRIES);
+  const retries = Math.max(0, Math.min(3, Number.isFinite(configuredRetries) ? configuredRetries : 2));
+  const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
+  const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
+  let response;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    response = await fetchBeforeResponse(API_URL, {
+      method: "POST",
+      signal: requestSignal,
+      headers: authHeaders(env),
+      body: requestJson,
+    }, env);
+    if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
+    if (response.ok && response.body) break;
     const payload = await response.json().catch(() => ({}));
+    if (transientStatuses.has(response.status) && attempt < retries && await waitForRetry(retryBaseMs * (attempt + 1), requestSignal)) continue;
     const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
     error.status = response.status;
     throw error;
@@ -457,12 +474,16 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       const nativeTools = Array.isArray(options.openRouterTools)
         ? options.openRouterTools.filter((item) => item?.definition?.function?.name && typeof item.execute === 'function')
         : [];
-      const nativeByName = new Map(nativeTools.map((item) => [item.definition.function.name, item]));
+      const executableNativeTools = toolsAdvertised
+        ? nativeTools.filter((item) => !disallowed.has(item.definition.function.name.toLowerCase()))
+        : [];
+      // The execution map must be derived from the admitted surface. Building it
+      // from every supplied tool allowed a forged model call to invoke a native
+      // organ hidden by plan mode or disallowedTools.
+      const nativeByName = new Map(executableNativeTools.map((item) => [item.definition.function.name, item]));
       const availableTools = [
         ...(shellAdvertised ? TOOLS : []),
-        ...(toolsAdvertised ? nativeTools : [])
-          .filter((item) => !disallowed.has(item.definition.function.name.toLowerCase()))
-          .map((item) => item.definition),
+        ...executableNativeTools.map((item) => item.definition),
       ];
       messages.push({ role: "user", content: Array.isArray(prompt) ? prompt : String(prompt || "") }); // arrays = multimodal blocks (paste-image spec 98f8861)
       if (!statelessSession) sessions.set(sessionId, messages);
@@ -471,8 +492,22 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       try {
         const configuredDefault = Number(env.ATLAS_OPENROUTER_MAX_ROUNDS) || DEFAULT_ROUNDS;
         const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || configuredDefault));
+        const requestByteBudget = Math.max(262_144, Math.min(16_000_000, Number(env.ATLAS_OPENROUTER_MAX_REQUEST_BYTES) || 3_500_000));
+        const proseSegments = [];
+        let aggregateUsage = {};
         for (let round = 0; round < turnCap; round++) {
-          let message; let usage;
+          const roundMetrics = requestMetrics(messages, env, streamingEnabled, availableTools);
+          if (roundMetrics.requestBytes > requestByteBudget) {
+            yield {
+              type: 'result',
+              subtype: 'error_context_window',
+              result: `OpenRouter request budget exceeded before round ${round + 1} (${roundMetrics.requestBytes} > ${requestByteBudget} bytes)`,
+              total_cost_usd: aggregateUsage.cost ?? null,
+              usage: aggregateUsage,
+            };
+            return;
+          }
+          let message; let usage; let finishReason = null;
           if (streamingEnabled) {
             const ch = deltaChannel();
             const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d), availableTools)
@@ -487,10 +522,13 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             if (!assembled) throw new Error("OpenRouter stream failed");
             message = assembled.message;
             usage = assembled.usage;
+            finishReason = assembled.finish_reason || null;
           } else {
             const payload = await request(messages, env, options.abortSignal, availableTools);
-            message = payload?.choices?.[0]?.message;
+            const choice = payload?.choices?.[0];
+            message = choice?.message;
             usage = payload?.usage || null;
+            finishReason = choice?.finish_reason || null;
             if (!message) {
               const diagnostic = {
                 keys: Object.keys(payload || {}).slice(0, 12),
@@ -508,28 +546,39 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
               return;
             }
           }
+          aggregateUsage = mergeUsage(aggregateUsage, usage);
           messages.push({ role: "assistant", content: message.content || null, tool_calls: message.tool_calls || undefined });
           if (message.content) yield { type: "assistant", message: { content: [{ type: "text", text: String(message.content) }] } };
           const calls = message.tool_calls || [];
           if (!calls.length) {
+            if (finishReason === 'length') {
+              if (String(message.content || '').trim()) proseSegments.push(String(message.content));
+              if (round + 1 < turnCap) {
+                messages.push({ role: 'user', content: 'Continue from the exact cutoff without repeating prior text. Finish the answer.' });
+                continue;
+              }
+              yield { type: 'result', subtype: 'error_max_turns', result: 'OpenRouter output remained incomplete at the turn bound (finish_reason=length)', total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
+              return;
+            }
             if (!String(message.content || "").trim()) {
               if (round + 1 < turnCap) {
                 messages.push({ role: "user", content: "Your prior response contained no visible content. Return a non-empty direct answer to the operator now." });
                 continue;
               }
-              yield { type: "result", subtype: "error_max_turns", result: "OpenRouter exhausted the turn bound without visible assistant content", total_cost_usd: usage?.cost ?? null, usage: usage || null };
+              yield { type: "result", subtype: "error_max_turns", result: "OpenRouter exhausted the turn bound without visible assistant content", total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
               return;
             }
-            yield { type: "result", subtype: "success", result: String(message.content || ""), total_cost_usd: usage?.cost ?? 0, usage: usage || null };
+            yield { type: "result", subtype: "success", result: [...proseSegments, String(message.content || "")].filter(s => s.trim()).join("\n\n"), total_cost_usd: aggregateUsage.cost ?? 0, usage: aggregateUsage };
             return;
           }
+          if (String(message.content || '').trim()) proseSegments.push(String(message.content));
           const prepared = calls.map((call) => {
             let input = {};
             let parseError = null;
             try { input = JSON.parse(call.function?.arguments || "{}"); } catch (error) { parseError = `invalid JSON: ${error.message}`; }
             return { call, input, parseError, toolName: call.function?.name || 'shell' };
           });
-          for (const item of prepared) yield { type: "assistant", message: { content: [{ type: "tool_use", name: item.toolName, input: item.input }] } };
+          for (const item of prepared) yield { type: "assistant", message: { content: [{ type: "tool_use", id: item.call.id, name: item.toolName, input: item.input }] } };
           const completed = [];
           let serialToolTail = Promise.resolve();
           const outputs = await Promise.all(prepared.map(({ call, input, parseError, toolName }, index) => {
@@ -551,11 +600,17 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
                 try {
                   const nativeTimeout = Math.max(1_000, Math.min(1_200_000, Number(options.atlasToolTimeoutMs) || 1_200_000));
                   const deadlineAt = Date.now() + nativeTimeout;
-                  return bounded(await timeBoundTool(
-                    signal => nativeTool.execute(admittedInput, { signal, sessionId, deadlineAt }),
-                    nativeTimeout,
-                    options.abortSignal,
-                  ), MAX_TOOL_OUTPUT);
+                  if (nativeTool.parallelSafe === true) {
+                    return bounded(await timeBoundTool(
+                      signal => nativeTool.execute(admittedInput, { signal, sessionId, deadlineAt }),
+                      nativeTimeout,
+                      options.abortSignal,
+                    ), MAX_TOOL_OUTPUT);
+                  }
+                  // Mutation-capable/serial organs must settle before the model
+                  // advances. Returning a timeout while a signal-oblivious write
+                  // continues would create detached, unaudited state changes.
+                  return bounded(await nativeTool.execute(admittedInput, { signal: options.abortSignal, sessionId, deadlineAt }), MAX_TOOL_OUTPUT);
                 } catch (error) {
                   return `tool error: ${safeError(error)}`;
                 }
@@ -573,6 +628,10 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             return scheduled;
           }));
           for (let i = 0; i < prepared.length; i++) messages.push({ role: "tool", tool_call_id: prepared[i].call.id, content: outputs[i] });
+          for (let i = 0; i < prepared.length; i++) {
+            const output = String(outputs[i] || '');
+            yield { type: 'assistant', message: { content: [{ type: 'tool_result', tool_use_id: prepared[i].call.id, name: prepared[i].toolName, content: output, is_error: /^(tool (?:error|denied)|unsupported tool|cancelled|timeout)/i.test(output) }] } };
+          }
           options.onToolBatch?.({
             sessionId,
             emittedOrder: prepared.map((item, index) => ({ index, name: item.toolName })),
@@ -583,7 +642,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
         // Loop exited by round-cap => exhaustion. Classified distinctly so the
         // station can one-shot-retry the run class (matches SDK error_max_turns).
         const namedCeiling = turnCap === configuredDefault ? configuredDefault : MAX_ROUNDS;
-        yield { type: "result", subtype: "error_max_turns", result: `Run exhausted its ${turnCap}-tool-round bound (provider ceiling ${namedCeiling})`, total_cost_usd: null };
+        yield { type: "result", subtype: "error_max_turns", result: `Run exhausted its ${turnCap}-tool-round bound (provider ceiling ${namedCeiling})`, total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
       } catch (error) {
         const metrics = requestMetrics(messages, env, streamingEnabled, availableTools);
         yield {

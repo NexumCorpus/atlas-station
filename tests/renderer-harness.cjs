@@ -40,14 +40,81 @@ app.whenReady().then(async () => {
       };
       const calls = () => window.atlas.getCalls();
       const clear = () => window.atlas.clearCalls();
+      const lastSubmissionId = () => window.atlas.getLastSubmissionId();
+      if (window.clearThread) window.clearThread();
 
       if (!send.disabled) throw new Error('send must start disabled');
+
+      // A may still be pending in the renderer when the sidecar has already
+      // admitted B. Stop must follow the live ATLAS identity, not FIFO.
+      input.value = 'turn A'; inputEvent(); key(false);
+      const timingASubmissionId = lastSubmissionId();
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'working', submissionId: timingASubmissionId, summary: 'A working' });
+      input.value = 'turn B'; inputEvent(); key(false);
+      const timingBSubmissionId = lastSubmissionId();
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'working', submissionId: timingBSubmissionId, summary: 'B working' });
+      clear();
+      window.atlas.emitFleet({ type: 'cancel_reconcile', state: 'done', submissionId: timingASubmissionId, reply: 'A completed before delayed Stop arrived' });
+      if (!Array.from(document.querySelectorAll('.msg.atlas .msg-text')).some((el) => el.innerText.includes('A completed before delayed Stop arrived'))) throw new Error('too-late A cancellation did not reconcile A');
+      if (send.getAttribute('aria-label') !== 'Stop Atlas turn') throw new Error('A reconciliation disturbed active B');
+      send.click();
+      if (calls().length !== 1 || calls()[0].type !== 'cancel' || calls()[0].submissionId !== timingBSubmissionId) throw new Error('Stop did not prefer the live B submission over pending A');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'done', submissionId: timingASubmissionId, reply: 'duplicate A completion must be ignored' });
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'interrupted', submissionId: timingBSubmissionId, summary: 'B cancelled' });
+
+      clear();
       input.value = 'hello'; inputEvent();
       if (send.disabled) throw new Error('send did not enable for non-empty input');
       const enter = key(false);
       if (!enter.defaultPrevented) throw new Error('Enter default action was not prevented');
       if (JSON.stringify(calls()) !== JSON.stringify([{ type: 'say', text: 'hello' }])) throw new Error('Enter did not send exactly once');
-      if (input.value !== '' || !send.disabled) throw new Error('Enter did not clear and disable the composer');
+      if (input.value !== '' || send.disabled || send.getAttribute('aria-label') !== 'Stop Atlas turn') throw new Error('active Atlas turn did not expose Stop');
+      const aSubmissionId = lastSubmissionId();
+      if (!aSubmissionId) throw new Error('Atlas submission ID was not captured');
+      send.click();
+      if (calls().length !== 2 || calls()[1].type !== 'cancel' || calls()[1].id !== 'ATLAS' || calls()[1].submissionId !== aSubmissionId) throw new Error('Stop did not cancel the correlated Atlas turn');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'working', partial: true, text: 'late buffered text' });
+      if (document.getElementById('streaming-msg')) throw new Error('late partial resurrected streaming text after Stop');
+      window.atlas.emitFleet({ id: 'A-unrelated', type: 'agent', state: 'working', mode: 'read', task: 'unrelated render', ts: Date.now() });
+      if (getComputedStyle(document.getElementById('typing')).display !== 'none') throw new Error('unrelated render resurrected typing while stopping');
+      clear();
+      input.value = 'queued B'; inputEvent(); key(false);
+      const bSubmissionId = lastSubmissionId();
+      if (!bSubmissionId || bSubmissionId === aSubmissionId) throw new Error('queued B did not receive a distinct submission ID');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'done', submissionId: aSubmissionId, reply: 'late A result accepted' });
+      const lateA = Array.from(document.querySelectorAll('.msg.atlas .msg-text')).map((el) => el.innerText).filter((text) => text.includes('late A result accepted'));
+      if (lateA.length !== 1) throw new Error('correlated late A result was discarded instead of reconciling the cancelled turn');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'interrupted', submissionId: aSubmissionId, summary: 'cancelled by operator' });
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'interrupted', submissionId: aSubmissionId, summary: 'duplicate A interruption' });
+      if (!document.querySelector('.msg.atlas.interrupted')) throw new Error('interrupted ATLAS turn was not truthfully rendered');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'done', submissionId: bSubmissionId, reply: 'B result' });
+      const atlasText = Array.from(document.querySelectorAll('.msg.atlas .msg-text')).map((el) => el.innerText);
+      if (atlasText.filter((text) => text.includes('B result')).length !== 1) throw new Error('B result was not matched to B bubble exactly once');
+      if (atlasText.filter((text) => text.includes('late A result accepted')).length !== 1) throw new Error('late A result was rendered more than once');
+      if (!send.disabled || send.getAttribute('aria-label') !== 'Send message') throw new Error('interrupted Atlas turn did not restore Send');
+
+      clear();
+      input.value = 'late failure'; inputEvent(); key(false);
+      const failedSubmissionId = lastSubmissionId();
+      send.click();
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'failed', submissionId: failedSubmissionId, reply: 'late correlated failure' });
+      const failedTexts = Array.from(document.querySelectorAll('.msg.atlas.error .msg-text')).map((el) => el.innerText);
+      if (!failedTexts.some((text) => text.includes('late correlated failure'))) throw new Error('correlated late failure was discarded instead of reconciling the cancelled turn');
+
+      clear();
+      input.value = 'ingress scope'; inputEvent(); key(false);
+      const ingressSubmissionId = lastSubmissionId();
+      const errorsBeforeIngressFailure = document.querySelectorAll('.msg.atlas.error').length;
+      window.atlas.emitFleet({ type: 'ingress', state: 'failed', reason: 'unrelated ingress failure' });
+      if (document.querySelectorAll('.msg.atlas.error').length !== errorsBeforeIngressFailure) throw new Error('uncorrelated ingress failure wildcard-failed a pending Atlas bubble');
+      if (send.getAttribute('aria-label') !== 'Stop Atlas turn') throw new Error('uncorrelated ingress failure stopped the pending Atlas turn');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'done', submissionId: ingressSubmissionId, reply: 'ingress scope recovered' });
+
+      clear();
+      input.value = 'execution-only interrupt'; inputEvent(); key(false);
+      const cSubmissionId = lastSubmissionId();
+      window.atlas.emitFleet({ type: 'execution', state: 'interrupted', lane: 'mouth', submissionId: cSubmissionId, summary: 'execution-only cancellation' });
+      if (!Array.from(document.querySelectorAll('.msg.atlas.interrupted .msg-text')).some((el) => el.innerText.includes('execution-only cancellation'))) throw new Error('execution-only interruption did not settle its correlated bubble');
 
       clear();
       input.value = 'line one'; inputEvent();
@@ -59,7 +126,9 @@ app.whenReady().then(async () => {
       send.click();
       const clickCalls = calls();
       if (clickCalls.length !== 1 || clickCalls[0].type !== 'say' || clickCalls[0].text !== 'clicked') throw new Error('click did not send exactly once');
-      if (input.value !== '' || !send.disabled) throw new Error('click did not clear and disable the composer');
+      if (input.value !== '' || send.disabled || send.getAttribute('aria-label') !== 'Stop Atlas turn') throw new Error('click did not clear and expose Stop');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'interrupted', summary: 'cancelled by operator' });
+      if (!send.disabled) throw new Error('click turn did not restore disabled Send after interruption');
 
       clear();
       input.value = '@build inspect composer'; inputEvent();
@@ -73,6 +142,16 @@ app.whenReady().then(async () => {
       send.click();
       const readCalls = calls();
       if (readCalls.length !== 1 || readCalls[0].type !== 'dispatch' || readCalls[0].mode !== 'read') throw new Error('@read did not dispatch read mode');
+
+      clear();
+      input.value = 'escape probe'; inputEvent();
+      key(false);
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'working', summary: 'working' });
+      clear();
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      const escapeCalls = calls();
+      if (escapeCalls.length !== 1 || escapeCalls[0].type !== 'cancel' || escapeCalls[0].id !== 'ATLAS') throw new Error('Escape did not cancel the Atlas turn');
+      window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'interrupted', summary: 'cancelled by operator' });
 
       clear();
       window.atlas.emitFleet({ id: 'A-test', type: 'agent', state: 'working', mode: 'build', task: 'cancel me', ts: Date.now() });

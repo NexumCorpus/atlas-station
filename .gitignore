@@ -35,6 +35,7 @@ verify*.cjs
 .atlas/supervisor-registry.ndjson
 .atlas/ingress*.ndjson
 .atlas/provider-tool-batches.ndjson
+.atlas/mouth-cancellations.ndjson
 .atlas/ingress-migration-anchor.json
 .atlas/ingress.lock
 orch_test.mjs

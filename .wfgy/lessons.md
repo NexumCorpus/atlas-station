@@ -44,3 +44,10 @@ Goal (G): keep Atlas responsive and truthful through long mouth and metabolism w
 What drifted / what went wrong: the UI used journal-backed claim renewal as its progress signal, coupling human-visible responsiveness to lock contention and durable-write cadence; removing renewal noise also invalidated a renderer assertion that treated that noise as required provenance.
 Fix / resolution: separated one-second ephemeral execution heartbeats from durable claim renewal, kept renewal evidence in the append-only journal, and changed the renderer contract to require visible elapsed work without timeline churn.
 Generalizes to: human feedback loops and durability protocols need distinct clocks; test each at its own boundary instead of forcing one transport to serve both.
+
+## 2026-08-23 -- advertised anatomy is not executable anatomy
+
+Goal (G): make Atlas behave like a fluid desktop coding agent while retaining the full Hermes organism.
+What drifted / what went wrong: the system prompt described dozens of organs, but the active OpenRouter route exposed only three native tools; meanwhile a 700 ms recovery poll reparsed the entire ingress journal once per historical outbox row, periodically blocking the event loop for roughly 18 seconds.
+Fix / resolution: generated the OpenRouter tool surface from the same SDK registry used by the fleet server, preserved strict schemas and serial mutation semantics, reduced publication repair to one journal snapshot, removed it from the reflex hot path, and tested the active provider through native SSE.
+Generalizes to: capability must be measured at the provider boundary, and recovery work must scale with current damage rather than total history; vocabulary and dashboards are not evidence that an organ is reachable or responsive.

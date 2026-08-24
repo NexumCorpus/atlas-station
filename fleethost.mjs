@@ -11,6 +11,7 @@
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
+import { adaptSdkTools } from "./providers/openrouter-tools.mjs";
 import { WORKER_TURN_BOUND, workerTurnBound } from "./providers/turn-bound.mjs";
 import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, laneContextChars, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
@@ -101,6 +102,119 @@ function codexRouting(route, fallbackModel) {
 const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
+// Provider-facing organs run in this sidecar, so synchronous subprocess APIs
+// freeze IPC cancellation, ingress renewal, and execution heartbeats. Keep all
+// potentially slow organ subprocesses on this single bounded async path.
+function runBoundedChild(command, args = [], options = {}) {
+  const timeoutMs = Math.max(250, Math.min(1_200_000, Number(options.timeoutMs) || 30_000));
+  const maxOutputBytes = Math.max(1_024, Math.min(4 * 1024 * 1024, Number(options.maxOutputBytes) || 64 * 1024));
+  const signal = options.signal || null;
+  const makeCollector = () => {
+    const chunks = [];
+    let bytes = 0;
+    let truncated = false;
+    return {
+      push(chunk) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+        const remaining = maxOutputBytes - bytes;
+        if (remaining <= 0) { truncated = true; return; }
+        if (buf.length > remaining) { chunks.push(buf.subarray(0, remaining)); bytes += remaining; truncated = true; }
+        else { chunks.push(buf); bytes += buf.length; }
+      },
+      text() { return Buffer.concat(chunks, bytes).toString('utf8') + (truncated ? '\n[output truncated]' : ''); },
+      get truncated() { return truncated; },
+    };
+  };
+  return new Promise(resolve => {
+    const stdout = makeCollector();
+    const stderr = makeCollector();
+    let child = null;
+    let timer = null;
+    let killFallback = null;
+    let settled = false;
+    let termination = null;
+    let terminationUnconfirmed = false;
+    let spawnError = null;
+    const finish = (status = null, closeSignal = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(killFallback);
+      signal?.removeEventListener('abort', onAbort);
+      resolve({
+        status,
+        signal: closeSignal,
+        stdout: stdout.text(),
+        stderr: stderr.text(),
+        cancelled: termination === 'cancelled',
+        timedOut: termination === 'timeout',
+        terminationConfirmed: termination ? !terminationUnconfirmed : null,
+        truncated: stdout.truncated || stderr.truncated,
+        error: spawnError,
+      });
+    };
+    const pidAlive = pid => {
+      if (!Number.isSafeInteger(Number(pid)) || Number(pid) < 1) return false;
+      try { process.kill(Number(pid), 0); return true; } catch { return false; }
+    };
+    const confirmTreeTermination = (reason, deadlineAt = Date.now() + 3_000) => {
+      if (settled) return;
+      if (!child?.pid || !pidAlive(child.pid)) { finish(null, reason); return; }
+      try { child.kill('SIGKILL'); } catch {}
+      if (Date.now() >= deadlineAt) {
+        terminationUnconfirmed = true;
+        finish(null, reason);
+        return;
+      }
+      clearTimeout(killFallback);
+      killFallback = setTimeout(() => confirmTreeTermination(reason, deadlineAt), 100);
+      killFallback.unref?.();
+    };
+    const terminateTree = reason => {
+      if (termination || settled) return;
+      termination = reason;
+      if (child?.pid) {
+        if (process.platform === 'win32') {
+          try {
+            const killer = spawnChild('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+            killer.once('error', () => { try { child.kill(); } catch {} confirmTreeTermination(reason); });
+            killer.once('close', () => confirmTreeTermination(reason));
+          } catch { try { child.kill(); } catch {} }
+        } else {
+          try { child.kill('SIGTERM'); } catch {}
+        }
+      }
+      // Await the OS tree-kill and confirm that the root PID disappeared. If
+      // Windows cannot confirm within the bounded fallback, report that fact
+      // explicitly instead of laundering a kill request into completion.
+      killFallback = setTimeout(() => confirmTreeTermination(reason), 3_000);
+      killFallback.unref?.();
+    };
+    const onAbort = () => terminateTree('cancelled');
+    if (signal?.aborted) { termination = 'cancelled'; finish(null, 'cancelled'); return; }
+    try {
+      child = spawnChild(command, args, {
+        cwd: options.cwd || REPO,
+        env: options.env || process.env,
+        shell: options.shell === true,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      spawnError = error;
+      finish(null, null);
+      return;
+    }
+    child.stdout?.on('data', chunk => stdout.push(chunk));
+    child.stderr?.on('data', chunk => stderr.push(chunk));
+    child.once('error', error => { spawnError = error; if (!child?.pid) finish(null, null); });
+    child.once('close', (code, closeSignal) => finish(code, closeSignal));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => terminateTree('timeout'), timeoutMs);
+    timer.unref?.();
+  });
+}
+
 function extractToolArg(name, input) {
   if (!input) return null;
   if (name === "Read") return (input.file_path || "").split(/[/\\]/).pop().slice(0, 40) || null;
@@ -175,6 +289,8 @@ try { _skillFitness = _require('./skill-fitness.cjs'); } catch { _skillFitness =
 try { _skillEvolution = _require('./skill-evolution.cjs'); } catch { _skillEvolution = null; }
 let _ingress = null;
 try { _ingress = _require('./ingress-journal.cjs'); } catch { _ingress = null; }
+let _mouthCancellationStore = null;
+try { _mouthCancellationStore = _require('./mouth-cancellations.cjs'); } catch { _mouthCancellationStore = null; }
 let _sidecarLease = null;
 
 // Debounced persist — fires at most once per second to avoid thrashing disk on
@@ -197,6 +313,30 @@ function debouncedPersist(state) {
 
 const agents = new Map();
 const abortControllers = new Map();
+// Keep the existing agent-id lookup while binding each controller to the turn
+// that created it. A delayed Stop for turn A must never abort queued turn B.
+const abortControllerMetadata = new WeakMap();
+function linkedAbortController(parentSignal = null, metadata = null) {
+  const controller = new AbortController();
+  if (metadata) abortControllerMetadata.set(controller, metadata);
+  let relay = null;
+  if (parentSignal) {
+    relay = () => { try { controller.abort(parentSignal.reason); } catch { controller.abort(); } };
+    if (parentSignal.aborted) relay();
+    else parentSignal.addEventListener('abort', relay, { once: true });
+  }
+  return {
+    controller,
+    release() { if (relay) parentSignal?.removeEventListener('abort', relay); },
+  };
+}
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  if (typeof signal.throwIfAborted === 'function') signal.throwIfAborted();
+  const error = signal.reason instanceof Error ? signal.reason : new Error('cancelled');
+  if (!error.name || error.name === 'Error') error.name = 'AbortError';
+  throw error;
+}
 const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
@@ -273,7 +413,8 @@ function set(id, patch) {
   // Start timeout when first entering working state. The handle lives in
   // timeoutHandles (a side map), NEVER on the agent record — a Timeout object is
   // circular and would throw "Converting circular structure to JSON" on send/persist.
-  if (patch.state === "working" && !timeoutHandles.has(id)) {
+  if (patch.state === "working" && !timeoutHandles.has(id) && id !== "ATLAS" && id !== "ATLAS-METABOLISM") {
+    // Orchestrator lanes are exempt: their wall-clock budget is governed by laneTimeoutMs()/mouthAbort (ATLAS_MOUTH_TIMEOUT_MS), not the subagent cap. This generic timer killed long mouth turns at 20min despite the env disable.
     const ms = a.timeoutMs != null ? a.timeoutMs : DEFAULT_TIMEOUT_MS;
     if (ms > 0) {
       timeoutHandles.set(id, setTimeout(() => {
@@ -497,7 +638,7 @@ function scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectN
   return rid;
 }
 
-async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId, dialectName, retryState = { retried: false }, forcedId = null, execution = {}) {
+async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model, projectId, dialectName, retryState = { retried: false }, forcedId = null, execution = {}, parentSignal = null) {
   if (!forcedId) { _maxCounter++; sessionStats.agentCount++; }
   const id = forcedId || ((mode === "build" ? "B-" : "A-") + _maxCounter);
   const agentModel = model || MODEL_HAIKU; // workers default to Haiku (Sonnet head dispatches Haiku); ATLAS may override per-task
@@ -552,7 +693,8 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     ...(execution.preassembledContextRoot ? { disallowedTools: ['shell', 'bash'] } : {}),
     ...(mode === "build" ? { permissionMode: "bypassPermissions" } : dialectSet ? { canUseTool: _dialect.makeGate(dialectSet) } : { canUseTool: readGate }) };
   let final = "";
-  const ac = new AbortController();
+  const linkedAbort = linkedAbortController(parentSignal, { agentId: id });
+  const ac = linkedAbort.controller;
   abortControllers.set(id, ac);
   try {
     const build = mode === "build";
@@ -597,6 +739,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     }
   } finally {
     abortControllers.delete(id);
+    linkedAbort.release();
   }
   return "Subagent " + id + (branch ? (" on branch " + branch) : "") + " result:\n" + (final || "(no output)");
 }
@@ -1236,24 +1379,23 @@ const runScriptTool = tool(
     cwd: z.string().optional().describe("Working directory — defaults to repo root"),
     timeoutMs: z.number().optional().describe("Timeout in ms (default 10000, max 30000)"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
-      const { spawnSync } = _require('child_process');
       const cmd = args.command || '';
       if (!cmd.trim()) return { content: [{ type: 'text', text: 'No command provided' }] };
       const blocked = /rm\s+-rf|del\s+\/[sq]|rmdir\s+\/s|git\s+push|git\s+reset\s+--hard|shutdown|format\s+[a-z]:/i;
       if (blocked.test(cmd)) return { content: [{ type: 'text', text: `Blocked: command matches destructive pattern` }] };
-      const parts = cmd.trim().split(/\s+/);
       const timeout = Math.min(args.timeoutMs || 10000, 30000);
-      const res = spawnSync(parts[0], parts.slice(1), {
+      const res = await runBoundedChild(cmd, [], {
         cwd: args.cwd || REPO,
-        encoding: 'utf8',
-        timeout,
         shell: true,
+        timeoutMs: timeout,
+        signal,
+        maxOutputBytes: 16 * 1024,
       });
       const out = [res.stdout, res.stderr].filter(Boolean).join('\n').trim();
       const truncated = out.length > 3000 ? out.slice(0, 3000) + '\n[... truncated]' : out;
-      const status = res.status != null ? ` (exit ${res.status})` : '';
+      const status = res.cancelled ? ' (cancelled)' : res.timedOut ? ` (timeout ${timeout}ms)` : res.status != null ? ` (exit ${res.status})` : ` (spawn error: ${res.error?.message || 'unknown'})`;
       return { content: [{ type: 'text', text: (truncated || '(no output)') + status }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `run_script error: ${e.message}` }] };
@@ -1268,8 +1410,9 @@ const memConsolidateTool = tool(
     maxFacts: z.number().optional().describe("How many recent facts to analyze (default 20, max 50)"),
     focus: z.string().optional().describe("Optional theme or question to focus the synthesis on"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
+      throwIfAborted(signal);
       const fs = _require('fs');
       const memDir = path.join(REPO, 'memory');
       const factsFile = path.join(memDir, 'facts.jsonl');
@@ -1308,7 +1451,8 @@ Write the synthesis note now:`;
       const consolidationOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'memory_consolidation' }, MODEL_HAIKU);
       set(consolidationId, { id: consolidationId, state: 'working', mode: 'read', task: 'memory consolidation', model: assignedModel(consolidationOptions, MODEL_HAIKU) });
       let synthesis = '';
-      const ctrl = new AbortController();
+      const linkedAbort = linkedAbortController(signal, { agentId: consolidationId, parent: 'ATLAS' });
+      const ctrl = linkedAbort.controller;
       abortControllers.set(consolidationId, ctrl);
       try {
         const iter = query({
@@ -1321,11 +1465,14 @@ Write the synthesis note now:`;
           },
         });
         synthesis = await consume(consolidationId, iter, false, null);
+        throwIfAborted(signal);
       } catch (e) {
+        throwIfAborted(signal);
         set(consolidationId, { state: 'failed', summary: e.message });
         return { content: [{ type: 'text', text: `Consolidation agent failed: ${e.message}` }] };
       } finally {
         abortControllers.delete(consolidationId);
+        linkedAbort.release();
       }
 
       if (_memstore && synthesis) {
@@ -1344,6 +1491,7 @@ Write the synthesis note now:`;
       }
       return { content: [{ type: 'text', text: `Consolidated ${facts.length} facts + ${journal.length} journal entries:\n\n${synthesis}` }] };
     } catch (e) {
+      throwIfAborted(signal);
       return { content: [{ type: 'text', text: `memory_consolidate error: ${e.message}` }] };
     }
   }
@@ -1357,8 +1505,9 @@ const webResearchTool = tool(
     url: z.string().optional().describe("Specific URL to fetch and summarize (skips search if provided)"),
     saveAs: z.string().optional().describe("Key name for the fact (default: derived from query)"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
+      throwIfAborted(signal);
       const researchId = 'WR-' + Date.now();
       const prompt = args.url
         ? `You have WebFetch available. Fetch ${args.url} and summarize the key information relevant to: "${args.query || 'the page content'}". Write 2-4 sentences.`
@@ -1367,7 +1516,8 @@ const webResearchTool = tool(
       const researchOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'research' }, MODEL_HAIKU);
       set(researchId, { id: researchId, state: 'working', mode: 'read', task: 'web research: ' + (args.query || '').slice(0, 40), model: assignedModel(researchOptions, MODEL_HAIKU) });
       let summary = '';
-      const ctrl = new AbortController();
+      const linkedAbort = linkedAbortController(signal, { agentId: researchId, parent: 'ATLAS' });
+      const ctrl = linkedAbort.controller;
       abortControllers.set(researchId, ctrl);
       try {
         const iter = query({
@@ -1380,11 +1530,14 @@ const webResearchTool = tool(
           },
         });
         summary = await consume(researchId, iter, false, null);
+        throwIfAborted(signal);
       } catch (e) {
+        throwIfAborted(signal);
         set(researchId, { state: 'failed', summary: e.message });
         return { content: [{ type: 'text', text: `Web research failed: ${e.message}` }] };
       } finally {
         abortControllers.delete(researchId);
+        linkedAbort.release();
       }
 
       // Store in memory
@@ -1406,6 +1559,7 @@ const webResearchTool = tool(
       }
       return { content: [{ type: 'text', text: summary }] };
     } catch (e) {
+      throwIfAborted(signal);
       return { content: [{ type: 'text', text: `web_research error: ${e.message}` }] };
     }
   }
@@ -1551,39 +1705,46 @@ const fanResearchTool = tool(
     angles: z.array(z.string()).min(2).max(5).describe("2-5 investigation angles/perspectives. Each becomes a separate parallel Haiku agent."),
     saveAs: z.string().optional().describe("If provided, saves the synthesis as a fact with this key"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
+      throwIfAborted(signal);
       const memDir = path.join(REPO, 'memory');
       // Spawn all angle-agents in parallel
       const angleResults = await Promise.all(args.angles.map(async (angle, idx) => {
         try {
-          const ac = new AbortController();
           const fanId = `FAN-${Date.now()}-${idx}`;
+          const linkedAbort = linkedAbortController(signal, { agentId: fanId, parent: 'ATLAS' });
+          const ac = linkedAbort.controller;
           const fanOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'fan_research' }, MODEL_HAIKU);
           set(fanId, { id: fanId, state: 'working', mode: 'read', task: `fan_research angle: ${angle.slice(0,40)}`, model: assignedModel(fanOptions, MODEL_HAIKU) });
           abortControllers.set(fanId, ac);
           let text = '';
-          const iter = query({
-            prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.`,
-            options: {
-              model: MODEL_HAIKU,
-              ...fanOptions,
-              permissionMode: 'bypassPermissions',
-            // Hard round-cap: DREAM-408 died at OpenRouter's 24-tool-round
-            // ceiling mid-reflection. disallowedTools removes verb classes;
-            // maxTurns bounds even read-only loops. 12 leaves 12 rounds of
-            // headroom below the provider limit.
-            maxTurns: 12,
-              abortSignal: ac.signal,
-            },
-          });
-          text = await consume(fanId, iter, false, null);
-          abortControllers.delete(fanId);
+          try {
+            const iter = query({
+              prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle — another agent covers the rest.`,
+              options: {
+                model: MODEL_HAIKU,
+                ...fanOptions,
+                permissionMode: 'bypassPermissions',
+                // Hard round-cap: DREAM-408 died at OpenRouter's 24-tool-round
+                // ceiling mid-reflection. 12 leaves headroom below that limit.
+                maxTurns: 12,
+                abortSignal: ac.signal,
+              },
+            });
+            text = await consume(fanId, iter, false, null);
+            throwIfAborted(signal);
+          } finally {
+            abortControllers.delete(fanId);
+            linkedAbort.release();
+          }
           return { angle, text };
         } catch (e) {
+          throwIfAborted(signal);
           return { angle, text: `(failed: ${e.message})` };
         }
       }));
+      throwIfAborted(signal);
 
       // Synthesis pass
       const synthPrompt = `Synthesize these ${angleResults.length} research angles into a cohesive report on: ${args.question}
@@ -1595,19 +1756,26 @@ Write a unified 300-400 word synthesis. Highlight where angles agree, where they
       const synthId = `FAN-SYNTH-${Date.now()}`;
       const synthesisOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'research_synthesis' }, MODEL_SONNET);
       set(synthId, { id: synthId, state: 'working', mode: 'read', task: `fan_research synthesis: ${args.question.slice(0,40)}`, model: assignedModel(synthesisOptions, MODEL_SONNET) });
-      const synthAc = new AbortController();
+      const linkedSynthesisAbort = linkedAbortController(signal, { agentId: synthId, parent: 'ATLAS' });
+      const synthAc = linkedSynthesisAbort.controller;
       abortControllers.set(synthId, synthAc);
-      const synthIter = query({
-        prompt: synthPrompt,
-        options: {
-          model: MODEL_SONNET,
-          ...synthesisOptions,
-          permissionMode: 'bypassPermissions',
-          abortSignal: synthAc.signal,
-        },
-      });
-      const synthesis = await consume(synthId, synthIter, false, null);
-      abortControllers.delete(synthId);
+      let synthesis;
+      try {
+        const synthIter = query({
+          prompt: synthPrompt,
+          options: {
+            model: MODEL_SONNET,
+            ...synthesisOptions,
+            permissionMode: 'bypassPermissions',
+            abortSignal: synthAc.signal,
+          },
+        });
+        synthesis = await consume(synthId, synthIter, false, null);
+        throwIfAborted(signal);
+      } finally {
+        abortControllers.delete(synthId);
+        linkedSynthesisAbort.release();
+      }
 
       // Store as fact if saveAs provided
       if (args.saveAs && _memstore) {
@@ -1626,6 +1794,7 @@ Write a unified 300-400 word synthesis. Highlight where angles agree, where they
 
       return { content: [{ type: 'text', text: `[Fan Research: ${args.question}]\n\n${synthesis}` }] };
     } catch (e) {
+      throwIfAborted(signal);
       return { content: [{ type: 'text', text: `fan_research error: ${e.message}` }] };
     }
   }
@@ -1722,9 +1891,8 @@ const verifyBuildTool = tool(
     files: z.array(z.string()).optional().describe("Specific files to check (relative paths). If omitted, checks files modified in the last commit."),
     agentId: z.string().optional().describe("The agent ID whose build is being verified (for fact labeling)."),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
-      const { spawnSync } = _require('child_process');
       const fs = _require('fs');
       const path2 = _require('path');
 
@@ -1732,9 +1900,7 @@ const verifyBuildTool = tool(
       let filesToCheck = args.files || [];
       if (!filesToCheck.length) {
         // Get files modified in last commit
-        const result = spawnSync('git', ['-C', REPO, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], {
-          encoding: 'utf8', timeout: 5000
-        });
+        const result = await runBoundedChild('git', ['-C', REPO, 'diff-tree', '--no-commit-id', '-r', '--name-only', 'HEAD'], { timeoutMs: 5000, signal });
         if (result.status === 0) {
           filesToCheck = (result.stdout || '').trim().split('\n').filter(f =>
             f && /\.(js|cjs|mjs)$/.test(f)
@@ -1742,9 +1908,7 @@ const verifyBuildTool = tool(
         }
         // diff-tree returns empty for merge commits — fall back to files changed by the fleet branch
         if (!filesToCheck.length) {
-          const mergeResult = spawnSync('git', ['-C', REPO, 'diff', '--name-only', 'HEAD^1', 'HEAD^2'], {
-            encoding: 'utf8', timeout: 5000
-          });
+          const mergeResult = await runBoundedChild('git', ['-C', REPO, 'diff', '--name-only', 'HEAD^1', 'HEAD^2'], { timeoutMs: 5000, signal });
           if (mergeResult.status === 0) {
             filesToCheck = (mergeResult.stdout || '').trim().split('\n').filter(f =>
               f && /\.(js|cjs|mjs)$/.test(f)
@@ -1763,9 +1927,8 @@ const verifyBuildTool = tool(
       for (const rel of filesToCheck.slice(0, 20)) { // cap at 20 files
         const absPath = path2.join(REPO, rel);
         if (!fs.existsSync(absPath)) { results.push(`SKIP ${rel} (not found)`); continue; }
-        const check = spawnSync(process.execPath, ['--check', absPath], {
-          encoding: 'utf8', timeout: 10000
-        });
+        const check = await runBoundedChild(process.execPath, ['--check', absPath], { timeoutMs: 10000, signal });
+        if (check.cancelled) return { content: [{ type: 'text', text: 'verify_build: cancelled' }] };
         if (check.status === 0) {
           results.push(`OK   ${rel}`);
           passed++;
@@ -1783,9 +1946,8 @@ const verifyBuildTool = tool(
       let behavioralSummary = '';
       if (syntaxVerdict === 'PASS') {
         try {
-          const testResult = spawnSync(process.execPath, [path2.join(REPO, 'tests', 'behavioral.mjs')], {
-            encoding: 'utf8', timeout: 30000, cwd: REPO
-          });
+          const testResult = await runBoundedChild(process.execPath, [path2.join(REPO, 'tests', 'behavioral.mjs')], { timeoutMs: 30000, cwd: REPO, signal, maxOutputBytes: 256 * 1024 });
+          if (testResult.cancelled) return { content: [{ type: 'text', text: 'verify_build: cancelled' }] };
           const lastLine = (testResult.stdout || '').trim().split('\n').pop() || '';
           const behavPass = testResult.status === 0;
           behavioralSummary = `behavioral ${behavPass ? 'PASS' : 'FAIL'} — ${lastLine}`;
@@ -1834,14 +1996,16 @@ const runTestsTool = tool(
   "run_tests",
   "Run the ATLAS behavioral and smoke test suites. Returns structured pass/fail results with failing test names. Call after every merge or build to verify behavioral integrity. Required before marking any daemon build session successful.",
   {},
-  async (_args) => {
+  async (_args, { signal } = {}) => {
     try {
-      const { execSync } = _require('child_process');
       const results = { behavioral: null, smoke: null, passed: 0, failed: 0, failures: [] };
 
       // Run behavioral tests
-      try {
-        const out = execSync(`node tests/behavioral.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 60000 });
+      {
+        const run = await runBoundedChild(process.execPath, [path.join(REPO, 'tests', 'behavioral.mjs')], { cwd: REPO, timeoutMs: 60000, signal, maxOutputBytes: 512 * 1024 });
+        if (run.cancelled) return { content: [{ type: 'text', text: 'run_tests: cancelled' }] };
+        const out = `${run.stdout || ''}${run.stderr || ''}`;
+        if (run.status === 0) {
         const passMatch = out.match(/(\d+) passed/);
         const failMatch = out.match(/(\d+) failed/);
         const bPassed = passMatch ? parseInt(passMatch[1]) : 0;
@@ -1851,29 +2015,33 @@ const runTestsTool = tool(
         results.passed += bPassed;
         results.failed += bFailed;
         results.failures.push(...failLines);
-      } catch (e) {
-        const out = (e.stdout || '') + (e.stderr || '');
+        } else {
         const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:'));
-        results.behavioral = { passed: 0, failed: 99, error: e.message.slice(0, 200), failures: failLines };
+        const error = run.timedOut ? 'timeout after 60000ms' : run.error?.message || `exit ${run.status}`;
+        results.behavioral = { passed: 0, failed: 99, error: error.slice(0, 200), failures: failLines };
         results.failed += failLines.length || 1;
         results.failures.push(...failLines);
+        }
       }
 
       // Run smoke tests
-      try {
-        const out = execSync(`node tests/smoke.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 30000 });
+      {
+        const run = await runBoundedChild(process.execPath, [path.join(REPO, 'tests', 'smoke.mjs')], { cwd: REPO, timeoutMs: 30000, signal, maxOutputBytes: 512 * 1024 });
+        if (run.cancelled) return { content: [{ type: 'text', text: 'run_tests: cancelled' }] };
+        const out = `${run.stdout || ''}${run.stderr || ''}`;
         const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:') || l.includes('FAIL'));
         const passLines = out.split('\n').filter(l => l.trim().startsWith('OK  ') || l.includes(' ok,'));
-        results.smoke = { passed: passLines.length, failed: failLines.length, failures: failLines };
-        results.passed += passLines.length;
-        results.failed += failLines.length;
-        results.failures.push(...failLines);
-      } catch (e) {
-        const out = (e.stdout || '') + (e.stderr || '');
-        const failLines = out.split('\n').filter(l => l.trim().startsWith('FAIL:') || l.includes('FAIL'));
-        results.smoke = { passed: 0, failed: 1, error: e.message.slice(0, 200), failures: failLines };
-        results.failed += failLines.length || 1;
-        results.failures.push(...failLines);
+        if (run.status === 0) {
+          results.smoke = { passed: passLines.length, failed: failLines.length, failures: failLines };
+          results.passed += passLines.length;
+          results.failed += failLines.length;
+          results.failures.push(...failLines);
+        } else {
+          const error = run.timedOut ? 'timeout after 30000ms' : run.error?.message || `exit ${run.status}`;
+          results.smoke = { passed: 0, failed: 1, error: error.slice(0, 200), failures: failLines };
+          results.failed += failLines.length || 1;
+          results.failures.push(...failLines);
+        }
       }
 
       const verdict = results.failed === 0 ? 'PASS' : 'FAIL';
@@ -1947,9 +2115,8 @@ const shardMemoryTool = tool(
     k: z.number().optional().describe("Minimum fragments needed for recovery (default: 4)"),
     n: z.number().optional().describe("Total fragment count to create (default: 6)"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
-      const { spawnSync } = _require('child_process');
       const fs = _require('fs');
       const absPath = path.isAbsolute(args.file)
         ? args.file
@@ -1960,7 +2127,8 @@ const shardMemoryTool = tool(
       const cmdArgs = ['E:/station/station.py', 'shard', absPath];
       if (args.k) cmdArgs.push(String(args.k));
       if (args.n) cmdArgs.push(String(args.n));
-      const r = spawnSync('python', cmdArgs, { encoding: 'utf8', timeout: 15000, cwd: REPO });
+      const r = await runBoundedChild('python', cmdArgs, { timeoutMs: 15000, cwd: REPO, signal, maxOutputBytes: 64 * 1024 });
+      if (r.cancelled) return { content: [{ type: 'text', text: 'shard_memory: cancelled' }] };
       if (r.status !== 0) {
         return { content: [{ type: 'text', text: `shard_memory: station shard failed: ${(r.stderr || r.stdout || '').slice(0, 300)}` }] };
       }
@@ -1981,12 +2149,10 @@ const recoverShardTool = tool(
   {
     pin: z.string().describe("16-char hex PIN returned by shard_memory (e.g. '939d1fb2b93f0956')"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     try {
-      const { spawnSync } = _require('child_process');
-      const r = spawnSync('python', ['E:/station/station.py', 'recover', args.pin], {
-        encoding: 'utf8', timeout: 15000, cwd: REPO
-      });
+      const r = await runBoundedChild('python', ['E:/station/station.py', 'recover', args.pin], { timeoutMs: 15000, cwd: REPO, signal, maxOutputBytes: 64 * 1024 });
+      if (r.cancelled) return { content: [{ type: 'text', text: 'recover_shard: cancelled' }] };
       if (r.status !== 0) {
         return { content: [{ type: 'text', text: `recover_shard: failed: ${(r.stderr || r.stdout || '').slice(0, 300)}` }] };
       }
@@ -2033,99 +2199,88 @@ const stagedVerifyTool = tool(
   {
     agentId: z.string().describe("Fleet agent ID (e.g. B-104)")
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     const branch = 'fleet/' + args.agentId;
-    const temp = 'verify-temp-' + args.agentId;
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const temp = `verify-temp-${String(args.agentId).replace(/[^A-Za-z0-9._-]/g, '_')}-${suffix}`;
+    const verifyDir = path.join(WT_BASE, temp);
+    const childError = (result, label) => {
+      if (result.cancelled) return new Error(`${label} cancelled`);
+      if (result.timedOut) return new Error(`${label} timed out`);
+      if (result.status !== 0) return new Error(`${label}: ${(result.stderr || result.stdout || result.error?.message || `exit ${result.status}`).trim().slice(0, 500)}`);
+      return null;
+    };
+    const gitRun = async (cwd, gitArgs, { cleanup = false, timeoutMs = 15_000 } = {}) => {
+      const result = await runBoundedChild('git', ['-C', cwd, ...gitArgs], { cwd, timeoutMs, signal: cleanup ? null : signal, maxOutputBytes: 128 * 1024 });
+      const error = childError(result, `git ${gitArgs.join(' ')}`);
+      if (error) throw error;
+      return result.stdout || '';
+    };
+    const cleanup = async () => {
+      try { await gitRun(REPO, ['worktree', 'remove', '--force', verifyDir], { cleanup: true }); } catch {}
+      try { await gitRun(REPO, ['branch', '-D', temp], { cleanup: true }); } catch {}
+    };
     try {
-      // Idempotent pre-clean: delete stale temp branch left by any prior crashed run.
-      // git checkout -b fails if the branch already exists — without this, a prior crash
-      // leaves the tool permanently broken for this agentId.
-      try { gitC(['branch', '-D', temp]); } catch {}
-      // Create temp branch off master
-      gitC(['checkout', '-b', temp, 'master']);
-      // Attempt merge (no-commit to inspect merged state without touching master)
-      let mergeOk = true, mergeErr = '';
+      mkdirSync(WT_BASE, { recursive: true });
+      await cleanup();
+      await gitRun(REPO, ['worktree', 'add', '-f', '-b', temp, verifyDir, 'master']);
       try {
-        gitC(['merge', '--no-ff', '--no-commit', branch]);
-      } catch (e) {
-        mergeOk = false;
-        mergeErr = e.stderr ? e.stderr.toString() : e.message;
+        await gitRun(verifyDir, ['merge', '--no-ff', '--no-commit', branch], { timeoutMs: 60_000 });
+      } catch (error) {
+        await cleanup();
+        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: merge conflict on ' + branch + '\n' + error.message }] };
       }
-      if (!mergeOk) {
-        try { gitC(['merge', '--abort']); } catch {}
-        gitC(['checkout', 'master']);
-        gitC(['branch', '-D', temp]);
-        return { content: [{ type: 'text', text: 'STAGED VERIFY FAIL: merge conflict on ' + branch + '\n' + mergeErr }] };
-      }
-      // Syntax check merged state — check ALL modified JS files
-      const { spawnSync } = _require('child_process');
-      const diffResult = spawnSync('git', ['diff', '--name-only', 'master', branch], { cwd: REPO, encoding: 'utf8' });
-      const changedFiles = (diffResult.stdout || '').trim().split('\n').filter(f => f && /\.(js|cjs|mjs)$/.test(f));
+
+      const diffText = await gitRun(REPO, ['diff', '--name-only', 'master', branch]);
+      const changedFiles = diffText.trim().split('\n').filter(f => f && /\.(js|cjs|mjs)$/.test(f));
       let checkOk = true, checkErr = '';
-      if (changedFiles.length > 0) {
-        for (const relFile of changedFiles) {
-          const absFile = path.join(REPO, relFile);
-          const fileCheck = spawnSync(process.execPath, ['--check', absFile], { encoding: 'utf8', timeout: 10000 });
-          if (fileCheck.status !== 0) {
-            checkOk = false;
-            checkErr = 'syntax error in ' + relFile + '\n' + (fileCheck.stderr || '').split('\n')[0].slice(0, 200);
-            break;
-          }
-        }
+      for (const relFile of changedFiles) {
+        const absFile = path.join(verifyDir, relFile);
+        const fileCheck = await runBoundedChild(process.execPath, ['--check', absFile], { cwd: verifyDir, timeoutMs: 10_000, signal });
+        const error = childError(fileCheck, `node --check ${relFile}`);
+        if (error) { checkOk = false; checkErr = 'syntax error in ' + relFile + '\n' + error.message; break; }
       }
-      // Step 3.5: require() smoke-test for newly added .cjs files
-      const addedResult = spawnSync('git', ['diff', '--name-only', '--diff-filter=A', 'master', branch], { cwd: REPO, encoding: 'utf8' });
-      const newCjsFiles = (addedResult.stdout || '').trim().split('\n').filter(f => f && f.endsWith('.cjs'));
+
+      const addedText = await gitRun(REPO, ['diff', '--name-only', '--diff-filter=A', 'master', branch]);
+      const newCjsFiles = addedText.trim().split('\n').filter(f => f && f.endsWith('.cjs'));
       const smokeTestResults = [];
       for (const relFile of newCjsFiles) {
-        const absFile = path.join(REPO, relFile).replace(/\\/g, '/');
-        const smokeRun = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(absFile)})`], { cwd: REPO, encoding: 'utf8', timeout: 10000 });
-        const ok = smokeRun.status === 0;
-        smokeTestResults.push({ file: relFile, ok, error: ok ? null : (smokeRun.stderr || '').split('\n')[0].slice(0, 200) });
+        const absFile = path.join(verifyDir, relFile).replace(/\\/g, '/');
+        const smokeRun = await runBoundedChild(process.execPath, ['-e', `require(${JSON.stringify(absFile)})`], { cwd: verifyDir, timeoutMs: 10_000, signal });
+        const error = childError(smokeRun, `require ${relFile}`);
+        smokeTestResults.push({ file: relFile, ok: !error, error: error?.message || null });
       }
-      const smokeTestPassed = smokeTestResults.every(r => r.ok);
-      // Abort staged merge and clean up — never commits to master
-      try { gitC(['merge', '--abort']); } catch { try { gitC(['reset', '--hard', 'HEAD']); } catch {} }
-      gitC(['checkout', 'master']);
-      gitC(['branch', '-D', temp]);
+      const smokeTestPassed = smokeTestResults.every(result => result.ok);
       let allPassed = checkOk && smokeTestPassed;
       let failMsg = '';
       if (!checkOk) failMsg += 'STAGED VERIFY FAIL: ' + checkErr;
       if (!smokeTestPassed) {
-        const failures = smokeTestResults.filter(r => !r.ok).map(r => `  ${r.file}: ${r.error}`).join('\n');
+        const failures = smokeTestResults.filter(result => !result.ok).map(result => `  ${result.file}: ${result.error}`).join('\n');
         failMsg += (failMsg ? '\n' : 'STAGED VERIFY FAIL: ') + 'require() smoke-test failed:\n' + failures;
       }
-      // Step 3.6: Run behavioral tests on merged state
+
       let testNote = '';
-      try {
-        const { execSync: execSyncT } = _require('child_process');
-        const testOut = execSyncT(`node tests/behavioral.mjs`, { cwd: REPO, encoding: 'utf8', timeout: 60000 });
-        const failMatch = testOut.match(/(\d+) failed/);
-        const passMatch = testOut.match(/(\d+) passed/);
-        const bFailed = failMatch ? parseInt(failMatch[1]) : 0;
-        const bPassed = passMatch ? parseInt(passMatch[1]) : 0;
-        if (bFailed === 0) {
-          testNote = ` | behavioral: ${bPassed} passed`;
-        } else {
-          const failLines = testOut.split('\n').filter(l => l.trim().startsWith('FAIL:')).slice(0, 5);
-          testNote = ` | behavioral: ${bFailed} FAILED — ` + failLines.join('; ');
-          allPassed = false;
-          failMsg += '\nBehavioral tests failed:\n' + failLines.join('\n');
-        }
-      } catch (e) {
-        testNote = ` | behavioral: ERROR (${e.message.slice(0, 100)})`;
+      const behavioral = await runBoundedChild(process.execPath, [path.join(verifyDir, 'tests', 'behavioral.mjs')], { cwd: verifyDir, timeoutMs: 60_000, signal, maxOutputBytes: 512 * 1024 });
+      const behavioralText = `${behavioral.stdout || ''}${behavioral.stderr || ''}`;
+      const behavioralError = childError(behavioral, 'behavioral tests');
+      const failMatch = behavioralText.match(/(\d+) failed/);
+      const passMatch = behavioralText.match(/(\d+) passed/);
+      const bFailed = failMatch ? parseInt(failMatch[1]) : behavioralError ? 1 : 0;
+      const bPassed = passMatch ? parseInt(passMatch[1]) : 0;
+      if (!behavioralError && bFailed === 0) testNote = ` | behavioral: ${bPassed} passed`;
+      else {
+        const failLines = behavioralText.split('\n').filter(line => line.trim().startsWith('FAIL:')).slice(0, 5);
+        testNote = ` | behavioral: ${bFailed} FAILED — ` + (failLines.join('; ') || behavioralError?.message || 'unknown failure');
+        allPassed = false;
+        failMsg += '\nBehavioral tests failed:\n' + (failLines.join('\n') || behavioralError?.message || 'unknown failure');
       }
-      if (!allPassed) {
-        return { content: [{ type: 'text', text: failMsg + testNote }] };
-      }
+      await cleanup();
+      if (!allPassed) return { content: [{ type: 'text', text: failMsg + testNote }] };
       const smokeNote = smokeTestResults.length ? ` | smoke-tested ${smokeTestResults.length} new .cjs file${smokeTestResults.length !== 1 ? 's' : ''}` : '';
       return { content: [{ type: 'text', text: 'STAGED VERIFY PASS: ' + branch + ' is clean to merge' + smokeNote + testNote }] };
-    } catch (e) {
-      // Emergency cleanup — restore master regardless of what went wrong
-      try { gitC(['merge', '--abort']); } catch {}
-      try { gitC(['checkout', 'master']); } catch {}
-      try { gitC(['branch', '-D', temp]); } catch {}
-      return { content: [{ type: 'text', text: 'STAGED VERIFY ERROR: ' + e.message }] };
+    } catch (error) {
+      await cleanup();
+      return { content: [{ type: 'text', text: 'STAGED VERIFY ERROR: ' + error.message }] };
     }
   }
 );
@@ -3200,17 +3355,19 @@ const daemonHealthTool = tool(
   "daemon_health",
   "Check whether the scheduled daemon is alive and firing correctly. Reports Task Scheduler job status, last run time, and flags if the loop has gone silent.",
   {},
-  async () => {
+  async (_args, { signal } = {}) => {
     try {
       const fs = _require('fs');
-      const { execSync } = _require('child_process');
       const memDir = path.join(REPO, 'memory');
 
       // 1. Check Windows Task Scheduler
       let schedulerStatus = 'scheduler-unavailable';
       let nextRunTime = null;
       try {
-        const schedulerRaw = execSync('schtasks /query /tn "ATLAS Station Daemon" /fo LIST', { encoding: 'utf8', timeout: 5000 });
+        const scheduler = await runBoundedChild('schtasks.exe', ['/query', '/tn', 'ATLAS Station Daemon', '/fo', 'LIST'], { timeoutMs: 5000, signal, maxOutputBytes: 64 * 1024 });
+        if (scheduler.cancelled) return { content: [{ type: 'text', text: 'daemon_health: cancelled' }] };
+        if (scheduler.status !== 0) throw new Error(scheduler.stderr || scheduler.stdout || scheduler.error?.message || `exit ${scheduler.status}`);
+        const schedulerRaw = scheduler.stdout || '';
         const statusMatch = schedulerRaw.match(/Status:\s*(.+)/i);
         const nextMatch = schedulerRaw.match(/Next Run Time:\s*(.+)/i);
         if (statusMatch) schedulerStatus = statusMatch[1].trim();
@@ -3558,18 +3715,22 @@ const runVariantTool = tool(
     task: z.string().describe("The task for the variant to perform"),
     dialect: z.string().optional().describe("Dialect name (default 'memory-only')"),
   },
-  async (args) => {
+  async (args, { signal } = {}) => {
     if (!_dialect) return { content: [{ type: 'text', text: 'dialect module not available' }] };
     try {
+      throwIfAborted(signal);
       const dialectName = args.dialect || 'memory-only';
-      const reply = await runSubagent(String(args.task || ''), 'variant:' + dialectName, DEFAULT_TIMEOUT_MS, MODEL_HAIKU, null, dialectName);
+      const reply = await runSubagent(String(args.task || ''), 'variant:' + dialectName, DEFAULT_TIMEOUT_MS, MODEL_HAIKU, null, dialectName, { retried: false }, null, {}, signal);
+      throwIfAborted(signal);
       return { content: [{ type: 'text', text: reply }] };
     } catch (e) {
+      throwIfAborted(signal);
       return { content: [{ type: 'text', text: 'run_variant error: ' + e.message }] };
     }
   }
 );
-const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool] });
+const fleetSdkTools = [spawnTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool];
+const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: fleetSdkTools });
 
 function launchOpenRouterAgent(args, trustedExecution = {}) {
   const mode = args?.mode === 'build' ? 'build' : 'read';
@@ -3596,7 +3757,21 @@ function launchOpenRouterAgent(args, trustedExecution = {}) {
 }
 
 const deepSwarmReservations = new Map();
+const OPENROUTER_PARALLEL_READ_ORGANS = [
+  'check_fleet', 'fleet_status', 'load_proposals', 'recall_memory', 'list_goals',
+  'memory_health', 'self_assess', 'capability_manifest', 'session_stats', 'read_doc',
+  'list_docs', 'fact_graph', 'load_dreams', 'resonance_stats', 'read_self',
+  'mutation_map', 'get_instructions', 'list_routines', 'build_outcomes',
+  'context_telemetry', 'project_status', 'tool_audit', 'proposal_analysis',
+  'memory_health_detail', 'daemon_report', 'daemon_health', 'population_status',
+  'prediction_accuracy', 'skill_catalog', 'skill_fitness', 'continuity_status',
+];
 const openRouterOrganTools = [
+  ...adaptSdkTools(fleetSdkTools, {
+    // These have purpose-built OpenRouter implementations below.
+    excludeNames: ['spawn_agent', 'check_fleet'],
+    parallelSafeNames: OPENROUTER_PARALLEL_READ_ORGANS,
+  }),
   {
     definition: { type: 'function', function: { name: 'spawn_agent', description: 'Launch an Ox Alpha subagent. Returns immediately with its visible fleet id; use check_fleet for progress.', parameters: { type: 'object', additionalProperties: false, required: ['task'], properties: { task: { type: 'string', minLength: 1, maxLength: 32000 }, mode: { type: 'string', enum: ['read', 'build'] }, timeoutMinutes: { type: 'number', minimum: 1, maximum: 120 }, projectId: { type: 'string', maxLength: 120 } } } } },
     parallelSafe: false,
@@ -3914,11 +4089,17 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   const lane = mouth ? 'mouth' : 'metabolism';
   const maxTurns = laneTurnBound(lane, process.env);
   const timeoutMs = laneTimeoutMs(lane, process.env);
-  const mouthAbort = mouth && timeoutMs > 0 ? new AbortController() : null;
+  const laneAbort = new AbortController();
   let mouthTimedOut = false;
-  const mouthTimer = mouthAbort ? setTimeout(() => { mouthTimedOut = true; mouthAbort.abort(); }, timeoutMs) : null;
+  const mouthTimer = mouth && timeoutMs > 0 ? setTimeout(() => { mouthTimedOut = true; laneAbort.abort(new Error('mouth timeout')); }, timeoutMs) : null;
   mouthTimer?.unref?.();
   const agentId = mouth ? 'ATLAS' : 'ATLAS-METABOLISM';
+  const executionIdentity = {
+    directiveId: executionHooks.directiveId || null,
+    submissionId: executionHooks.submissionId || null,
+  };
+  abortControllerMetadata.set(laneAbort, { agentId, ...executionIdentity });
+  abortControllers.set(agentId, laneAbort);
   let laneSession = mouth ? orchSession : metabolismSession;
   let laneSessionProvider = mouth ? orchSessionProvider : metabolismSessionProvider;
   let laneSessionModel = mouth ? orchSessionModel : metabolismSessionModel;
@@ -3994,7 +4175,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       fs.appendFileSync(telFile, JSON.stringify(entry) + '\n', 'utf8');
     } catch {}
   }
-  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "" });
+  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", ...executionIdentity });
   // Dynamic self-instructions injection
   const laneRole = mouth ? MOUTH_ROLE : ORCH_ROLE;
   let dynamicRole = ORGANISM_IDENTITY + "\n\n" + laneRole;
@@ -4042,6 +4223,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   const orchestrationModel = orchestrationRouting.atlasAssignedModel || MODEL;
   set(agentId, { id: agentId, model: orchestrationModel, lane });
   send("execution", {
+    ...executionIdentity,
     state: "working",
     lane,
     provider: ACTIVE_PROVIDER,
@@ -4059,6 +4241,8 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       seatPrompt.push({ type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.data.toString('base64')}` } });
     }
   }
+  let streamedText = '';
+  let streamedThinking = '';
   try {
     for await (const m of query({
       prompt: seatPrompt,
@@ -4080,7 +4264,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         mcpServers: { fleet: fleetServer },
         permissionMode: "bypassPermissions", // gate removed — ATLAS has full tool access (Daniel-authorised escalation)
         maxTurns,
-        abortSignal: mouthAbort?.signal,
+        abortSignal: laneAbort.signal,
       },
     })) {
       if (m.type === "system" && m.subtype === "init") {
@@ -4094,6 +4278,16 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
         set(agentId, { session: laneSession, model: orchestrationModel, lane });
       }
+      else if (m.type === 'assistant_stream') {
+        if (m.kind === 'thinking' && typeof m.text === 'string' && m.text) {
+          streamedThinking = (streamedThinking + m.text).slice(-4096);
+          send('orchestrator_thinking', { text: streamedThinking });
+        } else if (m.kind === 'text' && typeof m.text === 'string' && m.text) {
+          streamedText += m.text;
+          const cur = agents.get(agentId) || { id: agentId };
+          send('agent', { ...cur, state: 'working', partial: true, text: streamedText, ts: new Date().toISOString() });
+        }
+      }
       else if (m.type === "assistant") {
         let patch = { state: "working" };
         for (const b of (m.message?.content ?? [])) {
@@ -4101,6 +4295,12 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
             const n = (b.name || "").replace(/^mcp__fleet__/, "");
             patch.lastTool = n;
             patch.lastToolArg = extractToolArg(n, b.input);
+            send('orchestrator_tool', { id: b.id || null, name: n, arg: patch.lastToolArg || null });
+          }
+          else if (b.type === 'tool_result') {
+            const rc = b.content;
+            const outText = typeof rc === 'string' ? rc : Array.isArray(rc) ? rc.filter(c => c?.type === 'text').map(c => c.text || '').join(' ') : '';
+            send('orchestrator_toolresult', { id: b.tool_use_id || b.id || null, name: b.name || null, ok: !b.is_error, output: String(outText).slice(0, 1200) });
           }
           else if (b.type === "text" && b.text.trim()) {
             patch.summary = b.text.trim().slice(0, 160);
@@ -4111,13 +4311,19 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         }
         set(agentId, patch);
       } else if (m.type === "result") {
+        if (laneAbort.signal.aborted && !mouthTimedOut) {
+          const reply = 'Cancelled by operator.';
+          set(agentId, { state: 'interrupted', lane, summary: reply, reply, lastToolArg: null });
+          send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: ACTIVE_PROVIDER, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
+          return;
+        }
         const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : m.subtype, userText, maxTurns);
         const full = handoff ? handoff.acknowledgement : String(m.result ?? "");
         if (handoff) {
           enqueueOrchestrate(handoff.task, 'mouth-exhaustion-handoff').catch(error => {
             send('execution', { state: 'handoff-failed', lane: 'metabolism', reason: String(error?.message || error).slice(0, 220) });
           });
-          send('execution', { state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', maxTurns, task: String(userText || '').slice(0, 220) });
+          send('execution', { ...executionIdentity, state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', maxTurns, task: String(userText || '').slice(0, 220) });
         }
         if (_decisionPacket && _decisionLoop) {
           try {
@@ -4132,6 +4338,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           } catch (error) { send('decision_loop', { status: 'record-failed', reason: error.message }); }
         }
         send("execution", {
+          ...executionIdentity,
           state: m.subtype === "success" ? "done" : "failed",
           lane,
           provider: ACTIVE_PROVIDER,
@@ -4207,19 +4414,26 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       }
     }
   } catch (e) {
+    if (laneAbort.signal.aborted && !mouthTimedOut) {
+      const reply = 'Cancelled by operator.';
+      set(agentId, { state: 'interrupted', lane, summary: reply, reply, lastToolArg: null });
+      send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: ACTIVE_PROVIDER, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
+      return;
+    }
     const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : null, userText, maxTurns);
     if (handoff) {
       enqueueOrchestrate(handoff.task, 'mouth-timeout-handoff').catch(error => {
         send('execution', { state: 'handoff-failed', lane: 'metabolism', reason: String(error?.message || error).slice(0, 220) });
       });
       set(agentId, { state: 'done', lane, summary: handoff.acknowledgement, reply: handoff.acknowledgement, lastToolArg: null });
-      send('execution', { state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', timeoutMs, task: String(userText || '').slice(0, 220) });
+      send('execution', { ...executionIdentity, state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', timeoutMs, task: String(userText || '').slice(0, 220) });
     } else {
       set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) });
       throw e;
     }
   } finally {
     if (mouthTimer) clearTimeout(mouthTimer);
+    if (abortControllers.get(agentId) === laneAbort) abortControllers.delete(agentId);
   }
   if (autonomyEnabled) scheduleAutonomyTick();
 }
@@ -4467,17 +4681,73 @@ try {
 }
 let _mouthBusy = false;
 let _metabolismIngressBusy = false;
+let _lastPublicationRepairAt = 0;
+let _lastIngressTelemetryAt = 0;
+const _queuedMouthCancellations = new Set();
+function queueMouthCancellation(submissionId) {
+  submissionId = String(submissionId || '').trim();
+  if (!submissionId) return false;
+  if (!_mouthCancellationStore) throw new Error('durable mouth cancellation store unavailable');
+  _mouthCancellationStore.request(INGRESS_DIR, submissionId, { requestedBy: `fleethost:${process.pid}`, reason: 'operator stop' });
+  _queuedMouthCancellations.add(submissionId);
+  while (_queuedMouthCancellations.size > 96) _queuedMouthCancellations.delete(_queuedMouthCancellations.values().next().value);
+  return true;
+}
+function completedMouthTerminal(submissionId) {
+  if (!_ingress || !submissionId) return null;
+  const snapshot = _ingress.entries(INGRESS_DIR);
+  for (const [eventId, item] of snapshot.byId) {
+    if (item?.ingress?.idempotencyKey !== submissionId) continue;
+    const terminal = _ingress.authoritativeTerminal(INGRESS_DIR, eventId);
+    if (!terminal) return null;
+    let publication = terminal.publication || null;
+    if (!publication) {
+      try {
+        const parsed = JSON.parse(String(terminal.result || ''));
+        publication = { reply: parsed.reply ?? null, error: parsed.error ?? null, control: parsed.control ?? null };
+      } catch { publication = { reply: terminal.result || null, error: terminal.reason || null, control: null }; }
+    }
+    const state = terminal.executionPath === 'operator-cancel' ? 'interrupted' : terminal.kind === 'fail' ? 'failed' : 'done';
+    return {
+      directiveId: eventId,
+      submissionId,
+      state,
+      reply: publication.reply ?? publication.error ?? (state === 'interrupted' ? 'Cancelled by operator.' : '(no reply)'),
+      summary: publication.error ?? publication.reply ?? state,
+      executionPath: terminal.executionPath || null,
+      terminalRecordHash: terminal.recordHash,
+    };
+  }
+  return null;
+}
+function reconcileCompletedMouthCancellation(submissionId) {
+  const terminal = completedMouthTerminal(submissionId);
+  if (!terminal) return false;
+  send('cancel_reconcile', terminal);
+  return true;
+}
 function isOperatorIngressSource(source) {
   source = String(source || '').toLowerCase();
   return source === 'ipc-say' || source === 'legacy-say-inbox' || source === 'daniel';
 }
-function _sayLog(o) { try { return _ingress.appendOutbox(SAY_OUTBOX, o); } catch { return null; } }
+// Publication precedes terminal ACK/FAIL. If the durable outbox cannot accept
+// the reply, leave ingress replayable rather than committing a successful null.
+function _sayLog(o) { return _ingress.appendOutbox(SAY_OUTBOX, o); }
 function recordProviderToolBatch(o) { try { return _ingress.appendOutbox(TOOL_BATCH_OUTBOX, o); } catch { return null; } }
 async function pollSayInbox() {
   if (_mouthBusy && (_metabolismIngressBusy || autonomyBusy)) return;
   if (!_ingress || !_sidecarLease) return;
-  try { _ingress.repairPublication(INGRESS_DIR, SAY_OUTBOX, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); } catch (error) { send('ingress', { state: 'repair-failed', reason: error.message }); }
-  try { send('ingress', { state: 'telemetry', ..._ingress.telemetry(INGRESS_DIR), leaseEpoch: _sidecarLease.owner.epoch, fencingToken: _sidecarLease.fencingToken }); } catch {}
+  const now = Date.now();
+  // Publication repair is a recovery scan, not reflex work. Running it on every
+  // 700 ms poll made latency grow with journal × outbox history.
+  if (!_mouthBusy && !_metabolismIngressBusy && now - _lastPublicationRepairAt >= 60_000) {
+    _lastPublicationRepairAt = now;
+    try { _ingress.repairPublication(INGRESS_DIR, SAY_OUTBOX, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); } catch (error) { send('ingress', { state: 'repair-failed', reason: error.message }); }
+  }
+  if (now - _lastIngressTelemetryAt >= 5_000) {
+    _lastIngressTelemetryAt = now;
+    try { send('ingress', { state: 'telemetry', ..._ingress.telemetry(INGRESS_DIR), leaseEpoch: _sidecarLease.owner.epoch, fencingToken: _sidecarLease.fencingToken }); } catch {}
+  }
   try { _ingress.reconcileLegacy(INGRESS_DIR, SAY_INBOX, 'legacy-say-inbox'); } catch (error) { send('ingress', { state: 'failed', reason: error.message }); return; }
   const claim = _ingress.claimNext(INGRESS_DIR, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000, 3, {
     workerPid: process.pid, workerStartIdentity: _sidecarLease.owner.startIdentity,
@@ -4489,64 +4759,144 @@ async function pollSayInbox() {
   const item = _ingress.getIngress(INGRESS_DIR, claim.directiveId); if (!item) return;
   const txt = item.text;
   const mouthClaim = isOperatorIngressSource(item.source);
+  const submissionId = claim.idempotencyKey || item.idempotencyKey || null;
   if (mouthClaim) _mouthBusy = true; else _metabolismIngressBusy = true;
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
     workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel,
     lane: mouthClaim ? 'mouth' : 'metabolism', startedAt: Date.now() };
-  const renew = (state = 'renewed') => {
-    const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000);
-    send('ingress', { state, directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt,
-      workerPid: renewal.workerPid, workerStartIdentity: renewal.workerStartIdentity, providerSessionId: renewal.providerSessionId, timeline: 'claim-renewal' });
-    return renewal;
-  };
-  const renewalTimer = setInterval(() => { try { renew(); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
-  renewalTimer.unref?.();
-  const emitProgress = () => send('execution', { state: 'working', lane: attempt.lane, directiveId: claim.directiveId,
-    elapsedMs: Math.max(0, Date.now() - attempt.startedAt), heartbeatAt: new Date().toISOString() });
-  const progressTimer = setInterval(emitProgress, 1000);
-  progressTimer.unref?.();
-  emitProgress();
+  let renewalTimer = null;
+  let progressTimerHandle = null;
+  let finished = false;
   const finish = () => {
+    if (finished) return;
+    finished = true;
     clearInterval(renewalTimer);
-    clearInterval(progressTimer);
+    if (progressTimerHandle) {
+      const progressTimer = progressTimerHandle;
+      clearInterval(progressTimer);
+    }
     if (mouthClaim) _mouthBusy = false; else _metabolismIngressBusy = false;
   };
-  send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
-  // control commands: !autonomy <min> grants a window; !stop ends it
-  const am = txt.match(/^!autonomy\s+(\d+)/i);
-  if (am) { startAutonomy(parseInt(am[1], 10)); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!autonomy <minutes>' }); finish(); return; }
-  if (/^!stop\b/i.test(txt)) { stopAutonomy('stopped via bridge'); const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' }); _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!stop' }); finish(); return; }
-  const obligationControl = _obligationCompiler?.parseIngressControl(txt);
-  if (obligationControl?.operation === 'sec-mesa') {
-    try {
-      if (!_obligationCompiler) throw new Error('obligation compiler organ unavailable');
-      const result = await _obligationCompiler.runCompiler({ repo: REPO, secMesa: true });
-      const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', result });
-      const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
-        ...attempt,
-        executionPath: 'deterministic-control',
-        parserRule: '!obligations sec-mesa',
-        outboxRecordHash: out && out.recordHash,
-      });
-      send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', timeline: 'ack' });
-    } catch (error) {
-      const failure = String((error && error.message) || error);
-      const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', error: failure });
-      const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
-        ...attempt,
-        executionPath: 'deterministic-control',
-        parserRule: '!obligations sec-mesa',
-      });
-      send('ingress', { state: 'failed', directiveId: claim.directiveId, seq: fail.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', reason: failure, timeline: 'fail' });
-    }
-    finish();
-    return;
-  }
   const _attachments = item.attachments || null;
   let _attachmentsTerminalized = false;
+  let terminalCommitted = false;
+  let failureExecutionPath = 'model';
+  let failureParserRule = null;
   try {
+    const durableCancellation = mouthClaim && submissionId && _mouthCancellationStore
+      ? _mouthCancellationStore.consumeOrObserve(INGRESS_DIR, submissionId, { consumer: `fleethost:${process.pid}`, phase: 'pre-provider-admission' })
+      : null;
+    const volatileCancellation = mouthClaim && submissionId ? _queuedMouthCancellations.delete(submissionId) : false;
+    if (mouthClaim && submissionId && (volatileCancellation || durableCancellation?.requested)) {
+      const reply = 'Cancelled by operator before provider admission.';
+      const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply, cancelled: true });
+      const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+        ...attempt,
+        executionPath: 'operator-cancel',
+        outboxRecordHash: out && out.recordHash,
+      });
+      terminalCommitted = true;
+      _attachmentsTerminalized = true;
+      try { set('ATLAS', { state: 'interrupted', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, reply, lastToolArg: null }); } catch {}
+      try { send('execution', { state: 'interrupted', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, finishedAt: new Date().toISOString() }); } catch {}
+      try { send('ingress', { state: 'acked', terminalState: 'interrupted', directiveId: claim.directiveId, submissionId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath: 'operator-cancel', timeline: 'ack' }); } catch {}
+      return;
+    }
+    const renew = (state = 'renewed') => {
+      const renewal = _ingress.renewClaim(INGRESS_DIR, claim.directiveId, attempt, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, 30000);
+      send('ingress', { state, directiveId: claim.directiveId, attemptId: attempt.attemptId, seq: renewal.seq, expiresAt: renewal.expiresAt,
+        workerPid: renewal.workerPid, workerStartIdentity: renewal.workerStartIdentity, providerSessionId: renewal.providerSessionId, timeline: 'claim-renewal' });
+      return renewal;
+    };
+    renewalTimer = setInterval(() => { try { renew(); } catch (error) { send('ingress', { state: 'renewal-failed', directiveId: claim.directiveId, attemptId: attempt.attemptId, reason: String(error.message || error) }); } }, 5000);
+    renewalTimer.unref?.();
+    const emitProgress = () => send('execution', { state: 'working', lane: attempt.lane, directiveId: claim.directiveId, submissionId,
+      elapsedMs: Math.max(0, Date.now() - attempt.startedAt), heartbeatAt: new Date().toISOString() });
+    const progressTimer = setInterval(emitProgress, 1000);
+    progressTimerHandle = progressTimer;
+    progressTimer.unref?.();
+    emitProgress();
+    send('ingress', { state: 'claimed', directiveId: claim.directiveId, seq: claim.seq, epoch: claim.epoch, replay: claim.replay, timeline: 'claim' });
+
+    // control commands: !autonomy <min> grants a window; !stop ends it
+    const am = txt.match(/^!autonomy\s+(\d+)/i);
+    if (am) {
+      failureExecutionPath = 'deterministic-control';
+      failureParserRule = '!autonomy <minutes>';
+      startAutonomy(parseInt(am[1], 10));
+      const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-start', minutes: parseInt(am[1], 10) });
+      _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!autonomy <minutes>' });
+      terminalCommitted = true;
+      _attachmentsTerminalized = true;
+      if (mouthClaim) {
+        const reply = `Autonomy window started for ${parseInt(am[1], 10)} minute(s).`;
+        try { set('ATLAS', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, reply, lastToolArg: null }); } catch {}
+        try { send('execution', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, finishedAt: new Date().toISOString() }); } catch {}
+      }
+      return;
+    }
+    if (/^!stop\b/i.test(txt)) {
+      failureExecutionPath = 'deterministic-control';
+      failureParserRule = '!stop';
+      stopAutonomy('stopped via bridge');
+      const out = _sayLog({ directiveId: claim.directiveId, control: 'autonomy-stop' });
+      _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'deterministic-control', parserRule: '!stop' });
+      terminalCommitted = true;
+      _attachmentsTerminalized = true;
+      if (mouthClaim) {
+        const reply = 'Autonomy window stopped.';
+        try { set('ATLAS', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, reply, lastToolArg: null }); } catch {}
+        try { send('execution', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply, finishedAt: new Date().toISOString() }); } catch {}
+      }
+      return;
+    }
+    const obligationControl = _obligationCompiler?.parseIngressControl(txt);
+    if (obligationControl?.operation === 'sec-mesa') {
+      failureExecutionPath = 'deterministic-control';
+      failureParserRule = '!obligations sec-mesa';
+      try {
+        if (!_obligationCompiler) throw new Error('obligation compiler organ unavailable');
+        const result = await _obligationCompiler.runCompiler({ repo: REPO, secMesa: true });
+        const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', result });
+        const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+          ...attempt,
+          executionPath: 'deterministic-control',
+          parserRule: '!obligations sec-mesa',
+          outboxRecordHash: out && out.recordHash,
+        });
+        terminalCommitted = true;
+        _attachmentsTerminalized = true;
+        if (mouthClaim) {
+          const reply = `Obligation compilation complete: ${JSON.stringify(result).slice(0, 1000)}`;
+          try { set('ATLAS', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply.slice(0, 220), reply, lastToolArg: null }); } catch {}
+          try { send('execution', { state: 'done', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: reply.slice(0, 220), finishedAt: new Date().toISOString() }); } catch {}
+        }
+        try { send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', timeline: 'ack' }); } catch {}
+      } catch (error) {
+        const failure = String((error && error.message) || error);
+        const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', error: failure });
+        const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+          ...attempt,
+          executionPath: 'deterministic-control',
+          parserRule: '!obligations sec-mesa',
+        });
+        terminalCommitted = true;
+        _attachmentsTerminalized = true;
+        if (mouthClaim) {
+          try { set('ATLAS', { state: 'failed', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: failure.slice(0, 220), reply: failure, lastToolArg: null }); } catch {}
+          try { send('execution', { state: 'failed', lane: 'mouth', directiveId: claim.directiveId, submissionId, summary: failure.slice(0, 220), finishedAt: new Date().toISOString() }); } catch {}
+        }
+        try { send('ingress', { state: 'failed', directiveId: claim.directiveId, submissionId, seq: fail.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', reason: failure, timeline: 'fail' }); } catch {}
+      }
+      return;
+    }
+
+    failureExecutionPath = 'model';
+    failureParserRule = null;
     if (mouthClaim && autonomyEnabled) stopAutonomy('operator prompt preempts the window');
     await enqueueOrchestrate(txt, mouthClaim ? 'user' : 'system', {
+      directiveId: claim.directiveId,
+      submissionId,
       onProviderSpawn(meta) {
         attempt.workerPid = meta.pid;
         attempt.workerStartIdentity = meta.startIdentity;
@@ -4556,20 +4906,32 @@ async function pollSayInbox() {
       },
     }, _attachments);
     const a = agents.get(mouthClaim ? 'ATLAS' : 'ATLAS-METABOLISM') || {};
-    const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null });
-    const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model', outboxRecordHash: out && out.recordHash });
+    const interrupted = a.state === 'interrupted';
+    const executionPath = interrupted ? 'operator-cancel' : 'model';
+    failureExecutionPath = executionPath;
+    const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply: (a.reply || a.summary || ''), cost: a.cost ?? null, ...(interrupted ? { cancelled: true } : {}) });
+    const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath, outboxRecordHash: out && out.recordHash });
+    terminalCommitted = true;
     _attachmentsTerminalized = true;
-    send('ingress', { state: 'acked', directiveId: claim.directiveId, submissionId: claim.idempotencyKey, seq: ack.seq, outboxRecordHash: out && out.recordHash, timeline: 'ack' });
+    try { send('ingress', { state: 'acked', terminalState: interrupted ? 'interrupted' : 'done', directiveId: claim.directiveId, submissionId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath, timeline: 'ack' }); } catch {}
   } catch (e) {
     const failure = String((e && e.message) || e);
+    if (terminalCommitted) {
+      try { _ingress.appendError(INGRESS_DIR, e, { phase: 'post-terminal-publication', directiveId: claim.directiveId, attemptId: attempt.attemptId }); } catch {}
+      return;
+    }
     const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, error: failure });
-    const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath: 'model' });
+    const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
+      ...attempt,
+      executionPath: failureExecutionPath,
+      ...(failureParserRule ? { parserRule: failureParserRule } : {}),
+    });
+    terminalCommitted = true;
     _attachmentsTerminalized = true;
-    send('ingress', { state: 'failed', directiveId: claim.directiveId, submissionId: claim.idempotencyKey, seq: fail.seq, outboxRecordHash: out && out.recordHash, reason: failure, timeline: 'fail' });
+    try { send('ingress', { state: 'failed', directiveId: claim.directiveId, submissionId, seq: fail.seq, outboxRecordHash: out && out.recordHash, executionPath: failureExecutionPath, reason: failure, timeline: 'fail' }); } catch {}
   } finally {
-    if (_attachmentsTerminalized) _ingress.removeImageAttachments(INGRESS_DIR, _attachments);
+    try { if (_attachmentsTerminalized) _ingress.removeImageAttachments(INGRESS_DIR, _attachments); } finally { finish(); }
   }
-  finish();
 }
 function sweepIngressImages() {
   try { return _ingress.sweepImageAttachments(INGRESS_DIR); }
@@ -4579,7 +4941,15 @@ function sweepIngressImages() {
   }
 }
 sweepIngressImages();
-setInterval(pollSayInbox, 700); // reflex poll: inbound latency 2.5s -> 0.7s (Daniel directive 2026-08-22)
+function pollSayInboxSafely() {
+  // Do not serialize all polls behind one global in-flight flag: a provider turn
+  // in one lane must not prevent the other lane from admitting work.
+  void pollSayInbox().catch(error => {
+    try { _ingress?.appendError(INGRESS_DIR, error, { phase: 'poll-say-inbox', pid: process.pid }); } catch {}
+    try { send('ingress', { state: 'poll-failed', reason: String(error?.message || error).slice(0, 240) }); } catch {}
+  });
+}
+setInterval(pollSayInboxSafely, 700); // reflex poll: inbound latency 2.5s -> 0.7s (Daniel directive 2026-08-22)
 setInterval(sweepIngressImages, 60_000);
 
 // Tap ganglion sensory half: workers tap by appending to .atlas/taps.ndjson;
@@ -4637,9 +5007,20 @@ process.on("message", (m) => {
   else if (m.t === "reply") replyAgent(m.id, m.text);
   else if (m.t === "cancel") {
     const ac = abortControllers.get(m.id);
-    if (ac) { try { ac.abort(); } catch {} abortControllers.delete(m.id); }
-    const a = agents.get(m.id);
-    if (a && a.state === "working") set(m.id, { state: "interrupted", summary: "cancelled by user" });
+    if (ac && m.id === 'ATLAS' && m.submissionId) {
+      const activeSubmissionId = abortControllerMetadata.get(ac)?.submissionId || null;
+      if (activeSubmissionId === m.submissionId) { try { ac.abort(); } catch {} }
+      else if (!reconcileCompletedMouthCancellation(m.submissionId)) {
+        try { queueMouthCancellation(m.submissionId); }
+        catch (error) { send('cancel_error', { submissionId: m.submissionId, reason: String(error?.message || error) }); }
+      }
+    } else if (ac) { try { ac.abort(); } catch {} }
+    else if (m.id === 'ATLAS' && m.submissionId && !reconcileCompletedMouthCancellation(m.submissionId)) {
+      try { queueMouthCancellation(m.submissionId); }
+      catch (error) { send('cancel_error', { submissionId: m.submissionId, reason: String(error?.message || error) }); }
+    }
+    // Abort is the request; the owning execution publishes the one authoritative
+    // interrupted terminal after the provider/tool stack has actually unwound.
   }
   else if (m.t === 'shutdown') gracefulDrain('ipc-shutdown');
 });

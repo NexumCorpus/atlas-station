@@ -13,14 +13,14 @@ sidecar restarts preserve the one-week route:
 ```text
 ATLAS_PROVIDER=openrouter
 ATLAS_OPENROUTER_MODEL=stealth/ox-alpha
-ATLAS_OPENROUTER_TRANSPORT=powershell
-ATLAS_OPENROUTER_STREAM=0
+ATLAS_OPENROUTER_TRANSPORT=native
+ATLAS_OPENROUTER_STREAM=1
 ATLAS_OPENROUTER_REASONING=low
 ATLAS_OPENROUTER_MAX_TOKENS=2048
 ATLAS_OPENROUTER_PROVIDER_SORT=latency
 ATLAS_OPENROUTER_PREFERRED_MAX_LATENCY=15
 ATLAS_MOUTH_CONTEXT_CHARS=2500
-ATLAS_MOUTH_TIMEOUT_MS=120000
+ATLAS_MOUTH_TIMEOUT_MS=0
 ATLAS_NO_BRIEFING=1
 OPENROUTER_API_KEY=<credential>
 ```
@@ -35,14 +35,13 @@ persist on this workstation; rotate or remove it when the one-week route ends.
 The provider uses OpenRouter Chat Completions with native function calling. Its
 shell organ executes PowerShell in the requested Atlas workspace, returns
 bounded output, and enforces a 20-minute maximum per command. The provider
-defaults to 24 tool rounds. The conversational mouth requests 6 through
-`ATLAS_MOUTH_MAX_TURNS`; metabolism requests 64 through
-`ATLAS_ORCHESTRATOR_MAX_TURNS`; and workers default to 12. Every request is
-clamped to the provider safety ceiling of 256. The mouth also has a 45-second
-wall-clock fuse, configurable with `ATLAS_MOUTH_TIMEOUT_MS` from 5 through 120
-seconds. OpenRouter shell calls made by the mouth have a separate 15-second
-ceiling, preserving time for the model to interpret the result and speak; the
-same work can continue with the wider metabolism budget after a bounded handoff.
+defaults to 24 tool rounds. The conversational mouth and metabolism each request
+64 rounds by default through `ATLAS_MOUTH_MAX_TURNS` and
+`ATLAS_ORCHESTRATOR_MAX_TURNS`; workers default to 12. Every request is clamped
+to the provider safety ceiling of 256. The active workstation sets
+`ATLAS_MOUTH_TIMEOUT_MS=0`, so no wall-clock fuse truncates direct dialogue; a
+positive value enables a bounded 5-second through 20-minute fuse. OpenRouter
+shell calls keep their own bounded, cancellable timeout.
 If either mouth bound is exhausted, it releases speech with a bounded
 acknowledgement and queues exactly one continuation on metabolism. Operator
 cancellation terminates the active tool.
@@ -56,6 +55,16 @@ already hashed corpus directly instead of passing it through the ordinary 6K
 memory envelope; their fleet receipts bind each worker to the corpus root.
 Operator ingress is selected before older background ingress, and claims, renewals, and
 terminal receipts preserve the selected lane as provenance.
+
+Stop is bound to the active submission id, not merely the shared `ATLAS` agent
+name. A delayed Stop therefore cannot kill the next queued turn. Stops that
+arrive before provider admission are fsync'd to a hash-chained, append-only
+cancellation ledger and survive a sidecar restart; admission consumes one
+durable receipt before constructing a remote request. Nested consolidation,
+research, fan-research, variant, shell, shard, and verification organs inherit
+the parent abort signal. If a Stop arrives after a turn has already settled,
+the sidecar replays that authoritative terminal to the correlated bubble rather
+than leaving the composer in a permanent stopping state.
 
 OpenRouter mouth calls are intentionally provider-stateless across operator
 turns. Context Mycelium supplies the bounded hot context and authenticated
@@ -73,11 +82,24 @@ Native execution shares the caller's timeout and abort signal. Direct OpenRouter
 MCP servers are not supported and the provider declares that limitation through
 its capabilities object.
 
-OpenRouter cannot consume the in-process Claude MCP server, so Station bridges a
-small native organ set directly through OpenRouter function calling:
-`spawn_agent`, `check_fleet`, and `deep_context_swarm`. Spawn calls return a
-visible fleet id immediately; workers run as the same configured Ox Alpha model,
-and build workers retain isolated-worktree behavior.
+Before every provider round, Atlas measures the complete JSON request and stops
+with a typed context-budget terminal if it exceeds
+`ATLAS_OPENROUTER_MAX_REQUEST_BYTES` (3,500,000 bytes by default). This prevents
+repeated bounded tool outputs from silently growing into an unbounded request.
+Read-only parallel organs are time-bounded; serial mutation organs must settle
+before the model advances so a timeout cannot leave an unaudited background
+write.
+
+OpenRouter cannot consume the in-process Claude MCP server directly. Station now
+generates strict OpenRouter functions from the same SDK tool registry used by the
+fleet server, so memory, shards, crystals, spirals, research, verification,
+projects, skill evolution, and the other fleet organs remain executable on the
+Ox Alpha route. Mutation-capable organs are serialized; only an explicit
+read-only allowlist may execute concurrently. `spawn_agent` and `check_fleet`
+retain purpose-built OpenRouter implementations, and `deep_context_swarm` remains
+the explicit large-context path. Spawn calls return a visible fleet id
+immediately; workers run as the same configured Ox Alpha model, and build workers
+retain isolated-worktree behavior.
 
 `deep_context_swarm` is the explicit large-context path. It deterministically
 packs allowlisted repository text under character and UTF-8 byte ceilings. Each
@@ -118,14 +140,26 @@ The provider card reports `active: openrouter`, the exact model, credential
 presence as a boolean, and the `chat-completions` API route. Remote errors are
 bounded before reaching the UI and never include the authorization header.
 
+Reply publication is fail-closed: the outbox record must be durably written
+before ingress can ACK or FAIL. If later adjudication replaces a historical
+terminal, repair appends an explicitly proven superseding publication; readers
+follow that chain while the rejected row remains immutable. Electron supervises
+the sidecar by both child-process events and a one-second owned-PID watchdog, so
+a lost Windows exit notification cannot leave a living desktop with a dead
+Atlas body.
+
 A transport rejection is terminal because process death can hide whether remote
-admission occurred. Operator aborts, failures after response admission, and HTTP
-errors other than an explicit 429 are also terminal. Non-streaming 429 responses
-have two abort-aware admission retries at three and six seconds by default.
+admission occurred. Operator aborts and failures after response admission are
+also terminal. Pre-admission HTTP 408, 429, 500, 502, 503, and 504 responses have
+two abort-aware retries at three and six seconds by default on both streaming and
+non-streaming routes.
 `ATLAS_OPENROUTER_HTTP_RETRIES` bounds attempts from zero
 through three, and `ATLAS_OPENROUTER_RETRY_BASE_MS` bounds the base delay.
 
-`ATLAS_OPENROUTER_TRANSPORT=powershell` sends the request through Windows
+The active workstation uses `ATLAS_OPENROUTER_TRANSPORT=native` with streaming
+enabled. It exposes SSE text and reasoning deltas immediately to the renderer and
+has a live provider probe in the acceptance evidence. The PowerShell transport
+remains a buffered fallback: `ATLAS_OPENROUTER_TRANSPORT=powershell` sends the request through Windows
 `HttpClient`, avoiding the supervised sidecar's unreliable Node socket path. The
 credential crosses only the helper's standard input; it is never placed on the
 command line or written by the transport. The helper streams response bytes into

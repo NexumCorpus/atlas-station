@@ -90,4 +90,23 @@ await check('live progress is independent of durable claim renewal', async () =>
   assert.match(source, /heartbeatAt: new Date\(\)\.toISOString\(\)/);
 });
 
+await check('Atlas cancellation is single-publisher and submission-correlated before or after admission', async () => {
+  const source = fs.readFileSync(new URL('../fleethost.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const _queuedMouthCancellations = new Set\(\)/);
+  assert.match(source, /_mouthCancellationStore\.request\(INGRESS_DIR, submissionId/);
+  assert.match(source, /_mouthCancellationStore\.consumeOrObserve\(INGRESS_DIR, submissionId/);
+  assert.match(source, /_queuedMouthCancellations\.delete\(submissionId\)/);
+  assert.match(source, /executionPath: 'operator-cancel'/);
+  assert.match(source, /submissionId: executionHooks\.submissionId \|\| null/);
+  assert.match(source, /abortControllerMetadata\.set\(laneAbort, \{ agentId, \.\.\.executionIdentity \}\)/);
+  assert.match(source, /directiveId: claim\.directiveId,[\s\S]{0,120}submissionId,[\s\S]{0,220}onProviderSpawn/);
+  const cancelStart = source.indexOf('else if (m.t === "cancel")');
+  const cancelEnd = source.indexOf("else if (m.t === 'shutdown')", cancelStart);
+  const cancelHandler = source.slice(cancelStart, cancelEnd);
+  assert.doesNotMatch(cancelHandler, /\bset\(/, 'IPC cancel must not publish a duplicate terminal agent event');
+  assert.match(cancelHandler, /queueMouthCancellation\(m\.submissionId\)/);
+  assert.match(cancelHandler, /activeSubmissionId === m\.submissionId/, 'active mouth cancellation must match its submission');
+  assert.match(cancelHandler, /reconcileCompletedMouthCancellation\(m\.submissionId\)/, 'too-late cancellation must replay its authoritative terminal');
+});
+
 if (!process.exitCode) console.log(`\n${passed} passed, 0 failed\n`);

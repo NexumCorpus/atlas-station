@@ -412,10 +412,12 @@ function activeAttempt(item, now = Date.now()) {
 }
 function workerStillAlive(attempt, now = Date.now()) {
   if (!attempt || attempt.requestedClaimTtlMs === 1 || Number(attempt.expiresAt || 0) > now || !attempt.workerPid) return false;
+  const staleGraceMs = Math.max(30_000, Number(attempt.effectiveClaimTtlMs || attempt.requestedClaimTtlMs || 30_000) * 2);
+  if (now - Number(attempt.expiresAt || 0) > staleGraceMs) return false;
   try { process.kill(Number(attempt.workerPid), 0); return true; } catch { return false; }
 }
-function authoritativeTerminal(dir, eventId) {
-  const item = entries(dir).byId.get(eventId); if (!item?.terminal) return null;
+function authoritativeTerminalFromItem(item, eventId) {
+  if (!item?.terminal) return null;
   if (item.terminal.blocked && item.replayRecoveries.length) return null;
   let result = item.terminal;
   for (const adjudication of item.adjudications.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
@@ -426,6 +428,9 @@ function authoritativeTerminal(dir, eventId) {
     }
   }
   return result;
+}
+function authoritativeTerminal(dir, eventId) {
+  return authoritativeTerminalFromItem(entries(dir).byId.get(eventId), eventId);
 }
 function terminal(dir, eventId) { return authoritativeTerminal(dir, eventId); }
 
@@ -533,17 +538,103 @@ function adjudicateTerminal(dir, eventId, rejectedTerminalHash, replacementTermi
   });
 }
 
+function outboxFailure(message, code, cause = null) {
+  const error = new Error(message);
+  error.name = 'OutboxPublicationError';
+  error.code = code;
+  if (cause) error.cause = cause;
+  return error;
+}
+function outboxResultHash(entry) { return entry.resultHash || bytesHash(entry.reply || entry.error || JSON.stringify(entry)); }
+function authoritativeOutboxMap(rows) {
+  const current = new Map();
+  for (const row of rows || []) {
+    if (!row?.directiveId || !row.recordHash) continue;
+    const prior = current.get(row.directiveId);
+    if (!prior) {
+      // A supersession without its referenced predecessor is not independently
+      // authoritative. Ignore it deterministically rather than laundering it.
+      if (!row.supersedesOutboxRecordHash) current.set(row.directiveId, row);
+      continue;
+    }
+    if (row.supersedesOutboxRecordHash === prior.recordHash) current.set(row.directiveId, row);
+    // Legacy duplicate/fork rows do not displace the first admitted projection.
+  }
+  return current;
+}
+function readOutbox(file) { return [...authoritativeOutboxMap(readJsonLines(file)).values()]; }
 function appendOutbox(file, entry) {
-  fs.mkdirSync(path.dirname(file), { recursive: true }); let rows; try { rows = readJsonLines(file); } catch { const raw = fs.readFileSync(file); const boundary = raw.lastIndexOf(0x0a); appendFileSync(`${file}.quarantine`, JSON.stringify({ reason: 'outbox-corrupt-tail', suffixHash: bytesHash(raw.subarray(Math.max(0, boundary + 1))) }) + '\n'); const fd = fs.openSync(file, 'r+'); try { fs.ftruncateSync(fd, Math.max(0, boundary + 1)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } rows = readJsonLines(file); }
-  if (entry.directiveId) { const same = rows.find(row => row.directiveId === entry.directiveId); if (same) { if ((entry.resultHash || bytesHash(entry.reply || entry.error || JSON.stringify(entry))) === same.resultHash) return same; throw new Error('outbox result conflict for event'); } }
-  const body = { ...entry, resultHash: entry.resultHash || bytesHash(entry.reply || entry.error || JSON.stringify(entry)), ts: new Date().toISOString() }; body.recordHash = hash(body); appendFileSync(file, JSON.stringify(body) + '\n'); return body;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    let rows;
+    try { rows = readJsonLines(file); }
+    catch {
+      const raw = fs.readFileSync(file); const boundary = raw.lastIndexOf(0x0a);
+      appendFileSync(`${file}.quarantine`, JSON.stringify({ reason: 'outbox-corrupt-tail', suffixHash: bytesHash(raw.subarray(Math.max(0, boundary + 1))) }) + '\n');
+      const fd = fs.openSync(file, 'r+'); try { fs.ftruncateSync(fd, Math.max(0, boundary + 1)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      rows = readJsonLines(file);
+    }
+    const resultHash = outboxResultHash(entry);
+    if (entry.directiveId) {
+      const current = authoritativeOutboxMap(rows).get(entry.directiveId);
+      if (current) {
+        if (!entry.supersedesOutboxRecordHash && resultHash === current.resultHash) return current;
+        if (entry.supersedesOutboxRecordHash !== current.recordHash) throw outboxFailure('outbox result conflict for event', 'OUTBOX_RESULT_CONFLICT');
+        if (!entry.authoritativeTerminalRecordHash || !entry.supersessionReason) throw outboxFailure('outbox supersession requires authoritative terminal proof', 'OUTBOX_SUPERSESSION_PROOF_REQUIRED');
+      } else if (entry.supersedesOutboxRecordHash) {
+        throw outboxFailure('outbox supersession target is unavailable', 'OUTBOX_SUPERSESSION_TARGET_MISSING');
+      }
+    }
+    const body = { ...entry, resultHash, ts: new Date().toISOString() };
+    body.recordHash = hash(body);
+    appendFileSync(file, JSON.stringify(body) + '\n');
+    return body;
+  } catch (error) {
+    if (error?.name === 'OutboxPublicationError') throw error;
+    throw outboxFailure(`outbox publication failed: ${String(error?.message || error)}`, 'OUTBOX_PUBLICATION_FAILED', error);
+  }
+}
+function publicationFromTerminal(record) {
+  return record.publication || (() => {
+    try { const parsed = JSON.parse(record.result); return { reply: parsed.reply ?? null, error: parsed.error ?? null, control: parsed.control ?? null }; }
+    catch { return { reply: record.result, error: null, control: null }; }
+  })();
+}
+function samePublication(row, publication) {
+  return (row.reply ?? null) === (publication.reply ?? null)
+    && (row.error ?? null) === (publication.error ?? null)
+    && (row.control ?? null) === (publication.control ?? null);
 }
 function repairPublication(dir, outboxFile, leaseOrOwner, epoch, token) {
   dir = canonicalDir(dir);
   let rows = []; try { rows = readJsonLines(outboxFile); } catch {}
+  const snapshot = entries(dir);
+  const published = authoritativeOutboxMap(rows);
   const repaired = [];
-  for (const row of rows) { if (!row.directiveId || terminal(dir, row.directiveId)) continue; repaired.push(ack(dir, row.directiveId, JSON.stringify({ reply: row.reply ?? null, error: row.error ?? null, control: row.control ?? null }), leaseOrOwner, epoch, token, { executionPath: 'repair', repairProof: { outboxRecordHash: row.recordHash }, repairedFromOutbox: true, outboxRecordHash: row.recordHash })); }
-  for (const record of readJournal(dir)) { if (record.kind !== 'ack' || !record.result || rows.some(row => row.directiveId === record.directiveId)) continue; const publication = record.publication || (() => { try { const parsed = JSON.parse(record.result); return { reply: parsed.reply ?? null, error: parsed.error ?? null, control: parsed.control ?? null }; } catch { return { reply: record.result, error: null, control: null }; } })(); appendOutbox(outboxFile, { directiveId: record.directiveId, ...publication, resultHash: record.resultHash, repairedFromAck: true }); }
+  for (const row of published.values()) {
+    if (!row.directiveId || authoritativeTerminalFromItem(snapshot.byId.get(row.directiveId), row.directiveId)) continue;
+    const repairMeta = { executionPath: 'repair', repairProof: { outboxRecordHash: row.recordHash }, repairedFromOutbox: true, outboxRecordHash: row.recordHash };
+    repaired.push(row.error != null
+      ? fail(dir, row.directiveId, String(row.error), leaseOrOwner, epoch, token, repairMeta)
+      : ack(dir, row.directiveId, JSON.stringify({ reply: row.reply ?? null, error: null, control: row.control ?? null }), leaseOrOwner, epoch, token, repairMeta));
+  }
+  for (const [directiveId, item] of snapshot.byId) {
+    const record = authoritativeTerminalFromItem(item, directiveId);
+    if (!record || !['ack', 'fail', 'late-result'].includes(record.kind) || !record.result) continue;
+    const publication = publicationFromTerminal(record);
+    const current = published.get(directiveId);
+    if (current && samePublication(current, publication)) continue;
+    const logicalKind = record.kind === 'late-result' ? 'ack' : record.kind;
+    const appended = appendOutbox(outboxFile, {
+      directiveId,
+      ...publication,
+      resultHash: record.resultHash,
+      repairedFromTerminal: logicalKind,
+      authoritativeTerminalRecordHash: record.recordHash,
+      ...(current ? { supersedesOutboxRecordHash: current.recordHash, supersessionReason: 'authoritative-terminal-changed' } : {}),
+    });
+    published.set(directiveId, appended);
+  }
   return repaired;
 }
 function telemetry(dir) {
@@ -554,4 +645,4 @@ function telemetry(dir) {
 }
 function appendError(dir, error, context = {}) { return append(canonicalDir(dir), { kind: 'sidecar-error', error: String(error?.stack || error), context }); }
 
-module.exports = { hash, bytesHash, imageHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, repairReplayLimit, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress, persistImageDataUrls, readImageAttachment, admitImageAttachments, removeImageAttachments, sweepImageAttachments, IMAGE_COUNT_LIMIT, IMAGE_BYTES_LIMIT, IMAGE_TOTAL_BYTES_LIMIT, IMAGE_DIMENSION_LIMIT, IMAGE_PIXEL_LIMIT, IMAGE_TOTAL_PIXEL_LIMIT };
+module.exports = { hash, bytesHash, imageHash, canonicalDir, paths, withLock, readJournal, append, appendIngress, reconcileLegacy, claimNext, renewClaim, repairReplayLimit, adjudicateTerminal, authoritativeTerminal, getIngress, entries, terminal, ack, fail, appendOutbox, readOutbox, repairPublication, telemetry, appendError, claimFiles, assertLease, salvageIngress, persistImageDataUrls, readImageAttachment, admitImageAttachments, removeImageAttachments, sweepImageAttachments, IMAGE_COUNT_LIMIT, IMAGE_BYTES_LIMIT, IMAGE_TOTAL_BYTES_LIMIT, IMAGE_DIMENSION_LIMIT, IMAGE_PIXEL_LIMIT, IMAGE_TOTAL_PIXEL_LIMIT };
