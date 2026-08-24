@@ -2154,6 +2154,7 @@ const verifyBuildTool = tool(
         } catch {}
       }
 
+      try { if (args.agentId) _recordRetention(args.agentId, verdict === 'PASS' ? 'survived' : (verdict === 'FAIL' ? 'regressed' : 'unknown')); } catch {}
       const text = [summary, '', ...results].join('\n');
       return { content: [{ type: 'text', text: text }] };
     } catch (e) {
@@ -2944,6 +2945,7 @@ const revertBuildTool = tool(
       const result = gitC(revertArgs);
       if (_outcomeTracker) {
         try { _outcomeTracker.rateOutcome(args.agentId, 'bad', 'reverted', path.join(REPO, 'memory')); } catch {}
+        try { _recordRetention(args.agentId, 'regressed'); } catch {}
       }
       return { content: [{ type: 'text', text: `Reverted fleet/${args.agentId} (${hash}):\n${result}` }] };
     } catch (e) {
@@ -2951,6 +2953,74 @@ const revertBuildTool = tool(
     }
   }
 );
+
+﻿
+// ---- Post-merge retention tracking (vital sign r) ----
+let _retention = null;
+try { _retention = _require('./retention.cjs'); } catch { _retention = null; }
+
+function _findMergeCommit(agentId) {
+  try {
+    return gitC(["log", "--merges", "--format=%H %ct", "--grep", `fleet/${agentId}`, "-1"]).trim() || null;
+  } catch { return null; }
+}
+
+function _recordRetention(agentId, verdict) {
+  if (!_retention || !agentId) return;
+  try {
+    const found = _findMergeCommit(agentId);
+    if (!found) return;
+    const [hash, ct] = found.split(' ');
+    _retention.appendRetentionRecord(REPO, {
+      ts: new Date().toISOString(),
+      agentId,
+      mergeCommit: hash,
+      verdict,
+    });
+  } catch {}
+}
+
+const retentionReportTool = tool(
+  "retention_report",
+  "Post-merge retention vital sign: scans recent auto-merge commits (messages matching 'auto-merge fleet/B-*', last ~50 within the window), correlates each with retention records / build outcome ratings / test results recorded after the merge timestamp, and returns the post-merge survival rate r = stayed-green merges / total merges.",
+  {
+    windowDays: z.number().optional().describe("Look-back window in days (default 14)"),
+  },
+  async (args) => {
+    try {
+      const fs2 = _require('fs');
+      const days = args.windowDays || 14;
+      const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+      let logOut = '';
+      try {
+        logOut = gitC(["log", "--merges", `--since=@${cutoff}`, "-n", "50", "--format=%H %ct %s"]).trim();
+      } catch {}
+      const merges = [];
+      for (const line of logOut.split('\n').filter(Boolean)) {
+        const m = line.match(/^([0-9a-f]+) (\d+) (.*)$/);
+        if (!m) continue;
+        if (!/auto-merge fleet\/B-/i.test(m[3])) continue;
+        // find agentId from the merge subject or body
+        let agentId = null;
+        const am = m[3].match(/fleet\/(B-\d+)/i);
+        if (am) agentId = am[1];
+        merges.push({ hash: m[1], ts: Number(m[2]), subject: m[3], agentId });
+      }
+      const events = _retention ? _retention.readRetentionEvents(REPO) : [];
+      let outcomes = [];
+      if (_outcomeTracker) {
+        try { outcomes = _outcomeTracker.listOutcomes ? _outcomeTracker.listOutcomes(path.join(REPO, 'memory')) : []; } catch {}
+      }
+      const report = _retention
+        ? _retention.computeRetention(merges, { windowDays: days, events, outcomes })
+        : { merges: merges.length, survived: 0, regressed: 0, unknown: merges.length, r: null };
+      return { content: [{ type: 'text', text: JSON.stringify(report) }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `retention_report error: ${e.message}` }] };
+    }
+  }
+);
+
 
 const projectCreateTool = tool(
   "project_create",
@@ -4042,7 +4112,7 @@ const agentInboxTool = tool(
     if (!msgs.length) return { content: [{ type: "text", text: "inbox empty" }] };
     return { content: [{ type: "text", text: msgs.map(m => `[${m.ts}] from ${m.from}: ${m.text}`).join("\n---\n") }] };
   }
-);const fleetSdkTools = [spawnTool, agentSendTool, agentInboxTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, economicRadarTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool, fleetHealthTool];
+);const fleetSdkTools = [spawnTool, agentSendTool, agentInboxTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, economicRadarTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool, fleetHealthTool, retentionReportTool];
 const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: fleetSdkTools });
 
 function launchOpenRouterAgent(args, trustedExecution = {}) {
