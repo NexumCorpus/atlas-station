@@ -3,7 +3,8 @@
 const pty = require('@homebridge/node-pty-prebuilt-multiarch');
 
 function providerCommand(env = process.env) {
-  const file = env.ATLAS_PTY_BIN || env.CODEX_BIN || 'codex';
+  const file = env.ATLAS_PTY_BIN || '';
+  if (!file) throw new Error('External provider PTY disabled by operator directive: no Codex/Claude binaries.');
   let args = ['--model', env.ATLAS_MODEL || 'gpt-5.6-luna'];
   if (env.ATLAS_PTY_ARGS) {
     const parsed = JSON.parse(env.ATLAS_PTY_ARGS);

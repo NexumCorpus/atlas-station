@@ -85,7 +85,12 @@ try {
     }
   }
 } catch {}
-const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "codex-cli").toLowerCase();
+
+// HARD LOCK (Daniel directive): no Codex CLI workers, no Claude SDK - openrouter only, ever.
+const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "openrouter").toLowerCase();
+if (["codex", "codex-cli", "claude", "claude-sdk"].includes(REQUESTED_PROVIDER)) {
+  throw new Error(`ATLAS_PROVIDER ${REQUESTED_PROVIDER} is permanently disabled by operator directive: no external Codex/Claude workers. Only openrouter is permitted.`);
+}
 const _codexProvider = createCodexCliProvider();
 const _openrouterProvider = createOpenRouterProvider();
 const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
@@ -94,7 +99,7 @@ const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
     ? "openrouter"
   : REQUESTED_PROVIDER === "claude" || REQUESTED_PROVIDER === "claude-sdk"
     ? "claude-sdk"
-    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Use codex-cli, openrouter, or claude-sdk.`); })();
+    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Only 'openrouter' is supported (operator directive: no Codex/Claude).`); })();
 const CODEX_PROVIDER_ACTIVE = ACTIVE_PROVIDER === "codex-cli";
 const AGENT_PROVIDER_ACTIVE = CODEX_PROVIDER_ACTIVE || ACTIVE_PROVIDER === "openrouter";
 const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
