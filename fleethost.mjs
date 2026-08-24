@@ -12,7 +12,28 @@ import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/clau
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
 import { adaptSdkTools } from "./providers/openrouter-tools.mjs";
-const _tbMod = await import("./providers/turn-bound.mjs?t=" + Date.now()).catch(() => import("./providers/turn-bound.mjs"));
+import fs from "fs"; import { pathToFileURL } from "url";
+import { workerTurnBound as _workerTurnBoundStatic } from "./providers/turn-bound.mjs"; // static fallback; hot module overrides via mtime watcher
+let _tbMtime = 0;
+const TB_PATH = new URL("./providers/turn-bound.mjs", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+function refreshTurnBoundModule() {
+  try {
+    const m = statSync(TB_PATH).mtimeMs;
+    if (m !== _tbMtime) {
+      _tbMtime = m;
+      import(pathToFileURL(TB_PATH).href + "?t=" + Date.now())
+        .then((mod) => { globalThis.__tbHot = mod; })
+        .catch(() => {});
+    }
+  } catch {}
+}
+refreshTurnBoundModule();
+// Static fallback guarantees a bound exists even before the hot module resolves.
+function turnBoundOf(opts) {
+  refreshTurnBoundModule();
+  const mod = globalThis.__tbHot || null;
+  return (mod && mod.workerTurnBound) ? mod.workerTurnBound(opts) : _workerTurnBoundStatic(opts);
+}
 import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, laneContextChars, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
@@ -31,7 +52,7 @@ function query(args) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} â€” use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
-  const bound = _tbMod.workerTurnBound(args && args.options);
+    const bound = turnBoundOf(args && args.options);
   if (bound != null) args = { ...args, options: { ...(args.options || {}), maxTurns: bound } };
   if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.query(args);
   if (CODEX_PROVIDER_ACTIVE) return _codexProvider.query(args);
@@ -5725,6 +5746,10 @@ try {
     send('notification', { text: 'Provider key [' + label + '] is ' + k.state + detail, type: 'key-expiry', read: false });
   }
 } catch (_) {}
+
+
+
+
 
 
 
