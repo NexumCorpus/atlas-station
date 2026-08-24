@@ -761,7 +761,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     try { const wt = makeWorktree(id); cwd = wt.dir; branch = wt.branch; set(id, { cwd, branch, baseHash: wt.baseHash }); }
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
-  const options = { cwd, model: agentModel, systemPrompt: execution.trustedSystemAppend ? { append: execution.trustedSystemAppend } : "claude_code", ...retryTurnOptions,
+  const options = { cwd, model: agentModel, systemPrompt: execution.trustedSystemAppend ? { append: execution.trustedSystemAppend } : "claude_code", atlasMode: build ? "build" : "read", ...retryTurnOptions,
     ...(ACTIVE_PROVIDER === 'openrouter' ? { atlasStatelessSession: true } : {}),
     ...(execution.preassembledContextRoot ? { disallowedTools: ['shell', 'bash'] } : {}),
     ...(mode === "build" ? { permissionMode: "bypassPermissions" } : dialectSet ? { canUseTool: _dialect.makeGate(dialectSet) } : { canUseTool: readGate }) };

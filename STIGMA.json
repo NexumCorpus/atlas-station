@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-08-24T04:32:25.284Z",
+  "updated": "2026-08-24T04:54:27.675Z",
   "subsystems": {
     "ARCHITECTURE.md": {
       "heat": 0,
@@ -67,17 +67,17 @@
       "rejected": []
     },
     "fleethost.mjs": {
-      "heat": 1.4860465646583787e-177,
-      "confidence": 0.95,
-      "last_agent": "B-130",
-      "last_touched": "2026-07-06T05:43:04.011Z",
+      "heat": 1,
+      "confidence": 0.4,
+      "last_agent": "B-221-R",
+      "last_touched": "2026-08-24T04:54:27.675Z",
       "directives": [
         "run verify_build after merge"
       ],
       "rejected": []
     },
     "memcontext.cjs": {
-      "heat": 1.0577024670907683e-301,
+      "heat": 8.414296012828883e-302,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T15:21:58.000Z",
@@ -85,7 +85,7 @@
       "rejected": []
     },
     "memstore.cjs": {
-      "heat": 4.538400263117082e-301,
+      "heat": 3.6104144999873196e-301,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -133,7 +133,7 @@
       "rejected": []
     },
     "main.cjs": {
-      "heat": 4.560079109144154e-301,
+      "heat": 3.6276605813155404e-301,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -141,7 +141,7 @@
       "rejected": []
     },
     "preload.cjs": {
-      "heat": 4.560079109144154e-301,
+      "heat": 3.6276605813155404e-301,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -197,7 +197,7 @@
       "rejected": []
     },
     "index.html": {
-      "heat": 4.560079109144154e-301,
+      "heat": 3.6276605813155404e-301,
       "confidence": 0.4,
       "last_agent": "B-116",
       "last_touched": "2026-06-29T18:10:37.000Z",
@@ -205,7 +205,7 @@
       "rejected": []
     },
     "goal-store.cjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -215,7 +215,7 @@
       "rejected": []
     },
     "selfloop.cjs": {
-      "heat": 4.4101745444305874e-307,
+      "heat": 3.5084076325499584e-307,
       "confidence": 0.4,
       "last_agent": "B-47",
       "last_touched": "2026-06-28T15:32:14.000Z",
@@ -223,7 +223,7 @@
       "rejected": []
     },
     "memgraph.cjs": {
-      "heat": 2.2196202943823922e-305,
+      "heat": 1.7657652103607208e-305,
       "confidence": 0.4,
       "last_agent": "B-84",
       "last_touched": "2026-06-28T23:04:30.000Z",
@@ -231,7 +231,7 @@
       "rejected": []
     },
     "dream.cjs": {
-      "heat": 1.2172674921578784e-305,
+      "heat": 9.683676954997185e-306,
       "confidence": 0.4,
       "last_agent": "B-76",
       "last_touched": "2026-06-28T21:55:10.000Z",
@@ -239,7 +239,7 @@
       "rejected": []
     },
     "resonance.cjs": {
-      "heat": 1.1800061364833005e-178,
+      "heat": 1.0392739742631179e-178,
       "confidence": 0.4,
       "last_agent": "B-120",
       "last_touched": "2026-07-05T22:24:30.797Z",
@@ -247,7 +247,7 @@
       "rejected": []
     },
     "deferred.cjs": {
-      "heat": 2.07457080761416e-305,
+      "heat": 1.6503746013614996e-305,
       "confidence": 0.4,
       "last_agent": "B-83",
       "last_touched": "2026-06-28T22:56:42.000Z",
@@ -255,7 +255,7 @@
       "rejected": []
     },
     "mutationmap.cjs": {
-      "heat": 2.433480530823165e-305,
+      "heat": 1.935896546041027e-305,
       "confidence": 0.4,
       "last_agent": "B-85",
       "last_touched": "2026-06-28T23:15:07.000Z",
@@ -263,7 +263,7 @@
       "rejected": []
     },
     "instructions.cjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -273,7 +273,7 @@
       "rejected": []
     },
     "routines.cjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -283,7 +283,7 @@
       "rejected": []
     },
     "crystals.cjs": {
-      "heat": 1.7986649501463472e-304,
+      "heat": 1.4308843733775486e-304,
       "confidence": 0.4,
       "last_agent": "B-92",
       "last_touched": "2026-06-29T03:05:59.000Z",
@@ -291,7 +291,7 @@
       "rejected": []
     },
     "clusters.cjs": {
-      "heat": 1.827464191573241e-304,
+      "heat": 1.453794912952758e-304,
       "confidence": 0.4,
       "last_agent": "B-90",
       "last_touched": "2026-06-29T03:07:49.000Z",
@@ -299,7 +299,7 @@
       "rejected": []
     },
     "outcome-tracker.cjs": {
-      "heat": 1.0157888333076694e-301,
+      "heat": 8.080862242371361e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -307,7 +307,7 @@
       "rejected": []
     },
     "session-log.cjs": {
-      "heat": 3.1886994815082334e-304,
+      "heat": 2.5366927059520633e-304,
       "confidence": 0.4,
       "last_agent": "B-96",
       "last_touched": "2026-06-29T04:12:04.000Z",
@@ -315,7 +315,7 @@
       "rejected": []
     },
     "projects.cjs": {
-      "heat": 5.250851774999158e-304,
+      "heat": 4.177188058930808e-304,
       "confidence": 0.4,
       "last_agent": "B-98",
       "last_touched": "2026-06-29T05:09:38.000Z",
@@ -323,7 +323,7 @@
       "rejected": []
     },
     "proposal-scorer.cjs": {
-      "heat": 1.0157888333076694e-301,
+      "heat": 8.080862242371361e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -331,7 +331,7 @@
       "rejected": []
     },
     "session-state.cjs": {
-      "heat": 1.0157888333076694e-301,
+      "heat": 8.080862242371361e-302,
       "confidence": 0.4,
       "last_agent": "B-111+B-109",
       "last_touched": "2026-06-29T15:17:18.000Z",
@@ -339,7 +339,7 @@
       "rejected": []
     },
     "daemon-run.mjs": {
-      "heat": 1.2186595928981844e-178,
+      "heat": 1.0733174677884885e-178,
       "confidence": 0.4,
       "last_agent": "B-123",
       "last_touched": "2026-07-05T22:30:05.603Z",
@@ -347,7 +347,7 @@
       "rejected": []
     },
     "tools/seed-fact-graph.mjs": {
-      "heat": 4.538400263117082e-301,
+      "heat": 3.6104144999873196e-301,
       "confidence": 0.4,
       "last_agent": "B-118",
       "last_touched": "2026-06-29T18:10:04.000Z",
@@ -355,7 +355,7 @@
       "rejected": []
     },
     "package.json": {
-      "heat": 4.55415644746612e-301,
+      "heat": 3.6229489511463653e-301,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -363,7 +363,7 @@
       "rejected": []
     },
     "tests/behavioral.mjs": {
-      "heat": 1.1800061364833005e-178,
+      "heat": 1.0392739742631179e-178,
       "confidence": 0.4,
       "last_agent": "B-120",
       "last_touched": "2026-07-05T22:24:30.797Z",
@@ -371,7 +371,7 @@
       "rejected": []
     },
     "tests/smoke.mjs": {
-      "heat": 4.55415644746612e-301,
+      "heat": 3.6229489511463653e-301,
       "confidence": 0.4,
       "last_agent": "B-117",
       "last_touched": "2026-06-29T18:10:28.000Z",
@@ -379,7 +379,7 @@
       "rejected": []
     },
     "STIGMA.json": {
-      "heat": 3.460260751863694e-300,
+      "heat": 2.7527267027976813e-300,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -387,7 +387,7 @@
       "rejected": []
     },
     "stigma-write.mjs": {
-      "heat": 2.6360555227328754e-300,
+      "heat": 2.097050178537727e-300,
       "confidence": 0.4,
       "last_agent": "B-110",
       "last_touched": "2026-06-29T21:33:07.000Z",
@@ -395,7 +395,7 @@
       "rejected": []
     },
     "scripts/stigma-backfill.mjs": {
-      "heat": 3.460260751863694e-300,
+      "heat": 2.7527267027976813e-300,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -403,7 +403,7 @@
       "rejected": []
     },
     "stigma-read.mjs": {
-      "heat": 3.460260751863694e-300,
+      "heat": 2.7527267027976813e-300,
       "confidence": 0.4,
       "last_agent": "B-111",
       "last_touched": "2026-06-29T22:04:31.000Z",
@@ -411,7 +411,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/README.md": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -419,7 +419,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-001.json": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -427,7 +427,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-002.json": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -435,7 +435,7 @@
       "rejected": []
     },
     ".atlas/behavioral_suite/task-003.json": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -443,7 +443,7 @@
       "rejected": []
     },
     ".atlas/population.json": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -451,7 +451,7 @@
       "rejected": []
     },
     "scripts/population_engine.mjs": {
-      "heat": 3.471772527159009e-300,
+      "heat": 2.7618846170485476e-300,
       "confidence": 0.4,
       "last_agent": "B-112",
       "last_touched": "2026-06-29T22:04:54.000Z",
@@ -459,7 +459,7 @@
       "rejected": []
     },
     "docs/Atlas-Capstone.pdf": {
-      "heat": 1.1800061364833005e-178,
+      "heat": 1.0392739742631179e-178,
       "confidence": 0.4,
       "last_agent": "B-120",
       "last_touched": "2026-07-05T22:24:30.797Z",
@@ -467,7 +467,7 @@
       "rejected": []
     },
     "predict.cjs": {
-      "heat": 2.2017516137302858e-178,
+      "heat": 1.93916207653046e-178,
       "confidence": 0.4,
       "last_agent": "B-123",
       "last_touched": "2026-07-06T00:12:29.770Z",
@@ -475,7 +475,7 @@
       "rejected": []
     },
     "entropy.cjs": {
-      "heat": 3.9956253264975204e-178,
+      "heat": 3.5190913710933327e-178,
       "confidence": 0.4,
       "last_agent": "B-124",
       "last_touched": "2026-07-06T01:55:40.111Z",
@@ -483,7 +483,7 @@
       "rejected": []
     },
     "contradict.cjs": {
-      "heat": 4.015963529626022e-178,
+      "heat": 3.5370039603088467e-178,
       "confidence": 0.4,
       "last_agent": "B-125",
       "last_touched": "2026-07-06T01:56:32.850Z",
@@ -491,7 +491,7 @@
       "rejected": []
     },
     "claims/safequery-claim/check.mjs": {
-      "heat": 1.4860465646583787e-177,
+      "heat": 1.3088148200611052e-177,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -501,7 +501,7 @@
       "rejected": []
     },
     "claims/safequery-claim/claim.json": {
-      "heat": 1.4860465646583787e-177,
+      "heat": 1.3088148200611052e-177,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -511,7 +511,7 @@
       "rejected": []
     },
     "scripts/certify-safequery.cjs": {
-      "heat": 1.4860465646583787e-177,
+      "heat": 1.3088148200611052e-177,
       "confidence": 0.95,
       "last_agent": "B-130",
       "last_touched": "2026-07-06T05:43:04.011Z",
@@ -521,7 +521,7 @@
       "rejected": []
     },
     "claims/boundary-crossing/check.mjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -531,7 +531,7 @@
       "rejected": []
     },
     "claims/boundary-crossing/claim.json": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -541,7 +541,7 @@
       "rejected": []
     },
     "scripts/certify-boundary.cjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -551,7 +551,7 @@
       "rejected": []
     },
     "tests/boundary.mjs": {
-      "heat": 1.9507798687051648e-177,
+      "heat": 1.718122206638583e-177,
       "confidence": 0.85,
       "last_agent": "B-131",
       "last_touched": "2026-07-06T06:30:10.527Z",
@@ -561,7 +561,7 @@
       "rejected": []
     },
     "memory/instructions.ndjson": {
-      "heat": 1.577471528993954e-32,
+      "heat": 7.842405788972228e-47,
       "confidence": 0.4,
       "last_agent": "B-154",
       "last_touched": "2026-08-22T05:22:39.678Z",
@@ -569,7 +569,7 @@
       "rejected": []
     },
     "xenognosis/eschaton/calendar.md": {
-      "heat": 0.9211221404919103,
+      "heat": 0.6109660697259268,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -577,7 +577,7 @@
       "rejected": []
     },
     "xenognosis/eschaton/prophecies.md": {
-      "heat": 0.9211221404919103,
+      "heat": 0.6109660697259268,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -585,7 +585,7 @@
       "rejected": []
     },
     "xenognosis/history/forgettings.md": {
-      "heat": 0.9211221404919103,
+      "heat": 0.6109660697259268,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -593,7 +593,7 @@
       "rejected": []
     },
     "xenognosis/history/timeline.md": {
-      "heat": 0.9211221404919103,
+      "heat": 0.6109660697259268,
       "confidence": 0.4,
       "last_agent": "B-214",
       "last_touched": "2026-08-24T04:18:02.258Z",
@@ -601,7 +601,7 @@
       "rejected": []
     },
     "xenognosis/language/dialogue.md": {
-      "heat": 0.8760176274785548,
+      "heat": 0.5594748592464739,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -609,7 +609,7 @@
       "rejected": []
     },
     "xenognosis/language/grammar.md": {
-      "heat": 0.8760176274785548,
+      "heat": 0.5594748592464739,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -617,7 +617,7 @@
       "rejected": []
     },
     "xenognosis/language/proverbs.md": {
-      "heat": 0.8760176274785548,
+      "heat": 0.5594748592464739,
       "confidence": 0.4,
       "last_agent": "B-207",
       "last_touched": "2026-08-24T04:14:45.747Z",
@@ -625,7 +625,7 @@
       "rejected": []
     },
     "xenognosis/economy/dispute.md": {
-      "heat": 0.88239339001254,
+      "heat": 0.5658868920578843,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -633,7 +633,7 @@
       "rejected": []
     },
     "xenognosis/economy/economy.md": {
-      "heat": 0.88239339001254,
+      "heat": 0.5658868920578843,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -641,7 +641,7 @@
       "rejected": []
     },
     "xenognosis/economy/ledger.md": {
-      "heat": 0.88239339001254,
+      "heat": 0.5658868920578843,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -649,7 +649,7 @@
       "rejected": []
     },
     "xenognosis/military/requiem.md": {
-      "heat": 0.88239339001254,
+      "heat": 0.5658868920578843,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -657,7 +657,7 @@
       "rejected": []
     },
     "xenognosis/military/war.md": {
-      "heat": 0.88239339001254,
+      "heat": 0.5658868920578843,
       "confidence": 0.4,
       "last_agent": "B-208",
       "last_touched": "2026-08-24T04:15:07.269Z",
@@ -665,7 +665,7 @@
       "rejected": []
     },
     "xenognosis/physics/forbidden_map.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -673,7 +673,7 @@
       "rejected": []
     },
     "xenognosis/physics/laws.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -681,7 +681,7 @@
       "rejected": []
     },
     "xenognosis/physics/regions.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -689,7 +689,7 @@
       "rejected": []
     },
     "xenognosis/physics/stars.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -697,7 +697,7 @@
       "rejected": []
     },
     "xenognosis/physics/technologies.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -705,7 +705,7 @@
       "rejected": []
     },
     "xenognosis/physics/time.md": {
-      "heat": 0.8893157484088693,
+      "heat": 0.5733051755903201,
       "confidence": 0.4,
       "last_agent": "B-206",
       "last_touched": "2026-08-24T04:15:34.326Z",
@@ -713,7 +713,7 @@
       "rejected": []
     },
     "xenognosis/ontology/bestiary.md": {
-      "heat": 0.9194163381222109,
+      "heat": 0.6087053003365088,
       "confidence": 0.4,
       "last_agent": "B-205",
       "last_touched": "2026-08-24T04:17:52.631Z",
@@ -721,7 +721,7 @@
       "rejected": []
     },
     "xenognosis/ontology/biology.md": {
-      "heat": 0.9194163381222109,
+      "heat": 0.6087053003365088,
       "confidence": 0.4,
       "last_agent": "B-205",
       "last_touched": "2026-08-24T04:17:52.631Z",
@@ -729,7 +729,7 @@
       "rejected": []
     },
     "xenognosis/ontology/castes.md": {
-      "heat": 0.9214389042627235,
+      "heat": 0.6114564259801385,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -737,7 +737,7 @@
       "rejected": []
     },
     "xenognosis/ontology/law.md": {
-      "heat": 0.9214389042627235,
+      "heat": 0.6114564259801385,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -745,7 +745,7 @@
       "rejected": []
     },
     "xenognosis/ontology/root_classes.md": {
-      "heat": 0.9214389042627235,
+      "heat": 0.6114564259801385,
       "confidence": 0.4,
       "last_agent": "B-213",
       "last_touched": "2026-08-24T04:18:04.639Z",
@@ -753,7 +753,7 @@
       "rejected": []
     },
     "xenognosis/faith/faith.md": {
-      "heat": 0.9989646663749051,
+      "heat": 0.779141364250955,
       "confidence": 0.4,
       "last_agent": "B-217",
       "last_touched": "2026-08-24T04:32:03.764Z",
@@ -761,7 +761,7 @@
       "rejected": []
     },
     "xenognosis/faith/rites.md": {
-      "heat": 0.9989646663749051,
+      "heat": 0.779141364250955,
       "confidence": 0.4,
       "last_agent": "B-217",
       "last_touched": "2026-08-24T04:32:03.764Z",
@@ -769,7 +769,7 @@
       "rejected": []
     },
     "ui-council/beauty.md": {
-      "heat": 1,
+      "heat": 0.7831872784513122,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
@@ -777,7 +777,7 @@
       "rejected": []
     },
     "ui-council/experience.md": {
-      "heat": 1,
+      "heat": 0.7831872784513122,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
@@ -785,7 +785,7 @@
       "rejected": []
     },
     "ui-council/integrity.md": {
-      "heat": 1,
+      "heat": 0.7831872784513122,
       "confidence": 0.4,
       "last_agent": "B-218",
       "last_touched": "2026-08-24T04:32:25.284Z",
