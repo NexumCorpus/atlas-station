@@ -22,7 +22,7 @@ function median(a) {
 // Walk master history over window; collect merge/revert commits with touched files.
 function walkHistory(windowDays) {
   const since = Math.floor(Date.now() / 1000) - windowDays * 86400;
-  const out = git(['log', '--name-only', '--format=%H|%ct|%s', '--since=' + new Date(since * 1000).toISOString()]);
+  const out = git(['log', '--diff-merges=first-parent', '--name-only', '--format=%H|%ct|%s', '--since=' + new Date(since * 1000).toISOString()]);
   const commits = [];
   let cur = null;
   for (const line of out.split(/\r?\n/)) {
@@ -35,7 +35,7 @@ function walkHistory(windowDays) {
       cur.files.push(line.trim());
     }
   }
-  // fix: only attach file lines to tracked commits â€” reset cur when untracked commit header seen
+  // fix: only attach file lines to tracked commits Ã¢â‚¬â€ reset cur when untracked commit header seen
   const seen = [];
   cur = null;
   const tracked = new Set();
@@ -159,4 +159,5 @@ if (require.main === module) {
   const argDays = Number(process.argv[2]) || undefined;
   console.log(JSON.stringify(computeRetention(argDays ? { windowDays: argDays } : {}), null, 2));
 }
+
 
