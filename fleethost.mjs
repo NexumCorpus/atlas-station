@@ -385,7 +385,8 @@ function throwIfAborted(signal) {
   if (!error.name || error.name === 'Error') error.name = 'AbortError';
   throw error;
 }
-const timeoutHandles = new Map(); // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
+const timeoutHandles = new Map();
+const stallTimers = new Map(); // observe-only stall sentinel intervals (Timeout Sentinel) // setTimeout handles kept OUT of agent records (Timeout is circular → would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 let orchSessionProvider = null; // prevents a Claude session id being resumed by Codex (or vice versa)
