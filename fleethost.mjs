@@ -5091,6 +5091,22 @@ function pollTaps() {
   } catch {}
 }
 setInterval(pollTaps, 1000); // heard within ~1s of any worker completion
+// Retry reaper: waiting-retry promotion must not depend on in-memory setTimeout
+// timers, which are lost on process restart (B-219-R/B-220-R/B-221-R stall class).
+// Every 30s, promote any waiting-retry agent whose retryAt is overdue.
+setInterval(() => {
+  try {
+    const now = Date.now();
+    for (const a of agents.values()) {
+      if (a?.state !== "waiting-retry") continue;
+      if (!a.retryOf) continue; // only scheduled retries
+      if (Number(a.retryAt || 0) > now) continue;
+      if (agentRetryTimers.has(a.id)) continue; // live timer will handle it
+      send("agent_retry_reaped", { id: a.id, retryOf: a.retryOf, overdueMs: now - Number(a.retryAt) });
+      armAgentRetry(a);
+    }
+  } catch (_) {}
+}, 30000);
 let _draining = false;
 async function gracefulDrain(reason = 'shutdown') {
   if (_draining) return; _draining = true;
