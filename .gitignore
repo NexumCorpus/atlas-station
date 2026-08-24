@@ -91,3 +91,6 @@ docs/SELF_STATE.md
 .gm/disciplines/default/fiber-state.json
 .gm/browser-profile/
 .gm/browser-profile-*/
+
+.atlas/mailbox/
+.atlas/peer-mail-*
