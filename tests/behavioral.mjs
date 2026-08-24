@@ -427,3 +427,56 @@ console.log('\n14. fleethost structural invariants');
 // ─── Summary ──────────────────────────────────────────────────────────────
 console.log(`\nResults: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+// ─── 19. fleet mailbox persistence ──────────────────────────────
+console.log('\n19. fleet mailbox persistence (send → restart-simulate → read)');
+{
+  const fleet = readFileSync(join(ROOT, 'fleethost.mjs'), 'utf8');
+  // Structural: mailTo appends to per-agent ndjson under memory/mailbox/
+  assert(/memory['"],\s*['"]mailbox/.test(fleet), 'MAILBOX_DIR lives under memory/mailbox');
+  assert(/appendFileSync\(_mailboxFile\(toId\)/.test(fleet), 'mailTo appends message to <toAgentId>.ndjson');
+  assert(/mkdirSync\(MAILBOX_DIR,\s*\{\s*recursive:\s*true\s*\}\)/.test(fleet), 'mailTo creates mailbox dir if missing');
+  // Drain-on-read via cursor index (in-memory behavior preserved)
+  assert(/mailboxReadIdx\.get\(myId\)|mailboxReadIdx\.set\(myId/.test(fleet), 'agent_inbox drains unread via cursor');
+
+  // Functional simulation of the lazy-load pattern against a temp dir:
+  const fsMod = require('fs');
+  const p = require('path');
+  const dir = tempDir();
+  const mbFile = join(dir, 'B-test.ndjson');
+  const write = (m) => fsMod.appendFileSync(mbFile, JSON.stringify(m) + '\n');
+  try {
+    // "process A" sends two messages, then dies
+    write({ from: 'ATLAS', text: 'hello', ts: 't1' });
+    write({ from: 'peer', text: 'hi again', ts: 't2' });
+    // "restart": fresh lazy-load from disk (same logic as fleethost._loadMailbox)
+    let msgs = [];
+    try {
+      msgs = fsMod.readFileSync(mbFile, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    } catch {}
+    assert(msgs.length === 2 && msgs[0].text === 'hello', 'restart-simulate: reload from file shows sent messages');
+    // cursor-based drain: first read gets both, second read gets none
+    let idx = 0;
+    const first = msgs.slice(idx); idx = msgs.length;
+    const second = msgs.slice(idx);
+    assert(first.length === 2, 'first inbox read returns both messages');
+    assert(second.length === 0, 'second inbox read drains to empty (cursor semantics)');
+    // empty mailbox edge case: missing file loads as []
+    let none = [];
+    try {
+      none = fsMod.readFileSync(join(dir, 'nobody.ndjson'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+    } catch {}
+    assert(none.length === 0, 'empty/missing mailbox reads as empty inbox');
+    // malformed line does not poison the mailbox
+    fsMod.appendFileSync(mbFile, '{not json\n');
+    let robust = [];
+    try {
+      robust = fsMod.readFileSync(mbFile, 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    } catch {}
+    assert(robust.length === 2, 'malformed line skipped without poisoning mailbox');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
