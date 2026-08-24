@@ -659,6 +659,9 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
 }
 
 function _wrapBuildBrief(task) {
+  const _t = String(task || '').trim();
+  if (_t.length < 40) throw new Error(`empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard); got ${_t.length}`);
+
   return [
     '## Build Brief',
     '',
@@ -678,8 +681,6 @@ function _wrapBuildBrief(task) {
     task
   ].join('\n');
 
-  const _t = String(task || '').trim();
-  if (_t.length < 40) throw new Error('empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard)');
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
