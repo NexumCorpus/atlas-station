@@ -37,7 +37,7 @@ function turnBoundOf(opts) {
 import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, laneContextChars, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
 import { execFileSync, spawn as spawnChild } from "child_process";
-import { mkdirSync, statSync, openSync, readSync, closeSync } from "fs";
+import { mkdirSync, statSync, openSync, readSync, closeSync, appendFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { followAutonomyTurn } from "./scripts/autonomy-policy.mjs";
@@ -3544,7 +3544,7 @@ const fleetHealthTool = tool(
         `Stuck >20min in one state: ${stuck.length ? stuck.map((s) => `${s.id}[${s.state}] ${s.minutesInState}min`).join(', ') : 'none'}`,
         `Turn bounds: WORKER=${bounds.WORKER_TURN_BOUND ?? 'unknown'} BUILD=${bounds.BUILD_TURN_BOUND ?? 'unknown'} RETRY=${bounds.RETRY_TURN_BOUND ?? 'unknown'}`,
         failures.length ? `Last ${failures.length} failure(s):` : 'No failures recorded.',
-        ...failures.map((f, i) => `  ${i + 1}. [${f.id}] ${f.ts || '?'}${f.failSubtype ? ' (' + f.failSubtype + ')' : ''} — ${f.summary}`),
+        ...failures.map((f, i) => `  ${i + 1}. [${f.id}] ${f.ts || '?'}${f.failSubtype ? ' (' + f.failSubtype + ')' : ''} ï¿½ ${f.summary}`),
       ];
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (e) {
@@ -3932,17 +3932,24 @@ const runVariantTool = tool(
   }
 );
 // --- Inter-agent communication organ (2026 directive: subagents converse directly) ---
-const agentMailboxes = new Map(); // agentId -> [{ from, text, ts }]
+// PERSISTENT mailboxes (P-1787554119667): one ndjson file per agent under memory/mailbox/.
+// Survives process restarts; drain-on-read preserves inbox semantics.
+const MAILBOX_DIR = path.join(REPO, 'memory', 'mailbox');
+function _mailboxFile(id) {
+  const safe = String(id || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
+  return path.join(MAILBOX_DIR, safe + '.ndjson');
+}
 function mailTo(toId, fromId, text) {
   const ts = new Date().toISOString();
-  if (!agentMailboxes.has(toId)) agentMailboxes.set(toId, []);
-  agentMailboxes.get(toId).push({ from: fromId, text: String(text).slice(0, 4000), ts });
+  const msg = { from: String(fromId), text: String(text).slice(0, 4000), ts };
+  mkdirSync(MAILBOX_DIR, { recursive: true });
+  appendFileSync(_mailboxFile(toId), JSON.stringify(msg) + '\n');
   // Mirror into file-drop mailbox so EXTERNAL workers (codex-cli/openrouter), which have
   // no fleet MCP server attached, still receive the message in their next brief.
   try {
     const mailDir = path.join(REPO, '.atlas', 'mailbox');
     mkdirSync(mailDir, { recursive: true });
-    const rec = { to: String(toId), from: String(fromId), ts, messages: [{ from: String(fromId), ts, text: String(text).slice(0, 4000) }] };
+    const rec = { to: String(toId), from: String(fromId), ts, messages: [msg] };
     fs.writeFileSync(path.join(mailDir, String(toId) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.json'), JSON.stringify(rec));
   } catch {}
 }
@@ -3968,8 +3975,12 @@ const agentInboxTool = tool(
   {},
   async () => {
     const myId = this?.__agentId || "unknown";
-    const msgs = agentMailboxes.get(myId) || [];
-    agentMailboxes.set(myId, []);
+    const mf = _mailboxFile(myId);
+    let msgs = [];
+    try {
+      msgs = readFileSync(mf, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      rmSync(mf, { force: true }); // drain-on-read
+    } catch {}
     if (!msgs.length) return { content: [{ type: "text", text: "inbox empty" }] };
     return { content: [{ type: "text", text: msgs.map(m => `[${m.ts}] from ${m.from}: ${m.text}`).join("\n---\n") }] };
   }
