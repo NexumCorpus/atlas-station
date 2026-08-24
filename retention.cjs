@@ -1,77 +1,82 @@
-﻿'use strict';
-// Post-merge retention tracking: append-only record + survival-rate math.
-// Bounded by design: callers pass at most ~50 merge commits; no external processes here.
-const fs = require('fs');
-const path = require('path');
+﻿// retention.cjs - pre-merge holdout gate for fleet auto-merges.
+// stagedHoldout(agentId): stage the agent's fleet/<id> branch on a temp branch
+// off master in a throwaway worktree, run node --check on every changed
+// JS/MJS/CJS file AND the behavioral test suite against the staged tree,
+// then clean up. Never touches master. Returns { pass, failedTests, filesChecked }.
+"use strict";
+const { execFileSync } = require("child_process");
+const path = require("path");
+const fs = require("fs");
 
-const RETENTION_FILE = path.join('.atlas', 'retention.ndjson');
-
-function retentionFilePath(repo) {
-  return path.join(repo || '.', RETENTION_FILE);
-}
-
-// Append one merge verification event: {ts, agentId, mergeCommit, verdict}
-function appendRetentionRecord(repo, rec) {
-  const p = retentionFilePath(repo);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  const line = JSON.stringify({
-    ts: rec.ts || new Date().toISOString(),
-    agentId: rec.agentId || null,
-    mergeCommit: rec.mergeCommit || null,
-    verdict: ['survived', 'regressed', 'unknown'].includes(rec.verdict) ? rec.verdict : 'unknown',
-  });
-  fs.appendFileSync(p, line + '\n');
-  return JSON.parse(line);
-}
-
-// Read all retention events (tolerates corrupt lines).
-function readRetentionEvents(repo) {
-  const p = retentionFilePath(repo);
-  let raw = '';
-  try { raw = fs.readFileSync(p, 'utf8'); } catch { return []; }
-  return raw.trim().split('\n').filter(Boolean)
-    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
-    .filter(Boolean);
-}
-
-// Compute post-merge survival rate over a window.
-// merges: [{hash, ts(epoch seconds)}]; windowDays default 14.
-// Verdict per merge comes from the newest retention event for its commit
-// recorded AFTER the merge timestamp (falls back to any event for the commit).
-// Correlates with outcome ratings when provided: outcomes [{agentId, rating, ts}]
-// where rating 'bad' after merge ts => regressed.
-function computeRetention(merges, opts) {
-  const o = opts || {};
-  const windowDays = o.windowDays || 14;
-  const cutoffMs = Date.now() - windowDays * 86400 * 1000;
-  const inWindow = (merges || []).filter((m) => m.ts * 1000 >= cutoffMs);
-  const events = o.events || [];
-  const outcomes = o.outcomes || [];
-  let survived = 0, regressed = 0, unknown = 0;
-  for (const m of inWindow) {
-    const evts = events.filter((e) => e && e.mergeCommit === m.hash);
-    let verdict = null;
-    const afterMerge = evts.filter((e) => {
-      const t = Date.parse(e.ts);
-      return !(Number.isFinite(t)) || t >= m.ts * 1000;
-    });
-    const pool = afterMerge.length ? afterMerge : evts;
-    if (pool.length) {
-      verdict = pool[pool.length - 1].verdict;
+function stagedHoldout(agentId, opts) {
+  const dir = (opts && opts.dir) || process.cwd();
+  const git = (gitArgs, cwd) =>
+    execFileSync("git", ["-C", cwd || dir, ...gitArgs], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  const branch = "fleet/" + agentId;
+  const suffix = Date.now() + "-" + Math.random().toString(16).slice(2, 8);
+  const temp = "holdout-temp-" + String(agentId).replace(/[^A-Za-z0-9._-]/g, "_") + "-" + suffix;
+  const verifyDir = path.join(path.dirname(dir), temp);
+  const cleanup = () => {
+    try { git(["worktree", "remove", "--force", verifyDir]); } catch (_) {}
+    try { git(["branch", "-D", temp]); } catch (_) {}
+  };
+  try {
+    fs.mkdirSync(path.dirname(verifyDir), { recursive: true });
+    git(["worktree", "add", "-f", "-b", temp, verifyDir, "master"]);
+    try {
+      git(["merge", "--no-ff", "--no-commit", branch], verifyDir);
+    } catch (e) {
+      cleanup();
+      return { pass: false, failedTests: ["merge-conflict:" + branch], filesChecked: [] };
     }
-    if (!verdict || verdict === 'unknown') {
-      // correlate with outcome ratings recorded after merge
-      const bad = outcomes.some((r) => r.agentId && m.agentId === r.agentId && r.rating === 'bad' &&
-        (!r.ts || r.ts * 1000 >= m.ts * 1000));
-      verdict = bad ? 'regressed' : 'unknown';
+    const diff = git(["diff", "--name-only", "master", branch]);
+    const filesChecked = diff.trim().split("\n").filter(f => f && /\.(js|mjs|cjs)$/.test(f));
+    for (const rel of filesChecked) {
+      try {
+        execFileSync(process.execPath, ["--check", path.join(verifyDir, rel)], { timeout: 15000 });
+      } catch (e) {
+        cleanup();
+        return { pass: false, failedTests: ["node --check failed: " + rel], filesChecked };
+      }
     }
-    if (verdict === 'survived') survived++;
-    else if (verdict === 'regressed') regressed++;
-    else unknown++;
+    let failedTests = [];
+    try {
+      const out = execFileSync(process.execPath, [path.join(verifyDir, "tests", "behavioral.mjs")],
+        { cwd: verifyDir, encoding: "utf8", timeout: 120000, stdio: ["pipe", "pipe", "pipe"] });
+      const text = String(out || "");
+      const m = text.match(/(\d+) failed/);
+      if (m && parseInt(m[1]) > 0) {
+        failedTests = text.split("\n").filter(l => l.trim().startsWith("FAIL:")).slice(0, 10);
+        if (!failedTests.length) failedTests = [m[0] + " behavioral failures"];
+      }
+    } catch (e) {
+      const text = String((e.stdout || "") + (e.stderr || ""));
+      failedTests = text.split("\n").filter(l => l.trim().startsWith("FAIL:")).slice(0, 10);
+      if (!failedTests.length) failedTests = ["behavioral suite error: " + String(e.message).slice(0, 200)];
+    }
+    cleanup();
+    return { pass: failedTests.length === 0, failedTests, filesChecked };
+  } catch (e) {
+    cleanup();
+    return { pass: false, failedTests: ["stagedHoldout error: " + String(e.message).slice(0, 200)], filesChecked: [] };
   }
-  const total = inWindow.length;
-  const r = total ? Math.round((survived / total) * 1000) / 1000 : null;
-  return { merges: total, survived, regressed, unknown, r };
 }
 
-module.exports = { RETENTION_FILE, retentionFilePath, appendRetentionRecord, readRetentionEvents, computeRetention };
+const METRICS_FILE = path.join(".atlas", "receipts", "holdout-metrics.ndjson");
+function recordHoldoutMetric(outcome, agentId) {
+  try {
+    fs.mkdirSync(path.dirname(METRICS_FILE), { recursive: true });
+    fs.appendFileSync(METRICS_FILE,
+      JSON.stringify({ ts: new Date().toISOString(), outcome, agentId }) + "\n", "utf8");
+  } catch (_) {}
+}
+function holdoutMetrics() {
+  try {
+    const lines = fs.readFileSync(METRICS_FILE, "utf8").trim().split("\n").filter(Boolean);
+    let accepted = 0, rejected = 0;
+    for (const l of lines) { try { const o = JSON.parse(l); if (o.outcome === "accepted") accepted++; else if (o.outcome === "rejected") rejected++; } catch (_) {} }
+    return { accepted, rejected, total: accepted + rejected };
+  } catch (_) { return { accepted: 0, rejected: 0, total: 0 }; }
+}
+
+module.exports = { stagedHoldout, recordHoldoutMetric, holdoutMetrics };

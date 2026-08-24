@@ -5,6 +5,8 @@ import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
+let stagedHoldout = null; let recordHoldoutMetric = null;
+try { const _ret = _require("./retention.cjs"); stagedHoldout = _ret.stagedHoldout; recordHoldoutMetric = _ret.recordHoldoutMetric; } catch (_) {}
 
 const NODE = "C:\\Program Files\\nodejs\\node.exe";
 const DIR  = "E:\\atlas-station";
@@ -72,8 +74,28 @@ try {
       // Already ancestor of master — skip (already merged or will be pruned)
     } catch (_) {
       // Not yet in master — merge it
+      // Pre-merge holdout gate: stage branch off master, node --check + behavioral tests.
+      let holdout;
       try {
-        execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "daemon-startup: auto-merge " + branch, branch], { cwd: DIR });
+        holdout = stagedHoldout(branch.replace(/^fleet\//, ''), { dir: DIR });
+      } catch (gateErr) {
+        holdout = { pass: false, failedTests: ['stagedHoldout threw: ' + String(gateErr.message || gateErr).slice(0, 200)] };
+      }
+      if (!holdout.pass) {
+        recordHoldoutMetric('rejected', branch);
+        try {
+          const rdir = join(DIR, '.atlas', 'receipts');
+          if (!existsSync(rdir)) mkdirSync(rdir, { recursive: true });
+          appendFileSync(join(rdir, 'holdout-reject.ndjson'),
+            JSON.stringify({ ts: new Date().toISOString(), agentId: branch, reason: 'staged holdout failed pre-merge', failedTests: holdout.failedTests }) + '\n', 'utf8');
+        } catch (_) {}
+        writeLog({ event: 'holdout-rejected', branch, failedTests: (holdout.failedTests || []).slice(0, 5) });
+        console.log('[daemon] HOLDOUT REJECTED pre-merge:', branch);
+        continue;
+      }
+      recordHoldoutMetric('accepted', branch);
+      try {
+        execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "daemon-startup: auto-merge (holdout passed) " + branch, branch], { cwd: DIR });
         writeLog({ event: "startup-auto-merge", branch });
         console.log("[daemon] auto-merged unmerged branch:", branch);
       } catch (mergeErr) {
