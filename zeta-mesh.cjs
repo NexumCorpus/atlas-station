@@ -171,7 +171,8 @@ async function runMesh(opts) {
   transcript.push({ kind: 'merge', text: merged.text });
 
   const wallMs = Date.now() - t0;
-  const sequentialEstimateMs = wallMs * survivors.length; // naive same-cost sequential estimate
+  const seqWall = Math.max(wallMs, 1); // avoid /0 on sub-ms runs
+  const sequentialEstimateMs = seqWall * survivors.length; // naive same-cost sequential estimate
   const receipt = {
     ts: new Date().toISOString(),
     organ: 'zeta-mesh',
@@ -183,7 +184,7 @@ async function runMesh(opts) {
     deaths: workers.length - survivors.length,
     wallClockMs: wallMs,
     sequentialEstimateMs,
-    speedup: sequentialEstimateMs > 0 ? +(sequentialEstimateMs / wallMs).toFixed(2) : null,
+    speedup: +(sequentialEstimateMs / seqWall).toFixed(2),
     workers: workers.map(w => ({ angle: w.angle, dead: !!w.dead, usage: w.usage, compressionRatio: w.ratio })),
     merged: merged.text,
     verified: false, // grader.cjs decides; we only record artifact hash
