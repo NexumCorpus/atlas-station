@@ -629,6 +629,8 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
         } catch (_) {}
       }
       final = String(m.result ?? agents.get(id)?.summary ?? "");
+      // Output-length guard: peers burn rounds re-reading walls of text; truncate before storing/broadcasting.
+      try { if (final.length > 4000) { final = '[truncated] ' + final.slice(0, 4000); } } catch {}
       flushThinking(true);
       set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, commitRefs, transcriptPath: null,
@@ -795,6 +797,13 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     idStamp += " Do NOT call mcp__fleet__* tools: no fleet MCP server is attached to this process.";
   } else {
     idStamp = "\n\n[Your identity] Your fleet agent ID is " + id + ". Use it as 'from' in mcp__fleet__agent_send and 'me' in mcp__fleet__agent_inbox.";
+  }
+  // P-1787554018250 follow-up: mesh round-budget discipline. Peer/mesh agents repeatedly
+  // exhausted their full round budget hunting phantom tools or looping verbose output
+  // (A-286/A-287/A-288). Stamp every worker brief with its exact turn bound.
+  const __budgetBound = turnBoundOf({ atlasMode: mode === 'build' ? 'build' : 'read', ...(retryTurnOptions || {}) });
+  if (__budgetBound != null) {
+    idStamp += '\n\n[STRICT ROUND BUDGET] You have AT MOST ' + __budgetBound + ' turns total. Cap every reply under ~200 words. End your final turn with exactly: HANDOFF COMPLETE plus a one-line result summary.';
   }
   const fileMail = drainMailFiles(id);
   // P-1787554119667: drain persistent ndjson mailbox into this brief (drain-on-read).
