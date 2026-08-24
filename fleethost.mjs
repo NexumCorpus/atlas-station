@@ -667,6 +667,9 @@ function _wrapBuildBrief(task) {
     '### Task',
     task
   ].join('\n');
+
+  const _t = String(task || '').trim();
+  if (_t.length < 40) throw new Error('empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard)');
 }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
