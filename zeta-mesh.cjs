@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 'use strict';
 /* zeta-mesh.cjs - Zeta parallel worker mesh organ for Hermes/ATLAS.
  * CLI: node zeta-mesh.cjs run --task "<text>" --angles <n> --rounds <k>
@@ -136,12 +136,15 @@ async function runMesh(opts) {
       w.messages.push({ role: 'assistant', content: r.text });
       return { w, r };
     }));
-    for (const res of results) {
+    for (let ri = 0; ri < results.length; ri++) {
+      const res = results[ri];
+      const w = alive[ri];
       if (!res.ok) {
-        transcript.push({ kind: 'worker-death', error: res.e });
+        w.dead = true;
+        transcript.push({ kind: 'worker-death', round, angle: w.angle, error: res.e });
         continue;
       }
-      const { w, r } = res.v;
+      const r = res.v.r;
       w.lastText = r.text;
       if (r.usage) w.usage = r.usage;
       const sp = splitReply(r.text);
