@@ -66,10 +66,10 @@ await check('operator ingress preempts older background work and receipts carry 
 });
 
 await check('mouth has a durable turn bound and no default wall-clock cutoff', async () => {
-  assert.equal(laneTurnBound('mouth', {}), 64);
-  assert.equal(laneTurnBound('metabolism', {}), 64);
+  assert.equal(laneTurnBound('mouth', {}), 384);
+  assert.equal(laneTurnBound('metabolism', {}), 128);
   assert.equal(laneTurnBound('mouth', { ATLAS_MOUTH_MAX_TURNS: '3' }), 3);
-  assert.equal(laneTurnBound('metabolism', { ATLAS_ORCHESTRATOR_MAX_TURNS: '999' }), 256);
+  assert.equal(laneTurnBound('metabolism', { ATLAS_ORCHESTRATOR_MAX_TURNS: '999' }), 999);
   assert.equal(laneTimeoutMs('mouth', {}), 0);
   assert.equal(laneTimeoutMs('mouth', { ATLAS_MOUTH_TIMEOUT_MS: '1000' }), 5_000);
   assert.equal(laneTimeoutMs('metabolism', {}), 0);

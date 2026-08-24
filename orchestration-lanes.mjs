@@ -37,11 +37,11 @@ export function laneTimeoutMs(lane, env = process.env) {
   return Math.max(5_000, Math.min(1_200_000, configured));
 }
 
-// Speech carries only the hottest working set. Context Mycelium authenticates and
+// DREAM follow-up: mouth context raised 2500->6000 to match metabolism; long operator conversations were starved of relevant facts. Env override still wins. Context Mycelium authenticates and
 // shards every omitted section, so this is a latency budget rather than data loss.
 // Metabolism keeps the wider context for long-running work and bounded recovery.
 export function laneContextChars(lane, env = process.env) {
-  const fallback = lane === 'mouth' ? 2_500 : 6_000;
+  const fallback = lane === 'mouth' ? 6_000 : 6_000;
   const raw = lane === 'mouth'
     ? env.ATLAS_MOUTH_CONTEXT_CHARS
     : env.ATLAS_METABOLISM_CONTEXT_CHARS;
