@@ -5600,10 +5600,14 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
             send('dream_parse_failed', { pulseCount, attempts: parsedDream.attempts });
           }
         } else {
-          try {
-            const jsonMatch = dreamText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) dreamReport = JSON.parse(jsonMatch[0]);
-          } catch {}
+          // No validated parser available: log a structured parse error instead
+          // of silently stubbing an empty 'processing' reflection.
+          console.error(JSON.stringify({
+            event: 'dream_parse_failed', dreamId, pulseCount,
+            reason: 'dream module lacks parseDreamReport; unparseable output retained in receipt',
+            outputHead: String(dreamText || '').slice(0, 200),
+          }));
+          send('dream_parse_failed', { pulseCount, attempts: [{ via: 'legacy-fallback', ok: false, reason: 'parser unavailable; no silent brace-match fallback' }] });
         }
 
         // Write to dreams.ndjson
