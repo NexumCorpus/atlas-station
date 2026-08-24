@@ -298,6 +298,11 @@ let _resonance = null;
 try { _resonance = _require('./resonance.cjs'); } catch { _resonance = null; }
 let _mutmap = null;
 try { _mutmap = _require('./mutationmap.cjs'); } catch { _mutmap = null; }
+// BEFORE-merge holdout gate - retention measurement stage (holdout-gate.cjs).
+// Optional module: guarded so fleethost still boots if it is absent.
+let _holdout = null;
+try { _holdout = require('./holdout-gate.cjs'); } catch (_) { _holdout = null; }
+const holdoutCounters = { accepted: 0, rejected: 0 };
 let _instructions = null;
 try { _instructions = _require('./instructions.cjs'); } catch { _instructions = null; }
 let _routines = null;
@@ -2455,11 +2460,6 @@ const stagedVerifyTool = tool(
   }
 );
 
-// BEFORE-merge holdout gate - retention measurement stage (holdout-gate.cjs).
-// Optional module: guarded so fleethost still boots if it is absent.
-let _holdout = null;
-try { _holdout = require('./holdout-gate.cjs'); } catch (_) { _holdout = null; }
-const holdoutCounters = { accepted: 0, rejected: 0 };
 const mutationMapTool = tool(
   "mutation_map",
   "Show ATLAS's codebase churn map â€” which files have been modified most frequently across build agents, how many agents touched each file, and when. Optionally filter to a specific file to see its full modification history. Use to identify unstable or heavily-evolved parts of the station.",
