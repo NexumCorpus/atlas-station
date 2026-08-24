@@ -563,6 +563,37 @@ function branchStat(branch) {
 
 const BUILD_NOTE = "\n\n[Working conditions] You are inside an ISOLATED git worktree which IS your current working directory. Edit files only here, via RELATIVE paths; never touch absolute E:\\atlas-station or anything outside this worktree. Keep scope tight, sanity-check, then COMMIT â€” but DO NOT use `git add -A` (it picks up unintended side-effect files). Instead: run `git status` first, then `git add <only the files you intentionally changed>`, then `git commit -m \"...\"`. Do not push.";
 
+// --- WIP checkpoints (B-170 class failures: error_max_turns leaves zero durable work) ---
+const CHECKPOINT_TURNS = Math.max(1, parseInt(process.env.CHECKPOINT_TURNS || '10', 10) || 10);
+function wipCheckpoint(id, branch) {
+  try {
+    const ag = agents.get(id) || {};
+    const cwd = ag.cwd || REPO;
+    const cpDir = path.join(REPO, 'memory', 'checkpoints');
+    mkdirSync(cpDir, { recursive: true });
+    const cpFile = path.join(cpDir, id + '.ndjson');
+    let rec = null;
+    if (branch) {
+      // Isolated worktree: every change here is attributable to this agent.
+      execFileSync('git', ['-C', cwd, 'add', '-A'], { encoding: 'utf8', stdio: ['pipe','pipe','pipe'] });
+      let dirty = "";
+      try { dirty = execFileSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8" }).trim(); } catch (_) {}
+      if (!dirty) return null;
+      execFileSync("git", ["-C", cwd, "commit", "-m", "WIP checkpoint (" + id + ")"], { encoding: "utf8", stdio: ["pipe","pipe","pipe"] });
+      const sha = execFileSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+      rec = { ts: new Date().toISOString(), kind: "wip-commit", agentId: id, branch, sha };
+    } else {
+      // Shared dirty tree: NEVER commit another process changes; record the changed-file list only.
+      let files = [];
+      try { files = execFileSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8" }).split(/\r?\n/).filter(l => l.trim()); } catch (_) {}
+      if (!files.length) return null;
+      rec = { ts: new Date().toISOString(), kind: "dirty-file-list", agentId: id, files };
+    }
+    appendFileSync(cpFile, JSON.stringify(rec) + '\n');
+    set(id, { checkpointPath: cpFile });
+    return cpFile;
+  } catch (_) { return null; }
+}
 // Stream one query's messages into agent `id`'s state; returns the final reply.
 async function consume(id, iterable, build, branch) {
   // Live reasoning telemetry: ATLAS-only rolling tail, throttled GUI sends.
@@ -616,6 +647,7 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
         }
       }
       set(id, patch);
+      if (build && turns > 0 && turns % CHECKPOINT_TURNS === 0) wipCheckpoint(id, branch);
     } else if (m.type === "result") {
       const done = m.subtype === "success"; const extra = (build && branch) ? branchStat(branch) : {};
       // D-1787413765000: commit refs captured at agent terminalization
@@ -632,8 +664,9 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       // Output-length guard: peers burn rounds re-reading walls of text; truncate before storing/broadcasting.
       try { if (final.length > 4000) { final = '[truncated] ' + final.slice(0, 4000); } } catch {}
       flushThinking(true);
-      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
+      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(build ? { checkpointPath: agents.get(id)?.checkpointPath ?? null } : {}), ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, commitRefs, transcriptPath: null,
+        checkpointPath: build ? (agents.get(id)?.checkpointPath ?? null) : null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
       // Record which files this build agent modified â€” feeds mutation_map churn analysis
       if (build && _mutmap) {
