@@ -108,7 +108,7 @@ function computeRetention(merges, opts) {
   for (const m of merges) {
     const ev = events.find(e => e.agentId === m.agentId && e.mergeCommit === m.hash);
     let verdict = "unknown";
-    if (ev && ev.verdict === "stayed") verdict = "survived";
+    if (ev && (ev.verdict === "stayed" || ev.verdict === "survived")) verdict = "survived";
     else if (ev && ev.verdict === "regressed") verdict = "regressed";
     else {
       const oc = outcomes.find(o => o.agentId === m.agentId && o.ts && new Date(o.ts).getTime() / 1000 >= m.ts);
