@@ -746,18 +746,35 @@ function armAgentRetry(record) {
         return;
       }
       set(record.id, { state: "working", turns: 0, lastTool: null, summary: "retry running", retryStartedAt: new Date().toISOString() });
-      await runSubagent(record.task, record.retryMode, record.agentTimeout, record.requestedModel, record.projectId, record.dialectName, { retried: true }, record.id, record.execution || {});
+      // Diagnostic retry (dream proposal): cite parent failure signature + hypothesized delta.
+      const __parent = agents.get(record.parent || record.retryOf);
+      const __sig = __parent ? ((__parent.failSubtype ? "[" + __parent.failSubtype + "] " : "") + String(__parent.summary || "").slice(0, 200)) : String(record.parentFailureSignature || "unknown parent failure");
+      const __hyp = String(record.retryHypothesis || "transient exhaustion under load; same brief expected to fit within RETRY_TURN_BOUND");
+      const __retryTask = record.task + "\n\nRETRY DIAGNOSTIC: You are the one-shot retry of agent " + (record.parent || record.retryOf) + ", which failed with signature: " + __sig + ". Hypothesis for what changes this time: " + __hyp + ". As part of your work, briefly note what condition differed from that failed attempt.";
+      try {
+        await runSubagent(__retryTask, record.retryMode, record.agentTimeout, record.requestedModel, record.projectId, record.dialectName, { retried: true }, record.id, record.execution || {});
+      } finally {
+        const __cur = agents.get(record.id) || {};
+        if (__cur.state === "done" && __parent && __parent.state === "failed") {
+          try {
+            if (_memstore) _memstore.appendFact({ topic: "fleet", fact: "Retry success cause: " + record.id + " succeeded where parent " + record.parent + " failed (" + __sig + "). Hypothesis credited: " + __hyp, source: "retry_cause_log", confidence: "inferred" }, path.join(REPO, "memory"));
+          } catch (_) {}
+          send("retry_cause_logged", { id: record.id, parent: record.parent, hypothesis: __hyp });
+        }
+      }
     }).catch((e) => { try { set(record.id, { state: "failed", summary: String(e && e.message || e).slice(0, 180) }); } catch (_) {} });
   }, delay);
   timer.unref?.();
   agentRetryTimers.set(record.id, timer);
 }
 function scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, priorId, reason, execution = {}) {
+  const __pRec = agents.get(priorId) || {};
+  const __pSig = (__pRec.failSubtype ? "[" + __pRec.failSubtype + "] " : "") + String(__pRec.summary || reason).slice(0, 200);
   const rid = priorId + "-R";
   const retryAt = Date.now() + AGENT_RETRY_DELAY_MS;
   set(rid, { id: rid, state: "waiting-retry", task, mode: mode === "build" ? "build" : "read", retryMode: mode,
     model: model || MODEL_HAIKU, requestedModel: model || null, agentTimeout, projectId: projectId || null,
-    dialectName: dialectName || null, retryAt, summary: "one-shot retry in 15min (" + reason + ")", parent: priorId, retryOf: priorId, execution,
+    dialectName: dialectName || null, retryAt, summary: "one-shot retry in 15min (" + reason + ")", parent: priorId, retryOf: priorId, parentFailureSignature: __pSig, retryHypothesis: "same task rerun once after cooldown; transient load/exhaustion suspected for parent failure", execution,
     contextRoot: execution.preassembledContextRoot || null, contextMode: execution.preassembledContextRoot ? 'authenticated-corpus' : 'mycelium', contextChars: Number(execution.contextChars) || 0, swarmKey: execution.swarmKey || null });
   send("agent_retry_scheduled", { id: rid, retryOf: priorId, reason, retryInMs: AGENT_RETRY_DELAY_MS });
   armAgentRetry(agents.get(rid));
