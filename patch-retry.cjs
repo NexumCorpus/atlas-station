@@ -27,7 +27,7 @@ s = s.replace(a3, lit([
 // 3) retry-success fact append at terminalization
 let a4 = lit("if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task,");
 if (!s.includes(a4)) throw new Error('anchor4 miss');
-s = s = s.replace(a4, [
+s = s.replace(a4, [
 'try {',
 '        const __rec = agents.get(id) || {};',
 '        if (__rec.retryOf && done && _memstore) {',
@@ -35,8 +35,6 @@ s = s = s.replace(a4, [
 "            _memstore.appendFact({ topic: 'retry-outcome', fact: `Retry success: ${__rec.retryOf} failed (${__rec.parentFailureSignature || 'unknown'}), but ${id} succeeded on same brief class; outcome=done`, source: `ATLAS:${new Date().toISOString().slice(0, 10)}`, confidence: 'observed' }, path.join(REPO, 'memory'));",
 "            send('retry_success_logged', { id, retryOf: __rec.retryOf });",
 '          } catch (_) {}',
-'        } // on repeat failure, failSubtype is already recorded via set() above',
-].join(String.fromCharCode(10)) + NL + IND + a4);
-
+      '      } catch (_) {}'].join(String.fromCharCode(10)) + NL + '      ' + a4);
 fs.writeFileSync('fleethost.mjs', s);
 console.log('patched ok');
