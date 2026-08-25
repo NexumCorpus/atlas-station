@@ -5,6 +5,8 @@ import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
+let stagedHoldout = null; let recordHoldoutMetric = null;
+try { const _ret = _require("./retention.cjs"); stagedHoldout = _ret.stagedHoldout; recordHoldoutMetric = _ret.recordHoldoutMetric; } catch (_) {}
 
 // BEFORE-merge holdout gate (retention measurement stage). Optional module.
 let _holdout = null;
@@ -76,26 +78,29 @@ try {
       // Already ancestor of master — skip (already merged or will be pruned)
     } catch (_) {
       // Not yet in master — merge it
+      // Pre-merge holdout gate: stage branch off master, node --check + behavioral tests.
+      let holdout;
       try {
-        // BEFORE-merge holdout gate: stage the branch off master and verify it there.
+        // BEFORE-merge holdout gate (resolved 2026-08-25): HEAD's holdout-gate.cjs receipts + B-304-R's retention.cjs metrics.
         if (_holdout) {
           const agentId = branch.replace(/^fleet\//, "");
           try {
             const verdict = _holdout.stagedHoldout(agentId, DIR);
             if (!verdict.pass) {
               _holdout.recordReceipt(DIR, _holdout.receiptPath(DIR), { ts: new Date().toISOString(), agentId, reason: String(verdict.reason || "stagedHoldout failed").slice(0, 300), failedTests: verdict.failedTests || [] });
+              try { recordHoldoutMetric('rejected', branch); } catch (_) {}
               writeLog({ event: "holdout-reject", branch, reason: String(verdict.reason || "").slice(0, 200), failedTests: verdict.failedTests });
               console.log("[daemon] holdout REJECTED unmerged branch:", branch);
               continue;
             } else {
               _holdout.recordReceipt(DIR, _holdout.acceptPath(DIR), { ts: new Date().toISOString(), agentId, filesChecked: (verdict.filesChecked || []).length });
+              try { recordHoldoutMetric('accepted', branch); } catch (_) {}
               writeLog({ event: "holdout-accept", branch, filesChecked: (verdict.filesChecked || []).length });
             }
           } catch (gateErr) {
             writeLog({ event: "holdout-gate-error", branch, error: String(gateErr.message || gateErr).slice(0, 200) });
           }
         }
-        execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "daemon-startup: auto-merge " + branch, branch], { cwd: DIR });
         writeLog({ event: "startup-auto-merge", branch });
         console.log("[daemon] auto-merged unmerged branch:", branch);
       } catch (mergeErr) {
