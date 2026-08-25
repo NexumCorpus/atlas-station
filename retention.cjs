@@ -1,4 +1,4 @@
-﻿// retention.cjs - pre-merge holdout gate for fleet auto-merges.
+// retention.cjs - pre-merge holdout gate for fleet auto-merges.
 // stagedHoldout(agentId): stage the agent's fleet/<id> branch on a temp branch
 // off master in a throwaway worktree, run node --check on every changed
 // JS/MJS/CJS file AND the behavioral test suite against the staged tree,
@@ -79,4 +79,54 @@ function holdoutMetrics() {
   } catch (_) { return { accepted: 0, rejected: 0, total: 0 }; }
 }
 
-module.exports = { stagedHoldout, recordHoldoutMetric, holdoutMetrics };
+// ---- Post-merge retention ledger (vital sign r) ----
+const RETENTION_FILE = path.join("memory", "retention.ndjson");
+
+function appendRetentionRecord(repoDir, rec) {
+  const file = path.isAbsolute(RETENTION_FILE) ? RETENTION_FILE : path.join(repoDir || process.cwd(), RETENTION_FILE);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, JSON.stringify(rec) + "\n", "utf8");
+}
+
+function readRetentionEvents(repoDir) {
+  const file = path.isAbsolute(RETENTION_FILE) ? RETENTION_FILE : path.join(repoDir || process.cwd(), RETENTION_FILE);
+  try {
+    return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean)
+      .map(l => { try { return JSON.parse(l); } catch (_) { return null; } })
+      .filter(Boolean);
+  } catch (_) { return []; }
+}
+
+// Classify each merge as survived/regressed/unknown using retention events
+// and build-outcome ratings recorded AFTER the merge timestamp.
+function computeRetention(merges, opts) {
+  opts = opts || {};
+  const events = Array.isArray(opts.events) ? opts.events : [];
+  const outcomes = Array.isArray(opts.outcomes) ? opts.outcomes : [];
+  let survived = 0, regressed = 0;
+  const detail = [];
+  for (const m of merges) {
+    const ev = events.find(e => e.agentId === m.agentId && e.mergeCommit === m.hash);
+    let verdict = "unknown";
+    if (ev && ev.verdict === "stayed") verdict = "survived";
+    else if (ev && ev.verdict === "regressed") verdict = "regressed";
+    else {
+      const oc = outcomes.find(o => o.agentId === m.agentId && o.ts && new Date(o.ts).getTime() / 1000 >= m.ts);
+      if (oc && oc.rating === "good") verdict = "survived";
+      else if ((oc && oc.rating === "bad") || (ev && ev.verdict === "reverted")) verdict = "regressed";
+    }
+    if (verdict === "survived") survived++;
+    else if (verdict === "regressed") regressed++;
+    detail.push({ agentId: m.agentId, mergeCommit: m.hash, verdict });
+  }
+  const total = merges.length;
+  const classified = survived + regressed;
+  return {
+    merges: total, survived, regressed, unknown: total - classified,
+    r: classified > 0 ? Number((survived / classified).toFixed(4)) : null,
+    detail,
+    windowDays: opts.windowDays || null,
+  };
+}
+
+module.exports = { stagedHoldout, recordHoldoutMetric, holdoutMetrics, appendRetentionRecord, readRetentionEvents, computeRetention };
