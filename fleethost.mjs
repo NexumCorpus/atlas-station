@@ -63,8 +63,6 @@ function query(args) {
   return _sdkQuery(args);
 }
 
-const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
-const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 // The Atlas organism owns its local workspace. Do not let the launch path
 // silently demote a fresh sidecar to read-only; an operator may still set
 // ATLAS_CODEX_UNRESTRICTED=0 for an intentionally diagnostic session.
