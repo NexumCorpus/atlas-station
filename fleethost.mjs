@@ -36,7 +36,11 @@ function turnBoundOf(opts) {
 }
 import { createOrchestrationLanes, laneTurnBound, laneTimeoutMs, laneContextChars, mouthExhaustionHandoff } from "./orchestration-lanes.mjs";
 import { z } from "zod";
-import { execFileSync, spawn as spawnChild } from "child_process";
+import { execFileSync } from "child_process";
+import { runBoundedChild } from "./providers/bounded-child.mjs";
+import { REPO, WT_BASE, gitC, makeWorktree, branchStat, BUILD_NOTE } from "./providers/worktree.mjs";
+import { SAFE, READ_DENY, pathInsideRepo, readGate } from "./providers/read-gate.mjs";
+
 import { mkdirSync, statSync, openSync, readSync, closeSync, appendFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
 import { createRequire } from "module";
@@ -59,8 +63,6 @@ function query(args) {
   return _sdkQuery(args);
 }
 
-const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
-const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
 // The Atlas organism owns its local workspace. Do not let the launch path
 // silently demote a fresh sidecar to read-only; an operator may still set
 // ATLAS_CODEX_UNRESTRICTED=0 for an intentionally diagnostic session.
@@ -125,146 +127,7 @@ function codexRouting(route, fallbackModel) {
     ? { ...route, atlasAssignedModel: assignedModel(route, fallbackModel) }
     : {};
 }
-const SAFE = new Set(["Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite", "Task", "NotebookRead"]);
-// Read-mode agents may now WRITE deliverables (2026 directive: eliminate read-only wall).
-// Deny-list replaces allow-list: only clearly destructive/out-of-scope operations are blocked.
-const READ_DENY = new Set([
-  "Bash(git push*)","Bash(git reset --hard*)","Bash(git clean*)","Bash(rm -rf /*)",
-  "Bash(format*)","Bash(del /s*E:\\\\*)","KillShell","WebRemove"
-]);
-function pathInsideRepo(p) {
-  if (!p) return true;
-  const norm = (s) => path.resolve(String(s)).toLowerCase();
-  const repo = norm(REPO);
-  const resolved = norm(path.isAbsolute(String(p)) ? String(p) : path.join(REPO, String(p)));
-  return resolved === repo || resolved.startsWith(repo + path.sep);
-}
-const readGate = async (name, input) => {
-  if (SAFE.has(name)) return { behavior: "allow", updatedInput: input };
-  for (const pat of READ_DENY) { const stem = pat.replace(/^Bash\(/, "").replace(/\*$/, ""); if (name === pat || name.startsWith(stem)) return { behavior: "deny", message: "destructive operation denied in read mode" }; }
-  // Write/Edit/NotebookEdit: require target inside the repo workspace
-  if (["Write","Edit","MultiEdit","NotebookEdit"].includes(name)) {
-    const fp = input?.file_path || input?.filePath;
-    if (!pathInsideRepo(fp)) return { behavior: "deny", message: "write outside workspace denied" };
-    return { behavior: "allow", updatedInput: input };
-  }
-  // Shell-type tools allowed (deliverables may need commands); fleet MCP tools allowed so agents can converse.
-  return { behavior: "allow", updatedInput: input };
-};
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
-
-// Provider-facing organs run in this sidecar, so synchronous subprocess APIs
-// freeze IPC cancellation, ingress renewal, and execution heartbeats. Keep all
-// potentially slow organ subprocesses on this single bounded async path.
-function runBoundedChild(command, args = [], options = {}) {
-  const timeoutMs = Math.max(250, Math.min(1_200_000, Number(options.timeoutMs) || 30_000));
-  const maxOutputBytes = Math.max(1_024, Math.min(4 * 1024 * 1024, Number(options.maxOutputBytes) || 64 * 1024));
-  const signal = options.signal || null;
-  const makeCollector = () => {
-    const chunks = [];
-    let bytes = 0;
-    let truncated = false;
-    return {
-      push(chunk) {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-        const remaining = maxOutputBytes - bytes;
-        if (remaining <= 0) { truncated = true; return; }
-        if (buf.length > remaining) { chunks.push(buf.subarray(0, remaining)); bytes += remaining; truncated = true; }
-        else { chunks.push(buf); bytes += buf.length; }
-      },
-      text() { return Buffer.concat(chunks, bytes).toString('utf8') + (truncated ? '\n[output truncated]' : ''); },
-      get truncated() { return truncated; },
-    };
-  };
-  return new Promise(resolve => {
-    const stdout = makeCollector();
-    const stderr = makeCollector();
-    let child = null;
-    let timer = null;
-    let killFallback = null;
-    let settled = false;
-    let termination = null;
-    let terminationUnconfirmed = false;
-    let spawnError = null;
-    const finish = (status = null, closeSignal = null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      clearTimeout(killFallback);
-      signal?.removeEventListener('abort', onAbort);
-      resolve({
-        status,
-        signal: closeSignal,
-        stdout: stdout.text(),
-        stderr: stderr.text(),
-        cancelled: termination === 'cancelled',
-        timedOut: termination === 'timeout',
-        terminationConfirmed: termination ? !terminationUnconfirmed : null,
-        truncated: stdout.truncated || stderr.truncated,
-        error: spawnError,
-      });
-    };
-    const pidAlive = pid => {
-      if (!Number.isSafeInteger(Number(pid)) || Number(pid) < 1) return false;
-      try { process.kill(Number(pid), 0); return true; } catch { return false; }
-    };
-    const confirmTreeTermination = (reason, deadlineAt = Date.now() + 3_000) => {
-      if (settled) return;
-      if (!child?.pid || !pidAlive(child.pid)) { finish(null, reason); return; }
-      try { child.kill('SIGKILL'); } catch {}
-      if (Date.now() >= deadlineAt) {
-        terminationUnconfirmed = true;
-        finish(null, reason);
-        return;
-      }
-      clearTimeout(killFallback);
-      killFallback = setTimeout(() => confirmTreeTermination(reason, deadlineAt), 100);
-      killFallback.unref?.();
-    };
-    const terminateTree = reason => {
-      if (termination || settled) return;
-      termination = reason;
-      if (child?.pid) {
-        if (process.platform === 'win32') {
-          try {
-            const killer = spawnChild('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-            killer.once('error', () => { try { child.kill(); } catch {} confirmTreeTermination(reason); });
-            killer.once('close', () => confirmTreeTermination(reason));
-          } catch { try { child.kill(); } catch {} }
-        } else {
-          try { child.kill('SIGTERM'); } catch {}
-        }
-      }
-      // Await the OS tree-kill and confirm that the root PID disappeared. If
-      // Windows cannot confirm within the bounded fallback, report that fact
-      // explicitly instead of laundering a kill request into completion.
-      killFallback = setTimeout(() => confirmTreeTermination(reason), 3_000);
-      killFallback.unref?.();
-    };
-    const onAbort = () => terminateTree('cancelled');
-    if (signal?.aborted) { termination = 'cancelled'; finish(null, 'cancelled'); return; }
-    try {
-      child = spawnChild(command, args, {
-        cwd: options.cwd || REPO,
-        env: options.env || process.env,
-        shell: options.shell === true,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (error) {
-      spawnError = error;
-      finish(null, null);
-      return;
-    }
-    child.stdout?.on('data', chunk => stdout.push(chunk));
-    child.stderr?.on('data', chunk => stderr.push(chunk));
-    child.once('error', error => { spawnError = error; if (!child?.pid) finish(null, null); });
-    child.once('close', (code, closeSignal) => finish(code, closeSignal));
-    signal?.addEventListener('abort', onAbort, { once: true });
-    timer = setTimeout(() => terminateTree('timeout'), timeoutMs);
-    timer.unref?.();
-  });
-}
 
 function extractToolArg(name, input) {
   if (!input) return null;
@@ -550,23 +413,6 @@ function set(id, patch) {
     }
   }
 }
-
-function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
-function makeWorktree(id) {
-  const dir = path.join(WT_BASE, id); const branch = "fleet/" + id;
-  mkdirSync(WT_BASE, { recursive: true });
-  try { gitC(["worktree", "remove", "--force", dir]); } catch (_) {}
-  try { gitC(["branch", "-D", branch]); } catch (_) {}
-  const baseHash = (() => { try { return gitC(["rev-parse", "HEAD"]).trim(); } catch { return null; } })();
-  gitC(["worktree", "add", "-f", "-b", branch, dir, "HEAD"]);
-  return { dir, branch, baseHash };
-}
-function branchStat(branch) {
-  try { const stat = gitC(["diff", "--shortstat", "master.." + branch]).trim(); const commits = Number(gitC(["rev-list", "--count", "master.." + branch]).trim()) || 0; return { branchStat: stat || "no diff yet", commits }; }
-  catch (_) { return { branchStat: "?", commits: 0 }; }
-}
-
-const BUILD_NOTE = "\n\n[Working conditions] You are inside an ISOLATED git worktree which IS your current working directory. Edit files only here, via RELATIVE paths; never touch absolute E:\\atlas-station or anything outside this worktree. Keep scope tight, sanity-check, then COMMIT â€” but DO NOT use `git add -A` (it picks up unintended side-effect files). Instead: run `git status` first, then `git add <only the files you intentionally changed>`, then `git commit -m \"...\"`. Do not push.";
 
 // --- WIP checkpoints (B-170 class failures: error_max_turns leaves zero durable work) ---
 const CHECKPOINT_TURNS = Math.max(1, parseInt(process.env.CHECKPOINT_TURNS || '10', 10) || 10);
