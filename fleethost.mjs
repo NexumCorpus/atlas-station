@@ -4228,6 +4228,7 @@ memory_health_detail() Ã¢â‚¬â€ memory file inventory: record counts, 
 daemon_report(n?) Ã¢â‚¬â€ summarize last N daemon sessions: start time, state, duration, reply excerpt
 daemon_health() Ã¢â‚¬â€ check scheduler job status + last run time; health: healthy/delayed/stale/never-run
 population_status() Ã¢â‚¬â€ show evolutionary population: variants, behavioral archive cells, generation count
+peer_liveness_precheck(agentIds[],windowMinutes?) Ã¢ precheck fleet agent liveness from runs.jsonl + mailbox before spawning tasks referencing peers (read-only)
 
 **Evolutionary population (Phase 1 Ã¢â‚¬â€ data collection):**
 - Population archive at E:\\atlas-station\\.atlas\\population.json tracks ATLAS variants (MAP-Elites behavioral archive).
