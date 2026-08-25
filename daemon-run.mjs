@@ -6,11 +6,11 @@ import { join } from "path";
 import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
 let stagedHoldout = null; let recordHoldoutMetric = null;
-try { const _ret = _require("./retention.cjs"); stagedHoldout = _ret.stagedHoldout; recordHoldoutMetric = _ret.recordHoldoutMetric; } catch (_) {}
+try { const _ret = _require("./retention.cjs"); stagedHoldout = _ret.stagedHoldout; recordHoldoutMetric = _ret.recordHoldoutMetric; var _retention = { appendRetentionRecord: _ret.appendRetentionRecord }; } catch (_) { var _retention = null; }
 
 // BEFORE-merge holdout gate (retention measurement stage). Optional module.
 let _holdout = null;
-try { _holdout = require("./holdout-gate.cjs"); } catch (_) { _holdout = null; }
+try { _holdout = _require("./holdout-gate.cjs"); } catch (_) { _holdout = null; }
 
 const NODE = "C:\\Program Files\\nodejs\\node.exe";
 const DIR  = "E:\\atlas-station";
@@ -101,8 +101,20 @@ try {
             writeLog({ event: "holdout-gate-error", branch, error: String(gateErr.message || gateErr).slice(0, 200) });
           }
         }
+        execFileSync("git", ["-C", DIR, "merge", "--no-edit", "-m", "auto-merge " + branch, branch], { stdio: "pipe" });
         writeLog({ event: "startup-auto-merge", branch });
         console.log("[daemon] auto-merged unmerged branch:", branch);
+        // Retention vital sign: record merge so r becomes measurable.
+        try {
+          const agentId2 = branch.replace(/^fleet\//, "");
+          if (_retention) {
+            const found = execFileSync("git", ["-C", DIR, "log", "--merges", "--format=%H %ct", "--grep", "fleet/" + agentId2, "-1"], { encoding: "utf8" }).trim();
+            if (found) {
+              const [hash] = found.split(" ");
+              _retention.appendRetentionRecord(DIR, { ts: new Date().toISOString(), agentId: agentId2, mergeCommit: hash, verdict: "merged" });
+            }
+          }
+        } catch (_) {}
       } catch (mergeErr) {
         writeLog({ event: "startup-merge-failed", branch, error: String(mergeErr.message || mergeErr).slice(0, 200) });
       }

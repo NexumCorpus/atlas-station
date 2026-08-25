@@ -41,7 +41,7 @@ function stagedHoldout(agentId, repo) {
   };
   let filesChecked = [];
   try {
-    mkdirSync(path.dirname(wtDir), { recursive: true });
+    if (!existsSync(path.dirname(wtDir))) mkdirSync(path.dirname(wtDir), { recursive: true });
     cleanup();
     git(repo, ['worktree', 'add', '-f', '-b', temp, wtDir, 'master']);
     try {
