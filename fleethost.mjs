@@ -5693,18 +5693,33 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         // Write to dreams.ndjson
         const dreamEntry = _dream.writeDream(dreamReport, memDir);
 
-        // Defect 2 fix: deposit reflection outputs as durable fact scar tissue
-        if (_memstore && ((dreamReport.patterns && dreamReport.patterns.length) || (dreamReport.insights && dreamReport.insights.length))) {
+        // Deposit-bearing dreams (dream HIGH proposal): every completed dream appends a dated
+        // finding to the ledger, or an explicit no-finding record. Zero-deposit dreams are
+        // recorded as failures in the receipt stream regardless of exit status.
+        const __hasFindings = (dreamReport.patterns && dreamReport.patterns.length) || (dreamReport.insights && dreamReport.insights.length);
+        if (_memstore) {
           try {
-            _memstore.appendFact({
-              topic: 'reflection:dream',
-              fact: JSON.stringify({ dreamId, pulseCount, mood: dreamReport.mood, patterns: dreamReport.patterns.slice(0,3), insights: dreamReport.insights.slice(0,2) }),
-              source: 'dream_protocol',
-              confidence: 'inferred',
-            }, memDir);
-          } catch {}
+            if (__hasFindings) {
+              _memstore.appendFact({
+                topic: 'reflection:dream',
+                fact: JSON.stringify({ dreamId, pulseCount, mood: dreamReport.mood, patterns: dreamReport.patterns.slice(0,3), insights: dreamReport.insights.slice(0,2), ts: new Date().toISOString() }),
+                source: 'dream_protocol',
+                confidence: 'inferred',
+              }, memDir);
+            } else {
+              _memstore.appendFact({
+                topic: 'reflection:dream',
+                fact: JSON.stringify({ dreamId, pulseCount, no_finding: true, note: "explicit no-finding: dream produced no patterns/insights", ts: new Date().toISOString() }),
+                source: 'dream_protocol',
+                confidence: 'inferred',
+              }, memDir);
+            }
+          } catch (_) {}
+          if (!__hasFindings && _dream.writeDreamReceipt) {
+            try { _dream.writeDreamReceipt({ dreamId, pulseCount, event: 'terminal', state: 'zero_deposit', task: `dream protocol (pulse ${pulseCount})`, output: dreamText, error: { name: 'DreamZeroDeposit', message: 'completed with empty patterns and insights; counted as failure in dream success metric' }, exit: { state: 'zero_deposit', code: null, signal: null } }, memDir); } catch (_) {}
+            send('dream_zero_deposit', { dreamId, pulseCount });
+          }
         }
-
         // Auto-defer high-priority proposals from dream (parsed from text output)
         if (_deferred && dreamText) {
           try {
@@ -5773,7 +5788,12 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         });
 
       } catch (e) {
-        // Dream failures are silent â€” don't disrupt the pulse
+        // Dream failures do not disrupt the pulse, but they are never silent: write a
+        // dated failure receipt so crashed dreams count as failures, not absence.
+        try {
+          if (_dream && _dream.writeDreamReceipt) _dream.writeDreamReceipt({ dreamId: dreamId || null, pulseCount, event: 'terminal', state: 'crashed', task: `dream protocol (pulse ${pulseCount})`, output: '', error: { name: e.name || 'Error', message: String(e.message || e).slice(0, 400) }, exit: { state: 'failed', code: null, signal: null } }, memDir);
+        } catch (_) {}
+        send('dream_crashed', { pulseCount, message: String(e.message || e).slice(0, 120) });
       }
     }
   } catch (_) {}
