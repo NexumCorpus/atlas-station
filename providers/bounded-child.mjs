@@ -114,6 +114,4 @@ function runBoundedChild(command, args = [], options = {}) {
   });
 }
 
-function extractToolArg(name, input) {
-
 export { runBoundedChild };

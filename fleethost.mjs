@@ -129,6 +129,7 @@ function codexRouting(route, fallbackModel) {
 }
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
+function extractToolArg(name, input) {
   if (!input) return null;
   if (name === "Read") return (input.file_path || "").split(/[/\\]/).pop().slice(0, 40) || null;
   if (name === "Bash") return (input.command || "").slice(0, 50) || null;
