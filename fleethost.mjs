@@ -5551,6 +5551,13 @@ async function runPulse() {
           .filter(p => p.state === 'pending' || p.state === 'deferred');
       } catch { return []; }
     };
+    const _loadAllProposals = (memDir) => {
+      try {
+        const pf = path.join(memDir, 'proposals.ndjson');
+        if (!fs.existsSync(pf)) return [];
+        return fs.readFileSync(pf, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      } catch { return []; }
+    };
     // Every 4th pulse, run a dream reflection
     if (_dream && (pulseCount % 4 === 0 || (dreamRetryAt > 0 && Date.now() >= dreamRetryAt))) {
       if (dreamRetryAt > 0) dreamRetryAt = 0; // one-shot retry consumed
@@ -5781,7 +5788,7 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         if (_deferred && dreamText) {
           try {
             const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
-            const openProposals = _loadOpenProposals(memDir); // read once per dream cycle
+            const openProposals = _loadOpenProposals(memDir).concat(_loadAllProposals(memDir).filter(p => p.state === 'closed' || p.state === 'consumed' || p.state === 'abandoned' || p.state === 'rejected')); // dedupe set includes terminal dispositions so dead work is never resurrected
             const normCands = openProposals.map(p => ({ norm: _normText(p.description), desc: String(p.description || '') }));
             for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
               const nProp = _normText(proposal);
