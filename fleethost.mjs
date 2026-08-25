@@ -1,4 +1,4 @@
-﻿// Fleet engine (plain-Node sidecar) Ã¢â‚¬â€ ORCHESTRATOR model.
+// Fleet engine (plain-Node sidecar) Ã¢â‚¬â€ ORCHESTRATOR model.
 //
 // The user talks ONLY to ATLAS, the orchestrator. ATLAS holds a `fleet` tool
 // server (spawn_agent / check_fleet) and dispatches + manages subagents itself;
@@ -2822,7 +2822,7 @@ const revertBuildTool = tool(
   }
 );
 
-ï»¿
+
 // ---- Post-merge retention tracking (vital sign r) ----
 let _retention = null;
 try { _retention = _require('./retention.cjs'); } catch { _retention = null; }
