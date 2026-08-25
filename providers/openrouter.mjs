@@ -316,6 +316,14 @@ function requestMetrics(messages, env, stream, tools) {
   };
 }
 
+// Rate-limit-aware delay: honor Retry-After when present, else exponential
+// backoff with jitter. 429 gets more attempts than generic transients because
+// burning out retries into the chat thread is worse than waiting.
+function retryDelayMs(response, attempt, baseMs) {
+  const ra = Number(response?.headers?.get?.("retry-after"));
+  if (Number.isFinite(ra) && ra > 0) return Math.min(60_000, ra * 1000);
+  return Math.min(60_000, Math.round(baseMs * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5)));
+}
 function waitForRetry(ms, signal) {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve(false);
@@ -344,7 +352,9 @@ async function request(messages, env, signal, tools) {
     if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
     const payload = await response.json().catch(() => ({}));
     if (response.ok) return payload;
-    if (transientStatuses.has(response.status) && attempt < retries && await waitForRetry(retryBaseMs * (attempt + 1), requestSignal)) continue;
+    const isRateLimited = response.status === 429;
+    const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
+    if (transientStatuses.has(response.status) && attempt < attemptsAllowed && await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal)) continue;
     const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
     error.status = response.status;
     throw error;
@@ -375,7 +385,9 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
     if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
     if (response.ok && response.body) break;
     const payload = await response.json().catch(() => ({}));
-    if (transientStatuses.has(response.status) && attempt < retries && await waitForRetry(retryBaseMs * (attempt + 1), requestSignal)) continue;
+    const isRateLimited = response.status === 429;
+    const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
+    if (transientStatuses.has(response.status) && attempt < attemptsAllowed && await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal)) continue;
     const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
     error.status = response.status;
     throw error;
