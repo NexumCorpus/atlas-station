@@ -5614,6 +5614,22 @@ async function runPulse() {
     }
     send('pulse', snapshot);
 
+    // --- Dream dedupe helpers (B-308 fix, defect 1) ---
+    const _normText = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const _jaccard = (a, b) => {
+      const A = new Set(a.split(' ').filter(Boolean)); const B = new Set(b.split(' ').filter(Boolean));
+      if (!A.size || !B.size) return 0;
+      let inter = 0; for (const w of A) if (B.has(w)) inter++;
+      return inter / (A.size + B.size - inter);
+    };
+    const _loadOpenProposals = (memDir) => {
+      try {
+        const pf = path.join(memDir, 'proposals.ndjson');
+        if (!fs.existsSync(pf)) return [];
+        return fs.readFileSync(pf, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
+          .filter(p => p.state === 'pending' || p.state === 'deferred');
+      } catch { return []; }
+    };
     // Every 4th pulse, run a dream reflection
     if (_dream && (pulseCount % 4 === 0 || (dreamRetryAt > 0 && Date.now() >= dreamRetryAt))) {
       if (dreamRetryAt > 0) dreamRetryAt = 0; // one-shot retry consumed
@@ -5813,11 +5829,28 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
         // Write to dreams.ndjson
         const dreamEntry = _dream.writeDream(dreamReport, memDir);
 
+        // Defect 2 fix: deposit reflection outputs as durable fact scar tissue
+        if (_memstore && ((dreamReport.patterns && dreamReport.patterns.length) || (dreamReport.insights && dreamReport.insights.length))) {
+          try {
+            _memstore.appendFact({
+              topic: 'reflection:dream',
+              fact: JSON.stringify({ dreamId, pulseCount, mood: dreamReport.mood, patterns: dreamReport.patterns.slice(0,3), insights: dreamReport.insights.slice(0,2) }),
+              source: 'dream_protocol',
+              confidence: 'inferred',
+            }, memDir);
+          } catch {}
+        }
+
         // Auto-defer high-priority proposals from dream (parsed from text output)
         if (_deferred && dreamText) {
           try {
             const highPriority = [...dreamText.matchAll(/PROPOSAL \[HIGH\]:\s*(.+)/gi)].map(m => m[1].trim());
+            const openProposals = _loadOpenProposals(memDir); // read once per dream cycle
+            const normCands = openProposals.map(p => ({ norm: _normText(p.description), desc: String(p.description || '') }));
             for (const proposal of highPriority.slice(0, 3)) { // cap at 3 auto-deferred per dream
+              const nProp = _normText(proposal);
+              const isDup = normCands.some(en => en.norm && (nProp.includes(en.norm) || en.norm.includes(nProp) || _jaccard(nProp, en.norm) >= 0.6));
+              if (isDup) { send('toast', { text: `Dream skipped duplicate proposal: ` + proposal.slice(0,60) + `...` }); continue; }
               _deferred.deferTask(proposal, {
                 reason: 'Auto-deferred from dream protocol (HIGH priority)',
                 blocker: 'Dream pulse produced a HIGH proposal outside an active build turn',
