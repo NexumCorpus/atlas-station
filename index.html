@@ -2748,6 +2748,14 @@ if(m.type==="agent"){
       });
     }
     updateMemfactsCount();
+    try {
+      var bar = document.getElementById('memwritebar');
+      if (bar) {
+        var newest = 0;
+        facts.forEach(function(f){ var d = Date.parse(f.ts || ''); if (!isNaN(d) && d > newest) newest = d; });
+        bar.style.animationPlayState = (newest && (Date.now() - newest) < 30000) ? 'running' : 'paused';
+      }
+    } catch(e) {}
   }
 
   function filterFacts(q) {
