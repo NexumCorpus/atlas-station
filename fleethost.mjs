@@ -1,4 +1,4 @@
-﻿// Fleet engine (plain-Node sidecar) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ORCHESTRATOR model.
+// Fleet engine (plain-Node sidecar) Ã¢â‚¬â€ ORCHESTRATOR model.
 //
 // The user talks ONLY to ATLAS, the orchestrator. ATLAS holds a `fleet` tool
 // server (spawn_agent / check_fleet) and dispatches + manages subagents itself;
@@ -54,7 +54,7 @@ const _require = createRequire(import.meta.url);
 function query(args) {
   if (args && typeof args === 'object' && !('prompt' in args)) {
     const keys = Object.keys(args).join(', ');
-    throw new Error(`query() wrong shape: got {${keys}} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â use {prompt, options:{model,...}} not Anthropic REST shape`);
+    throw new Error(`query() wrong shape: got {${keys}} Ã¢â‚¬â€ use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
     const bound = turnBoundOf(args && args.options);
   if (bound != null) args = { ...args, options: { ...(args.options || {}), maxTurns: bound } };
@@ -218,7 +218,7 @@ let _mouthCancellationStore = null;
 try { _mouthCancellationStore = _require('./mouth-cancellations.cjs'); } catch { _mouthCancellationStore = null; }
 let _sidecarLease = null;
 
-// Debounced persist ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â fires at most once per second to avoid thrashing disk on
+// Debounced persist Ã¢â‚¬â€ fires at most once per second to avoid thrashing disk on
 // streaming updates (which call set() dozens of times per second).
 // Terminal states (done/failed) bypass the debounce to avoid data loss on exit.
 var _persistTimer = null;
@@ -263,7 +263,7 @@ function throwIfAborted(signal) {
   throw error;
 }
 const timeoutHandles = new Map();
-const stallTimers = new Map(); // observe-only stall sentinel intervals (Timeout Sentinel) // setTimeout handles kept OUT of agent records (Timeout is circular ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ would crash IPC/JSON serialize)
+const stallTimers = new Map(); // observe-only stall sentinel intervals (Timeout Sentinel) // setTimeout handles kept OUT of agent records (Timeout is circular Ã¢â€ â€™ would crash IPC/JSON serialize)
 let _maxCounter = 0;     // subagent numbering (persisted)
 let orchSession = null;  // ATLAS conversation session (persisted, resumes on restart)
 let orchSessionProvider = null; // prevents a Claude session id being resumed by Codex (or vice versa)
@@ -313,11 +313,11 @@ function pruneAgent(id) {
   try {
     // Only prune if branch is merged to master
     gitC(["merge-base", "--is-ancestor", a.branch, "master"]);
-    // Branch is merged ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â remove worktree then branch
+    // Branch is merged Ã¢â‚¬â€ remove worktree then branch
     try { gitC(["worktree", "remove", "--force", a.cwd]); } catch (_) {}
     try { gitC(["branch", "-d", a.branch]); } catch (_) { try { gitC(["branch", "-D", a.branch]); } catch (_) {} }
   } catch (_) {
-    // Not merged yet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â leave it
+    // Not merged yet Ã¢â‚¬â€ leave it
   }
 }
 
@@ -338,7 +338,7 @@ function set(id, patch) {
   a.ts = new Date().toISOString();
   agents.set(id, a);
   // Start timeout when first entering working state. The handle lives in
-  // timeoutHandles (a side map), NEVER on the agent record ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a Timeout object is
+  // timeoutHandles (a side map), NEVER on the agent record Ã¢â‚¬â€ a Timeout object is
   // circular and would throw "Converting circular structure to JSON" on send/persist.
   if (patch.state === "working" && !timeoutHandles.has(id) && id !== "ATLAS" && id !== "ATLAS-METABOLISM") {
     // Orchestrator lanes are exempt: their wall-clock budget is governed by laneTimeoutMs()/mouthAbort (ATLAS_MOUTH_TIMEOUT_MS), not the subagent cap. This generic timer killed long mouth turns at 20min despite the env disable.
@@ -347,7 +347,7 @@ function set(id, patch) {
       timeoutHandles.set(id, setTimeout(() => {
         const ctrl = abortControllers.get(id);
         if (ctrl) ctrl.abort();
-        set(id, { state: "failed", summary: "timeout ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â agent exceeded " + Math.round(ms / 60000) + "min limit" });
+        set(id, { state: "failed", summary: "timeout Ã¢â‚¬â€ agent exceeded " + Math.round(ms / 60000) + "min limit" });
       }, ms));
       // Stall sentinel: observe-only. If still working with timeout handle armed but
       // last tool call >10min ago, emit a suspicion event once. Never kills the agent.
@@ -379,9 +379,9 @@ function set(id, patch) {
     const newState = { agents: [...agents.values()], maxCounter: _maxCounter, orchSession, orchSessionProvider, orchSessionModel,
       metabolismSession, metabolismSessionProvider, metabolismSessionModel };
     if (patch.state === 'done' || patch.state === 'failed') {
-      try { _persist.save(newState); } catch (_) {} // immediate ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â don't lose terminal state on exit
+      try { _persist.save(newState); } catch (_) {} // immediate Ã¢â‚¬â€ don't lose terminal state on exit
     } else {
-      debouncedPersist(newState); // debounced ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â streaming updates fire dozens/sec
+      debouncedPersist(newState); // debounced Ã¢â‚¬â€ streaming updates fire dozens/sec
     }
   }
   if ((patch.state === "done" || patch.state === "failed") && id !== "ATLAS") {
@@ -392,7 +392,7 @@ function set(id, patch) {
     // Post-build improvement trigger: every 5th completed build, spawn a background
     // pattern analysis agent so improvement is continual, not just scheduled.
     if (patch.state === "done" && cur && cur.mode === "build") {
-      // Stigmergy exit ritual ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â update pheromone field from this build's commit
+      // Stigmergy exit ritual Ã¢â‚¬â€ update pheromone field from this build's commit
       if (cur.branch) {
         try {
           const stigmaProc = spawnChild(process.execPath, [path.join(REPO, 'stigma-write.mjs'), id, cur.branch, REPO], { cwd: REPO, stdio: 'pipe' });
@@ -410,7 +410,7 @@ function set(id, patch) {
             '3. If there is a clear failure pattern NOT already covered by a pending proposal: ' +
             'call propose_improvement() with a specific, targeted fix for that failure pattern. ' +
             '4. call capture_insight(category:"improvement-scan", text: one-sentence summary of what you found). ' +
-            'That is all. Do not build anything ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â only analyze and propose. End your response with: SCAN COMPLETE.';
+            'That is all. Do not build anything Ã¢â‚¬â€ only analyze and propose. End your response with: SCAN COMPLETE.';
           runSubagent(improvTask, 'read', 10 * 60 * 1000, null).catch(() => {});
         }, 3000); // 3s delay to let the current build settle
       }
@@ -524,11 +524,11 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, commitRefs, transcriptPath: null,
         checkpointPath: build ? (agents.get(id)?.checkpointPath ?? null) : null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
-      // Record which files this build agent modified ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â feeds mutation_map churn analysis
+      // Record which files this build agent modified Ã¢â‚¬â€ feeds mutation_map churn analysis
       if (build && _mutmap) {
         try {
           const { spawnSync } = _require('child_process');
-          // Use agent's worktree CWD, not REPO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â build agents commit to their fleet branch worktree
+          // Use agent's worktree CWD, not REPO Ã¢â‚¬â€ build agents commit to their fleet branch worktree
           const ag = agents.get(id) || {};
           const agentCwd = ag.cwd || REPO;
           // Use baseHash (recorded at worktree creation) to capture ALL commits, not just the last one
@@ -582,21 +582,6 @@ function _wrapBuildBrief(task, spec) {
   if (sp && sp.failureClass) {
     if (!FAILURE_CLASSES.includes(sp.failureClass)) throw new Error('invalid-failure-class: must be one of ' + FAILURE_CLASSES.join(' | ') + '; got ' + JSON.stringify(sp.failureClass));
     out.push('', '### Failure-Class Hint', String(sp.failureClass));
-  }
-  // Large-target structural-edit mandate (P-1787721855987): repeated string-anchor
-  // replaces on >1000-line files exhaust round budgets (B-311/-R, B-321, B-343).
-  const __lf = _t.match(/[\w.-]+\.(?:mjs|cjs|js|html|css|json)/g) || [];
-  for (const f of new Set(__lf)) {
-    try {
-      const fp = path.join(REPO, f);
-      if (fs.existsSync(fp)) {
-        const lines = fs.readFileSync(fp, 'utf8').split('\n').length;
-        if (lines > 1000) {
-          out.push('', '### Large-Target Edit Protocol (' + f + ', ' + lines + ' lines)', '- Do NOT read this file in full; use targeted line ranges/patterns only.', '- Use a scripted single-pass transform (Node script or PowerShell -replace) over repeated string-anchor edits.', '- Commit a WIP checkpoint at most 10 rounds in; never hold >10 rounds of uncommitted edits.');
-          break;
-        }
-      }
-    } catch { /* probe failure is non-fatal */ }
   }
   out.push('', '### Task', task);
   return out.join('\n');
@@ -722,7 +707,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
       const proj = _projects.getProject(projectId, path.join(REPO, 'memory'));
       if (proj && proj.status === 'active') {
         const phase = proj.phases && proj.phases[proj.currentPhaseIndex] ? proj.phases[proj.currentPhaseIndex] : 'unknown';
-        const milestoneStatus = (proj.milestones || []).map(m => (m.done ? 'ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“' : 'ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â¹') + ' ' + m.label).join(', ');
+        const milestoneStatus = (proj.milestones || []).map(m => (m.done ? 'Ã¢Å“â€œ' : 'Ã¢â€”â€¹') + ' ' + m.label).join(', ');
         const projBrief = [
           '',
           '## Project Context',
@@ -856,7 +841,7 @@ const spawnTool = tool(
     mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
     timeoutMinutes: z.number().optional().describe("Auto-cancel after N minutes (default 20). Set 0 to disable."),
     model: z.enum(["haiku", "sonnet", "opus"]).optional().describe("Model tier: haiku (fast/cheap reads), sonnet (default builds), opus (complex reasoning)"),
-    projectId: z.string().optional().describe("Project ID (P-xxx) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â injects project context (phase, milestones) into the spawned agent's task brief"),
+    projectId: z.string().optional().describe("Project ID (P-xxx) Ã¢â‚¬â€ injects project context (phase, milestones) into the spawned agent's task brief"),
     spec: z.object({
       scope: z.string().optional(),
       verification: z.union([z.string(), z.array(z.string())]).optional(),
@@ -883,13 +868,13 @@ const checkTool = tool(
 );
 const chainTool = tool(
   "chain_agents",
-  "Run a sequence of agents in order, each receiving the prior agent's result as context. Use for readÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢buildÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢verify pipelines. Returns the final agent's result.",
+  "Run a sequence of agents in order, each receiving the prior agent's result as context. Use for readÃ¢â€ â€™buildÃ¢â€ â€™verify pipelines. Returns the final agent's result.",
   {
     steps: z.array(z.object({
       task: z.string().describe("task for this step"),
       mode: z.enum(["read", "build"]).optional().describe("read (default) or build"),
     })).describe("ordered list of agent steps"),
-    projectId: z.string().optional().describe("Project ID (P-xxx) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â propagated to all steps in the chain"),
+    projectId: z.string().optional().describe("Project ID (P-xxx) Ã¢â‚¬â€ propagated to all steps in the chain"),
   },
   async (args) => {
     try {
@@ -919,7 +904,7 @@ const statusTool = tool(
       const branch = a.branch ? ` [${a.branch}]` : "";
       const turns = a.turns ? ` ${a.turns}t` : "";
       const time = elapsed != null ? ` ${elapsed}s ago` : "";
-      return `${a.id} [${a.state}]${cost}${turns}${branch}${time} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${(a.task || "").slice(0, 60)}`;
+      return `${a.id} [${a.state}]${cost}${turns}${branch}${time} Ã¢â‚¬â€ ${(a.task || "").slice(0, 60)}`;
     });
     return { content: [{ type: "text", text: rows.length ? rows.join("\n") : "no subagents" }] };
   }
@@ -936,11 +921,11 @@ const diagnoseTool = tool(
       const files = ['main.cjs', 'fleethost.mjs', 'index.html', 'preload.cjs', 'memcontext.cjs', 'memstore.cjs', 'prune.mjs'];
       for (const f of files) {
         const exists = fs.existsSync(path.join(REPO, f));
-        checks.push((exists ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“" : "ÃƒÂ¢Ã…â€œÃ¢â‚¬â€") + " " + f);
+        checks.push((exists ? "Ã¢Å“â€œ" : "Ã¢Å“â€”") + " " + f);
       }
       // Check memory dir
       const memDir = path.join(REPO, 'memory');
-      checks.push(fs.existsSync(memDir) ? "ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ memory/" : "ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ memory/ (missing)");
+      checks.push(fs.existsSync(memDir) ? "Ã¢Å“â€œ memory/" : "Ã¢Å“â€” memory/ (missing)");
       // Agent summary
       const all = [...agents.values()];
       const summary = all.length === 0 ? "no agents" :
@@ -962,7 +947,7 @@ const diagnoseTool = tool(
 );
 const proposeTool = tool(
   "propose_improvement",
-  "Queue a self-directed improvement proposal for Daniel to review. Use this when you identify something worth building or changing ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â even if Daniel hasn't asked for it. Proposals appear in the GUI.",
+  "Queue a self-directed improvement proposal for Daniel to review. Use this when you identify something worth building or changing Ã¢â‚¬â€ even if Daniel hasn't asked for it. Proposals appear in the GUI.",
   {
     description: z.string().describe("What to build or change, and why"),
     priority: z.enum(["high", "medium", "low"]).optional().describe("Urgency level (default: medium)"),
@@ -1011,7 +996,7 @@ const proposeTool = tool(
     // Broadcast to GUI
     send('proposal', proposal);
     const statusNote = autoRejected ? ` (auto-rejected: score ${intakeScore})` : intakeScore !== null ? ` (score: ${intakeScore})` : '';
-    return { content: [{ type: 'text', text: `Proposal queued: ${proposal.id} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "${proposal.description.slice(0, 80)}"${statusNote}` }] };
+    return { content: [{ type: 'text', text: `Proposal queued: ${proposal.id} Ã¢â‚¬â€ "${proposal.description.slice(0, 80)}"${statusNote}` }] };
   }
 );
 const loadProposalsTool = tool(
@@ -1036,7 +1021,7 @@ const loadProposalsTool = tool(
 );
 const journalWriteTool = tool(
   "journal_write",
-  "Write an observation or insight to the persistent memory store. Use this to intentionally record something worth remembering across sessions ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a discovery, a pattern you noticed, a decision and its rationale. This is ATLAS writing to its own memory.",
+  "Write an observation or insight to the persistent memory store. Use this to intentionally record something worth remembering across sessions Ã¢â‚¬â€ a discovery, a pattern you noticed, a decision and its rationale. This is ATLAS writing to its own memory.",
   {
     observation: z.string().describe("The fact or insight to record (1-3 sentences)"),
     topic: z.string().optional().describe("Topic tag, e.g. 'fleet', 'gui', 'memory', 'architecture'"),
@@ -1067,7 +1052,7 @@ const recallMemoryTool = tool(
   "recall_memory",
   "Recall relevant facts from the persistent memory store given a query. Use before deciding something to check if you already know relevant context from past sessions.",
   {
-    query: z.string().describe("What you want to recall ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a topic, question, or context phrase"),
+    query: z.string().describe("What you want to recall Ã¢â‚¬â€ a topic, question, or context phrase"),
     maxResults: z.number().optional().describe("Max facts to return (default 8)"),
   },
   async (args) => {
@@ -1105,7 +1090,7 @@ const recallMemoryTool = tool(
 
 const setGoalTool = tool(
   "set_goal",
-  "Record a persistent goal ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â something ATLAS intends to accomplish across sessions. Goals outlast individual conversations. Use for things like 'improve fleet reliability', 'add web awareness', 'keep memory store healthy'.",
+  "Record a persistent goal Ã¢â‚¬â€ something ATLAS intends to accomplish across sessions. Goals outlast individual conversations. Use for things like 'improve fleet reliability', 'add web awareness', 'keep memory store healthy'.",
   {
     goal: z.string().describe("What you intend to accomplish"),
     priority: z.enum(["high", "medium", "low"]).optional(),
@@ -1116,7 +1101,7 @@ const setGoalTool = tool(
     try {
       const g = _goals.addGoal(args.goal, args.priority, args.area, path.join(REPO, 'memory'));
       send('goal', g);
-      return { content: [{ type: 'text', text: `Goal set: ${g.id} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "${g.text}"` }] };
+      return { content: [{ type: 'text', text: `Goal set: ${g.id} Ã¢â‚¬â€ "${g.text}"` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `set_goal error: ${e.message}` }] };
     }
@@ -1162,7 +1147,7 @@ const resolveGoalTool = tool(
 
 const deferTaskTool = tool(
   "defer_task",
-  "Schedule a task to run automatically on ATLAS's next startup. Use when you want to continue work in the next session without Daniel having to ask ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ATLAS programs its own future. The task will be dispatched as a subagent when the station starts.",
+  "Schedule a task to run automatically on ATLAS's next startup. Use when you want to continue work in the next session without Daniel having to ask Ã¢â‚¬â€ ATLAS programs its own future. The task will be dispatched as a subagent when the station starts.",
   {
     task: z.string().describe("The task to run on next startup (will be dispatched as a subagent)"),
     reason: z.string().optional().describe("Why this should run next time, in addition to blocker and next_action"),
@@ -1181,7 +1166,7 @@ const deferTaskTool = tool(
         validationCondition: args.validation_condition,
       }, path.join(REPO, 'memory'));
       send('deferred', entry);
-      return { content: [{ type: 'text', text: `Deferred: ${entry.id} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â will run on next startup` }] };
+      return { content: [{ type: 'text', text: `Deferred: ${entry.id} Ã¢â‚¬â€ will run on next startup` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `defer_task error: ${e.message}` }] };
     }
@@ -1285,7 +1270,7 @@ const selfAssessTool = tool(
 
 const capabilityManifestTool = tool(
   "capability_manifest",
-  "Emit a structured manifest of ATLAS's current capabilities ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â all available tools, modules, and memory systems. Use to document current state or compare against desired capabilities before planning improvements.",
+  "Emit a structured manifest of ATLAS's current capabilities Ã¢â‚¬â€ all available tools, modules, and memory systems. Use to document current state or compare against desired capabilities before planning improvements.",
   { format: z.enum(["brief", "full"]).optional().describe("Output format (default: brief)") },
   async (args) => {
     const full = args.format === "full";
@@ -1318,15 +1303,15 @@ const capabilityManifestTool = tool(
     const modules = ["memcontext", "memstore", "memgraph", "dream", "resonance", "session-narrative", "goal-store", "deferred", "notifications", "fact-extractor", "prune", "selfloop", "mutationmap", "instructions", "routines", "crystals", "clusters", "outcome-tracker", "session-log", "predict", "work-eater", "paid-problem-radar", "skill-capsule", "skill-fitness", "skill-evolution"];
     const memory = ["facts.jsonl", "runs.ndjson", "sessions.ndjson", "goals.ndjson", "deferred.ndjson", "notifications.ndjson", "proposals.ndjson", "pulse.ndjson", "mutations.ndjson", "instructions.ndjson", "routines.ndjson", "crystals.ndjson", "clusters.ndjson", "outcomes.ndjson", "work-eater.ndjson", "skill-fitness.ndjson", "skill-candidates/", "skill-variants/"];
     if (!full) {
-      return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â stays accurate automatically
+      return { content: [{ type: 'text', text: `Tools (${tools.length}): ${tools.join(", ")}\nModules: ${modules.join(", ")}\nMemory files: ${memory.join(", ")}` }] }; // count is derived from tools.length Ã¢â‚¬â€ stays accurate automatically
     }
     const lines = [
-      `[Fleet Tools ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${tools.length} total]`,
-      ...tools.map(t => `  ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${t}`),
+      `[Fleet Tools Ã¢â‚¬â€ ${tools.length} total]`,
+      ...tools.map(t => `  Ã¢â‚¬Â¢ ${t}`),
       `\n[Modules]`,
-      ...modules.map(m => `  ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${m}.cjs`),
+      ...modules.map(m => `  Ã¢â‚¬Â¢ ${m}.cjs`),
       `\n[Persistent Memory]`,
-      ...memory.map(f => `  ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ memory/${f}`),
+      ...memory.map(f => `  Ã¢â‚¬Â¢ memory/${f}`),
     ];
     return { content: [{ type: 'text', text: lines.join('\n') }] };
   }
@@ -1334,7 +1319,7 @@ const capabilityManifestTool = tool(
 
 const triggerSelfloopTool = tool(
   "trigger_selfloop",
-  "Initiate ATLAS's self-improvement cycle: assess state, identify gaps, set goals, queue proposals. Call when you want to audit yourself and decide what to build next ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â even without Daniel's prompt.",
+  "Initiate ATLAS's self-improvement cycle: assess state, identify gaps, set goals, queue proposals. Call when you want to audit yourself and decide what to build next Ã¢â‚¬â€ even without Daniel's prompt.",
   {
     focus: z.string().optional().describe("Optional focus area, e.g. 'memory', 'fleet reliability', 'gui'"),
   },
@@ -1408,7 +1393,7 @@ const exportConvTool = tool(
   async (args) => {
     try {
       send('export_conv_request', { title: args.title || '' });
-      return { content: [{ type: 'text', text: 'Export requested ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the renderer will write the conversation to memory/conversations/' }] };
+      return { content: [{ type: 'text', text: 'Export requested Ã¢â‚¬â€ the renderer will write the conversation to memory/conversations/' }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `Export failed: ${e.message}` }] };
     }
@@ -1417,7 +1402,7 @@ const exportConvTool = tool(
 
 const writeDocTool = tool(
   "write_doc",
-  "Write or update a documentation file in the docs/ directory. Use to maintain ATLAS's own documentation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â architecture notes, capability descriptions, decision logs, how-to guides. Files are committed to git automatically.",
+  "Write or update a documentation file in the docs/ directory. Use to maintain ATLAS's own documentation Ã¢â‚¬â€ architecture notes, capability descriptions, decision logs, how-to guides. Files are committed to git automatically.",
   {
     filename: z.string().describe("Filename within docs/ (e.g. 'CAPABILITIES.md', 'ARCHITECTURE.md')"),
     content:  z.string().describe("Full file content in markdown"),
@@ -1486,7 +1471,7 @@ const runScriptTool = tool(
   "Execute a Node.js script or short shell command in the repo directory and return its stdout/stderr (truncated to 3000 chars). Use for self-testing, running build checks, reading git history with custom format, or executing any script in docs/ or memory/. NOT for long-running processes.",
   {
     command: z.string().describe("The command to run (e.g. 'node memcontext.cjs' or 'git log --oneline -10' or 'npm run lint')"),
-    cwd: z.string().optional().describe("Working directory ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â defaults to repo root"),
+    cwd: z.string().optional().describe("Working directory Ã¢â‚¬â€ defaults to repo root"),
     timeoutMs: z.number().optional().describe("Timeout in ms (default 10000, max 30000)"),
   },
   async (args, { signal } = {}) => {
@@ -1547,7 +1532,7 @@ const memConsolidateTool = tool(
       }
 
       const focusLine = args.focus ? `\nFocus especially on: "${args.focus}"\n` : '';
-      const prompt = `You are synthesizing ATLAS's memory. Below are recent facts and journal entries. Extract 3-5 key patterns, themes, or insights as a short synthesis note. Write it as plain text, 100-200 words. Do not list the individual facts ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â find what they add up to.${focusLine}
+      const prompt = `You are synthesizing ATLAS's memory. Below are recent facts and journal entries. Extract 3-5 key patterns, themes, or insights as a short synthesis note. Write it as plain text, 100-200 words. Do not list the individual facts Ã¢â‚¬â€ find what they add up to.${focusLine}
 
 FACTS (${facts.length}):
 ${facts.map(f => `[${f.topic || '?'}] ${f.fact || JSON.stringify(f)}`).join('\n').slice(0, 2000)}
@@ -1677,7 +1662,7 @@ const webResearchTool = tool(
 
 const relateFactsTool = tool(
   "relate_facts",
-  "Declare a typed relationship between two memory facts. Relations: supports, contradicts, elaborates, supersedes, related_to. Use 'supersedes' when a new fact replaces an old one ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the old fact is marked stale and filtered from future recalls.",
+  "Declare a typed relationship between two memory facts. Relations: supports, contradicts, elaborates, supersedes, related_to. Use 'supersedes' when a new fact replaces an old one Ã¢â‚¬â€ the old fact is marked stale and filtered from future recalls.",
   {
     fromKey: z.string().describe("Key of the source fact"),
     relation: z.enum(["supports", "contradicts", "elaborates", "supersedes", "related_to"]).describe("Relation type"),
@@ -1697,7 +1682,7 @@ const relateFactsTool = tool(
 
 const loadDreamsTool = tool(
   "load_dreams",
-  "Read ATLAS's recent dream reports ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â autonomous reflections generated every 100 minutes during idle pulses. Each dream contains patterns found in agent history, insights, improvement proposals, and a mood reading.",
+  "Read ATLAS's recent dream reports Ã¢â‚¬â€ autonomous reflections generated every 100 minutes during idle pulses. Each dream contains patterns found in agent history, insights, improvement proposals, and a mood reading.",
   {
     maxN: z.number().optional().describe("Number of recent dreams to return (default 3)"),
   },
@@ -1760,7 +1745,7 @@ const resonanceStatsTool = tool(
       const matches = _resonance.findSimilarRuns(args.task, runsFile, { maxResults: 5, minScore: 0.08 });
       if (!matches.length) return { content: [{ type: 'text', text: 'No resonant past runs found for this task (all similarity scores below threshold).' }] };
       const lines = matches.map((m, i) =>
-        `${i+1}. [${m.run.agentId}] ${(m.score*100).toFixed(0)}% match ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "${(m.run.task||'').slice(0,60)}..." ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${m.run.state} $${Number(m.run.cost||0).toFixed(3)}\n   Memory: ${(m.run.summary||'').slice(0,120)}`
+        `${i+1}. [${m.run.agentId}] ${(m.score*100).toFixed(0)}% match Ã¢â‚¬â€ "${(m.run.task||'').slice(0,60)}..." Ã¢â€ â€™ ${m.run.state} $${Number(m.run.cost||0).toFixed(3)}\n   Memory: ${(m.run.summary||'').slice(0,120)}`
       );
       return { content: [{ type: 'text', text: `Resonance check for: "${args.task.slice(0,60)}"\n\n${lines.join('\n\n')}` }] };
     } catch (e) {
@@ -1774,7 +1759,7 @@ const readSelfTool = tool(
   "Read a file from the ATLAS station source tree directly (no agent spawn). Optionally filter by regex pattern to return only matching lines. Cap: 6KB. Use for fast introspection of own source without consuming an agent slot.",
   {
     filePath: z.string().describe("Relative path from station root (e.g. 'fleethost.mjs', 'memcontext.cjs', 'index.html')"),
-    pattern: z.string().optional().describe("Regex pattern ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â if provided, returns only matching lines with line numbers"),
+    pattern: z.string().optional().describe("Regex pattern Ã¢â‚¬â€ if provided, returns only matching lines with line numbers"),
     startLine: z.number().optional().describe("First line to read (1-indexed). Use with endLine for windowed reads."),
     endLine: z.number().optional().describe("Last line to read (inclusive)"),
   },
@@ -1809,7 +1794,7 @@ const readSelfTool = tool(
 
 const fanResearchTool = tool(
   "fan_research",
-  "Parallel multi-angle research: spawn N simultaneous Haiku agents each investigating a question from a distinct angle, then synthesize with a Sonnet agent. Returns a cited report. Use for research that benefits from multiple independent perspectives ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â more thorough than a single web_research call.",
+  "Parallel multi-angle research: spawn N simultaneous Haiku agents each investigating a question from a distinct angle, then synthesize with a Sonnet agent. Returns a cited report. Use for research that benefits from multiple independent perspectives Ã¢â‚¬â€ more thorough than a single web_research call.",
   {
     question: z.string().describe("The research question"),
     angles: z.array(z.string()).min(2).max(5).describe("2-5 investigation angles/perspectives. Each becomes a separate parallel Haiku agent."),
@@ -1831,7 +1816,7 @@ const fanResearchTool = tool(
           let text = '';
           try {
             const iter = query({
-              prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â another agent covers the rest.`,
+              prompt: `Research question: ${args.question}\n\nYour angle: ${angle}\n\nResearch this angle thoroughly. Cite specific sources, dates, or evidence where possible. Be concise but specific (200-300 words). Focus only on your assigned angle Ã¢â‚¬â€ another agent covers the rest.`,
               options: {
                 model: MODEL_HAIKU,
                 ...fanOptions,
@@ -1861,7 +1846,7 @@ const fanResearchTool = tool(
 
 ${angleResults.map((r, i) => `[Angle ${i+1}: ${r.angle}]\n${r.text}`).join('\n\n')}
 
-Write a unified 300-400 word synthesis. Highlight where angles agree, where they diverge, and what the combined picture reveals. Be direct ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no padding.`;
+Write a unified 300-400 word synthesis. Highlight where angles agree, where they diverge, and what the combined picture reveals. Be direct Ã¢â‚¬â€ no padding.`;
 
       const synthId = `FAN-SYNTH-${Date.now()}`;
       const synthesisOptions = codexRouting({ atlasMode: 'read', atlasPurpose: 'research_synthesis' }, MODEL_SONNET);
@@ -1943,7 +1928,7 @@ const signalPropagateTool = tool(
       const lines = [];
       if (result.reinforced.length) lines.push(`Reinforced (supports): ${result.reinforced.join(', ')}`);
       if (result.flagged.length) lines.push(`Flagged for review (contradicts): ${result.flagged.join(', ')}`);
-      if (!lines.length) lines.push('No connected facts found ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â graph may not have edges from this key yet.');
+      if (!lines.length) lines.push('No connected facts found Ã¢â‚¬â€ graph may not have edges from this key yet.');
       return { content: [{ type: 'text', text: `Signal propagated from: ${args.factKey}\n${lines.join('\n')}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `signal_propagate error: ${e.message}` }] };
@@ -1956,10 +1941,10 @@ const generateToolTool = tool(
   "Meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs. Describe what you want the tool to do and ATLAS will implement it. The tool is written, tested syntactically, and registered in the fleet server. After the build completes, run verify_build() to confirm the addition. Use to extend your own capabilities from within a conversation.",
   {
     toolName: z.string().describe("Snake_case name for the new tool (becomes the tool() name string)"),
-    description: z.string().describe("What the tool does ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â this becomes the tool's description string visible to ATLAS"),
+    description: z.string().describe("What the tool does Ã¢â‚¬â€ this becomes the tool's description string visible to ATLAS"),
     inputSchema: z.string().describe("JSON description of input parameters: e.g. 'query: string (required), maxResults: number (optional, default 5)'"),
     behavior: z.string().describe("Detailed description of what the tool handler should do: what it reads, computes, calls, and returns"),
-    rationale: z.string().optional().describe("Why you want this tool ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â helps the build agent understand context"),
+    rationale: z.string().optional().describe("Why you want this tool Ã¢â‚¬â€ helps the build agent understand context"),
   },
   async (args) => {
     const taskPrompt = `You are adding a new fleet tool to ATLAS Station at E:\\atlas-station. Read fleethost.mjs in full before editing.
@@ -1986,7 +1971,7 @@ ${args.rationale ? `Rationale: ${args.rationale}` : ''}
 
 Follow ALL patterns exactly as done in the 30+ existing tools. Keep the handler defensive (try/catch, soft errors).
 
-Commit: feat(harness): add ${args.toolName} tool ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â [brief description]
+Commit: feat(harness): add ${args.toolName} tool Ã¢â‚¬â€ [brief description]
 Report: commit hash and a 1-sentence description of what was implemented.`;
 
     runSubagent(taskPrompt, "build", 20 * 60 * 1000, null).catch(() => {});
@@ -2016,7 +2001,7 @@ const verifyBuildTool = tool(
             f && /\.(js|cjs|mjs)$/.test(f)
           );
         }
-        // diff-tree returns empty for merge commits ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â fall back to files changed by the fleet branch
+        // diff-tree returns empty for merge commits Ã¢â‚¬â€ fall back to files changed by the fleet branch
         if (!filesToCheck.length) {
           const mergeResult = await runBoundedChild('git', ['-C', REPO, 'diff', '--name-only', 'HEAD^1', 'HEAD^2'], { timeoutMs: 5000, signal });
           if (mergeResult.status === 0) {
@@ -2050,7 +2035,7 @@ const verifyBuildTool = tool(
       }
 
       let syntaxVerdict = failed === 0 ? 'PASS' : 'FAIL';
-      const syntaxSummary = `syntax ${syntaxVerdict} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${passed} ok, ${failed} failed (${filesToCheck.length} files checked)`;
+      const syntaxSummary = `syntax ${syntaxVerdict} Ã¢â‚¬â€ ${passed} ok, ${failed} failed (${filesToCheck.length} files checked)`;
 
       // If syntax passes, also run behavioral tests to catch semantic regressions
       let behavioralSummary = '';
@@ -2060,7 +2045,7 @@ const verifyBuildTool = tool(
           if (testResult.cancelled) return { content: [{ type: 'text', text: 'verify_build: cancelled' }] };
           const lastLine = (testResult.stdout || '').trim().split('\n').pop() || '';
           const behavPass = testResult.status === 0;
-          behavioralSummary = `behavioral ${behavPass ? 'PASS' : 'FAIL'} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${lastLine}`;
+          behavioralSummary = `behavioral ${behavPass ? 'PASS' : 'FAIL'} Ã¢â‚¬â€ ${lastLine}`;
           if (!behavPass) {
             syntaxVerdict = 'FAIL'; // escalate overall verdict
             behavioralSummary += '\n' + (testResult.stdout || '').slice(-800);
@@ -2156,7 +2141,7 @@ const runTestsTool = tool(
       }
 
       const verdict = results.failed === 0 ? 'PASS' : 'FAIL';
-      const summary = `run_tests: ${verdict} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${results.passed} passed, ${results.failed} failed`;
+      const summary = `run_tests: ${verdict} Ã¢â‚¬â€ ${results.passed} passed, ${results.failed} failed`;
 
       // Store verdict as fact so ATLAS can recall last test state across session resets
       if (_memstore) {
@@ -2247,7 +2232,7 @@ const shardMemoryTool = tool(
       const pinMatch = out.match(/pin=([0-9a-f]+)/);
       const pin = pinMatch ? pinMatch[1] : null;
       send('shard_memory', { file: args.file, pin, output: out });
-      return { content: [{ type: 'text', text: out + (pin ? `\nPIN: ${pin} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â use recover_shard("${pin}") to restore after corruption` : '') }] };
+      return { content: [{ type: 'text', text: out + (pin ? `\nPIN: ${pin} Ã¢â‚¬â€ use recover_shard("${pin}") to restore after corruption` : '') }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `shard_memory error: ${e.message}` }] };
     }
@@ -2306,7 +2291,7 @@ const continuityStatusTool = tool(
 
 const stagedVerifyTool = tool(
   "staged_verify_build",
-  "Merge fleet branch into a temp branch off master, run node --check, report pass/fail ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never touches master. Call before committing a real merge.",
+  "Merge fleet branch into a temp branch off master, run node --check, report pass/fail Ã¢â‚¬â€ never touches master. Call before committing a real merge.",
   {
     agentId: z.string().describe("Fleet agent ID (e.g. B-104)")
   },
@@ -2381,7 +2366,7 @@ const stagedVerifyTool = tool(
       if (!behavioralError && bFailed === 0) testNote = ` | behavioral: ${bPassed} passed`;
       else {
         const failLines = behavioralText.split('\n').filter(line => line.trim().startsWith('FAIL:')).slice(0, 5);
-        testNote = ` | behavioral: ${bFailed} FAILED ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ` + (failLines.join('; ') || behavioralError?.message || 'unknown failure');
+        testNote = ` | behavioral: ${bFailed} FAILED Ã¢â‚¬â€ ` + (failLines.join('; ') || behavioralError?.message || 'unknown failure');
         allPassed = false;
         failMsg += '\nBehavioral tests failed:\n' + (failLines.join('\n') || behavioralError?.message || 'unknown failure');
       }
@@ -2398,7 +2383,7 @@ const stagedVerifyTool = tool(
 
 const mutationMapTool = tool(
   "mutation_map",
-  "Show ATLAS's codebase churn map ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â which files have been modified most frequently across build agents, how many agents touched each file, and when. Optionally filter to a specific file to see its full modification history. Use to identify unstable or heavily-evolved parts of the station.",
+  "Show ATLAS's codebase churn map Ã¢â‚¬â€ which files have been modified most frequently across build agents, how many agents touched each file, and when. Optionally filter to a specific file to see its full modification history. Use to identify unstable or heavily-evolved parts of the station.",
   {
     file: z.string().optional().describe("Specific file to get history for (e.g. 'fleethost.mjs'). If omitted, shows top 10 most-churned files."),
     topN: z.number().optional().describe("Number of top files to show (default 10, max 20)"),
@@ -2415,9 +2400,9 @@ const mutationMapTool = tool(
       }
       const n = Math.min(args.topN || 10, 20);
       const top = _mutmap.topChurn(memDir, n);
-      if (!top.length) return { content: [{ type: 'text', text: 'No mutation records yet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â records accumulate after build agents complete.' }] };
+      if (!top.length) return { content: [{ type: 'text', text: 'No mutation records yet Ã¢â‚¬â€ records accumulate after build agents complete.' }] };
       const lines = top.map((f, i) =>
-        `${i+1}. ${f.file} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${f.count} edit${f.count !== 1 ? 's' : ''} by ${f.agents.length} agent${f.agents.length !== 1 ? 's' : ''} (last: ${(f.lastTs||'').slice(0,10)})`
+        `${i+1}. ${f.file} Ã¢â‚¬â€ ${f.count} edit${f.count !== 1 ? 's' : ''} by ${f.agents.length} agent${f.agents.length !== 1 ? 's' : ''} (last: ${(f.lastTs||'').slice(0,10)})`
       );
       return { content: [{ type: 'text', text: `Codebase churn map (top ${top.length}):\n${lines.join('\n')}` }] };
     } catch (e) {
@@ -2428,10 +2413,10 @@ const mutationMapTool = tool(
 
 const setInstructionTool = tool(
   "set_instruction",
-  "Write a standing behavioral instruction to persistent memory. These instructions are injected into your own operating context at the start of every session ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â they become part of how you work. Use to encode learned best practices, recurring preferences, or standing rules Daniel has communicated. Replaces any existing instruction with the same key.",
+  "Write a standing behavioral instruction to persistent memory. These instructions are injected into your own operating context at the start of every session Ã¢â‚¬â€ they become part of how you work. Use to encode learned best practices, recurring preferences, or standing rules Daniel has communicated. Replaces any existing instruction with the same key.",
   {
     key: z.string().describe("Short identifier for this instruction (e.g. 'post_merge', 'verbosity', 'verify_always')"),
-    instruction: z.string().describe("The instruction text ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â first person, specific, actionable"),
+    instruction: z.string().describe("The instruction text Ã¢â‚¬â€ first person, specific, actionable"),
   },
   async (args) => {
     if (!_instructions) return { content: [{ type: 'text', text: 'instructions module not available' }] };
@@ -2446,7 +2431,7 @@ const setInstructionTool = tool(
 
 const getInstructionsTool = tool(
   "get_instructions",
-  "List all active self-instructions ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â your own standing behavioral directives from prior sessions. Call to audit what rules you've set for yourself.",
+  "List all active self-instructions Ã¢â‚¬â€ your own standing behavioral directives from prior sessions. Call to audit what rules you've set for yourself.",
   {},
   async () => {
     if (!_instructions) return { content: [{ type: 'text', text: 'instructions module not available' }] };
@@ -2480,7 +2465,7 @@ const clearInstructionTool = tool(
 
 const saveRoutineTool = tool(
   "save_routine",
-  "Save a named workflow routine ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a reusable sequence of tool calls. Build up a library of best-practice sequences (e.g. 'post_merge_suite', 'morning_check'). Steps are stored and can be retrieved with run_routine.",
+  "Save a named workflow routine Ã¢â‚¬â€ a reusable sequence of tool calls. Build up a library of best-practice sequences (e.g. 'post_merge_suite', 'morning_check'). Steps are stored and can be retrieved with run_routine.",
   {
     name: z.string().describe("Routine name (snake_case)"),
     description: z.string().describe("What this routine does"),
@@ -2488,7 +2473,7 @@ const saveRoutineTool = tool(
       tool: z.string().describe("Tool name to call"),
       args: z.record(z.unknown()).optional().describe("Arguments for this tool call"),
       description: z.string().optional().describe("Why this step"),
-    })).describe("Ordered steps ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â each with tool name and args"),
+    })).describe("Ordered steps Ã¢â‚¬â€ each with tool name and args"),
   },
   async (args) => {
     if (!_routines) return { content: [{ type: 'text', text: 'routines module not available' }] };
@@ -2503,7 +2488,7 @@ const saveRoutineTool = tool(
 
 const runRoutineTool = tool(
   "run_routine",
-  "Retrieve and display a saved routine's steps as executable instructions. Returns the full step sequence so you can execute each tool call in order. Does not auto-execute ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â you perform each step.",
+  "Retrieve and display a saved routine's steps as executable instructions. Returns the full step sequence so you can execute each tool call in order. Does not auto-execute Ã¢â‚¬â€ you perform each step.",
   {
     name: z.string().describe("Routine name to retrieve"),
   },
@@ -2524,7 +2509,7 @@ const runRoutineTool = tool(
 
 const listRoutinesTool = tool(
   "list_routines",
-  "List all saved workflow routines ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â named sequences of tool calls you've built up as best practices.",
+  "List all saved workflow routines Ã¢â‚¬â€ named sequences of tool calls you've built up as best practices.",
   {},
   async () => {
     if (!_routines) return { content: [{ type: 'text', text: 'routines module not available' }] };
@@ -2541,7 +2526,7 @@ const listRoutinesTool = tool(
 
 const crystallizeTool = tool(
   "crystallize",
-  "Manually trigger session crystallization ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a Haiku agent distills the current session's activity into a 3-sentence memory crystal stored in memory/crystals.ndjson. Crystals are injected into context on future sessions as high-density summaries. Also shows existing crystals.",
+  "Manually trigger session crystallization Ã¢â‚¬â€ a Haiku agent distills the current session's activity into a 3-sentence memory crystal stored in memory/crystals.ndjson. Crystals are injected into context on future sessions as high-density summaries. Also shows existing crystals.",
   {
     showExisting: z.boolean().optional().describe("If true, list the last 5 crystals from prior sessions"),
   },
@@ -2570,7 +2555,7 @@ const crystallizeTool = tool(
 
 const clusterFactsTool = tool(
   "cluster_facts",
-  "Show the semantic topology of ATLAS's memory ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â how facts have self-organized into named topic clusters. Each cluster represents a coherent area of knowledge. Use recluster:true to rebuild cluster assignments from all current facts.",
+  "Show the semantic topology of ATLAS's memory Ã¢â‚¬â€ how facts have self-organized into named topic clusters. Each cluster represents a coherent area of knowledge. Use recluster:true to rebuild cluster assignments from all current facts.",
   {
     recluster: z.boolean().optional().describe("If true, rebuild all cluster assignments from scratch (takes a moment for large memories)"),
     showKeywords: z.boolean().optional().describe("If true, show top keywords for each cluster"),
@@ -2587,7 +2572,7 @@ const clusterFactsTool = tool(
       if (!cs.length) return { content: [{ type: 'text', text: 'No clusters yet. Clusters form automatically as facts accumulate. Use recluster:true to process existing facts.' }] };
       const lines = cs.map(c => {
         let line = `${c.label} (${c.factCount || 0} facts)`;
-        if (args.showKeywords && c.keywords) line += ` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${c.keywords.slice(0, 5).join(', ')}`;
+        if (args.showKeywords && c.keywords) line += ` Ã¢â‚¬â€ ${c.keywords.slice(0, 5).join(', ')}`;
         return line;
       });
       return { content: [{ type: 'text', text: `Memory clusters (${cs.length}):\n${lines.join('\n')}` }] };
@@ -2641,9 +2626,9 @@ const drainProposalsTool = tool(
 
 const captureInsightTool = tool(
   "capture_insight",
-  "Manually crystallize a specific insight from the current conversation into memory/crystals.ndjson. Use when you notice something important mid-conversation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a decision made, a pattern recognized, an approach that failed. More precise than waiting for the auto-crystallization trigger.",
+  "Manually crystallize a specific insight from the current conversation into memory/crystals.ndjson. Use when you notice something important mid-conversation Ã¢â‚¬â€ a decision made, a pattern recognized, an approach that failed. More precise than waiting for the auto-crystallization trigger.",
   {
-    insight: z.string().describe("The insight to capture ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â be dense and specific. Will be stored as a crystal entry and injected into future session contexts."),
+    insight: z.string().describe("The insight to capture Ã¢â‚¬â€ be dense and specific. Will be stored as a crystal entry and injected into future session contexts."),
     category: z.string().optional().describe("Optional category tag (e.g. 'architecture', 'failure', 'decision', 'pattern')"),
   },
   async (args) => {
@@ -2661,7 +2646,7 @@ const captureInsightTool = tool(
 
 const pruneFactsTool = tool(
   "prune_facts",
-  "Mark old, low-value facts as stale. Identifies facts older than maxAgeDays with low confidence (inferred) and moves them to the stale index. Does not delete ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â facts can be recovered. Use memory_health to see fact age distribution first.",
+  "Mark old, low-value facts as stale. Identifies facts older than maxAgeDays with low confidence (inferred) and moves them to the stale index. Does not delete Ã¢â‚¬â€ facts can be recovered. Use memory_health to see fact age distribution first.",
   {
     maxAgeDays: z.number().optional().default(30).describe("Facts older than this (in days) are candidates for pruning. Default: 30."),
     dryRun: z.boolean().optional().describe("If true, report what would be pruned without changing anything"),
@@ -2707,7 +2692,7 @@ const pruneFactsTool = tool(
 
 const rateBuildTool = tool(
   "rate_build",
-  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes. IMPORTANT: Provide causalChain for every rating ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â for 'bad' ratings it is required (record which reasoning steps broke and what assumptions they violated). For 'good' ratings, describe what went right in causal terms.",
+  "Record a quality rating for a completed build agent. Use to track whether builds actually achieved their goals beyond syntax validity. Ratings accumulate into a success-rate metric visible via build_outcomes. IMPORTANT: Provide causalChain for every rating Ã¢â‚¬â€ for 'bad' ratings it is required (record which reasoning steps broke and what assumptions they violated). For 'good' ratings, describe what went right in causal terms.",
   {
     agentId: z.string().describe("Agent ID to rate (e.g. 'B-91')"),
     rating: z.enum(["good", "partial", "bad"]).describe("good = achieved goal cleanly; partial = worked but with issues; bad = missed the goal or introduced problems"),
@@ -2727,7 +2712,7 @@ const rateBuildTool = tool(
     try {
       const memDir = path.join(REPO, 'memory');
       const entry = _outcomeTracker.rateOutcome(args.agentId, args.rating, args.notes, memDir, undefined, args.causalChain);
-      return { content: [{ type: 'text', text: `Rated ${args.agentId}: ${entry.rating}${args.notes ? ' ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ' + args.notes : ''}` }] };
+      return { content: [{ type: 'text', text: `Rated ${args.agentId}: ${entry.rating}${args.notes ? ' Ã¢â‚¬â€ ' + args.notes : ''}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `rate_build error: ${e.message}` }] };
     }
@@ -2736,7 +2721,7 @@ const rateBuildTool = tool(
 
 const buildOutcomesTool = tool(
   "build_outcomes",
-  "Show aggregate build quality metrics ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â success rate, rating distribution, recent outcomes. Use to evaluate whether the fleet is improving over time.",
+  "Show aggregate build quality metrics Ã¢â‚¬â€ success rate, rating distribution, recent outcomes. Use to evaluate whether the fleet is improving over time.",
   {
     showRecent: z.number().optional().describe("Show this many most recent rated builds (default 5)"),
   },
@@ -2753,7 +2738,7 @@ const buildOutcomesTool = tool(
         `  Good: ${stats.good} | Partial: ${stats.partial} | Bad: ${stats.bad}`,
         `  Success rate: ${stats.successRate}`,
         recent.length ? `\nRecent (last ${Math.min(n, recent.length)}):` : '',
-        ...recent.slice(-n).map(o => `  [${String(o.ts).slice(0, 10)}] ${o.agentId}: ${o.rating}${o.notes ? ' ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ' + o.notes.slice(0, 60) : ''}`),
+        ...recent.slice(-n).map(o => `  [${String(o.ts).slice(0, 10)}] ${o.agentId}: ${o.rating}${o.notes ? ' Ã¢â‚¬â€ ' + o.notes.slice(0, 60) : ''}`),
       ];
       if (_outcomeTracker && _outcomeTracker.failureProfile) {
         try {
@@ -2819,7 +2804,7 @@ const economicRadarTool = tool(
 
 const contextTelemetryTool = tool(
   "context_telemetry",
-  "Analyze historical context budget usage ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â average utilization, which sections are largest, how often budget is exceeded. Use to evaluate whether context improvements (semantic routing, decay, crystals) are actually working.",
+  "Analyze historical context budget usage Ã¢â‚¬â€ average utilization, which sections are largest, how often budget is exceeded. Use to evaluate whether context improvements (semantic routing, decay, crystals) are actually working.",
   {
     lastN: z.number().optional().default(20).describe("Analyze the last N turns. Default: 20."),
   },
@@ -2864,7 +2849,7 @@ const contextTelemetryTool = tool(
 
 const revertBuildTool = tool(
   "revert_build",
-  "Revert a fleet build by finding its merge commit and running git revert. Use when verify_build or manual review shows a build introduced problems. Creates a new revert commit ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â does not force-push or lose history.",
+  "Revert a fleet build by finding its merge commit and running git revert. Use when verify_build or manual review shows a build introduced problems. Creates a new revert commit Ã¢â‚¬â€ does not force-push or lose history.",
   {
     agentId: z.string().describe("Agent ID whose merge commit to revert (e.g. 'B-91')"),
     dryRun: z.boolean().optional().describe("If true, show which commit would be reverted without reverting"),
@@ -2964,7 +2949,7 @@ const retentionReportTool = tool(
 
 const projectCreateTool = tool(
   "project_create",
-  "Start a new named project with phases and optional milestones. Projects persist across sessions ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â check project_status() at session start to resume in-progress work. Use for any multi-session initiative.",
+  "Start a new named project with phases and optional milestones. Projects persist across sessions Ã¢â‚¬â€ check project_status() at session start to resume in-progress work. Use for any multi-session initiative.",
   {
     name: z.string().describe("Project name"),
     description: z.string().describe("What this project is about and why"),
@@ -2996,7 +2981,7 @@ const projectAdvanceTool = tool(
   "Advance a project to its next phase, recording transition notes. When the last phase completes, the project is automatically marked done.",
   {
     id: z.string().describe("Project ID (P-...)"),
-    notes: z.string().optional().describe("Notes on this phase transition ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â what was done, what was learned"),
+    notes: z.string().optional().describe("Notes on this phase transition Ã¢â‚¬â€ what was done, what was learned"),
   },
   async (args) => {
     if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
@@ -3009,7 +2994,7 @@ const projectAdvanceTool = tool(
       }
       const prev = p.phases[p.currentPhaseIndex - 1] || '?';
       const next = p.phases[p.currentPhaseIndex];
-      return { content: [{ type: 'text', text: `Project ${p.name}: ${prev} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${next}` }] };
+      return { content: [{ type: 'text', text: `Project ${p.name}: ${prev} Ã¢â€ â€™ ${next}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `project_advance error: ${e.message}` }] };
     }
@@ -3032,9 +3017,9 @@ const projectStatusTool = tool(
         if (!p) return { content: [{ type: 'text', text: `Project ${args.id} not found` }] };
         const phase = p.phases[p.currentPhaseIndex] || 'done';
         const milestones = p.milestones && p.milestones.length
-          ? '\nMilestones: ' + p.milestones.map(m => (m.done ? 'ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“' : 'ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â¹') + ' ' + m.label).join(', ')
+          ? '\nMilestones: ' + p.milestones.map(m => (m.done ? 'Ã¢Å“â€œ' : 'Ã¢â€”â€¹') + ' ' + m.label).join(', ')
           : '';
-        const phases = 'Phases: ' + p.phases.map((ph, i) => (i === p.currentPhaseIndex ? `[${ph}]` : ph)).join(' ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ');
+        const phases = 'Phases: ' + p.phases.map((ph, i) => (i === p.currentPhaseIndex ? `[${ph}]` : ph)).join(' Ã¢â€ â€™ ');
         const recentLog = (p.log || []).slice(-3).map(e => `  [${String(e.ts).slice(0, 10)}] ${e.action}${e.notes ? ': ' + e.notes.slice(0, 60) : ''}`).join('\n');
         const lines = [
           `${p.id}: ${p.name} [${p.status}]`,
@@ -3051,7 +3036,7 @@ const projectStatusTool = tool(
       if (!projects.length) return { content: [{ type: 'text', text: `No ${filter === 'all' ? '' : 'active '}projects found.` }] };
       const lines = projects.map(p => {
         const phase = p.phases[p.currentPhaseIndex] || 'done';
-        return `[${p.status}] ${p.id}: ${p.name} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Phase ${p.currentPhaseIndex + 1}/${p.phases.length}: ${phase}`;
+        return `[${p.status}] ${p.id}: ${p.name} Ã¢â‚¬â€ Phase ${p.currentPhaseIndex + 1}/${p.phases.length}: ${phase}`;
       });
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (e) {
@@ -3066,7 +3051,7 @@ const projectCompleteTool = tool(
   {
     id: z.string().describe("Project ID (P-...)"),
     outcome: z.enum(["completed", "abandoned"]).describe("completed = finished successfully; abandoned = dropped"),
-    notes: z.string().optional().describe("Final outcome note ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â what was achieved or why abandoned"),
+    notes: z.string().optional().describe("Final outcome note Ã¢â‚¬â€ what was achieved or why abandoned"),
   },
   async (args) => {
     if (!_projects) return { content: [{ type: 'text', text: 'projects module not available' }] };
@@ -3093,7 +3078,7 @@ function autoRate(resultStr) {
   // Good: staged verify pass, verify_build PASS, or explicit success patterns
   if (text.includes('staged verify pass') ||
       text.includes('node --check') && text.includes('pass') ||
-      /\bsyntax ok\b/i.test(text) || text.includes('ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“') ||
+      /\bsyntax ok\b/i.test(text) || text.includes('Ã¢Å“â€œ') ||
       /\bcommitted\b/.test(text) && !/\berror\b/.test(text)) {
     return 'good';
   }
@@ -3104,12 +3089,12 @@ const autoBuildTool = tool(
   "auto_build",
   "Autonomously initiate fleet builds from the proposals backlog. Reads pending HIGH-priority proposals, spawns a build agent for each (up to limit), marks them as queued, and notifies Daniel. Use to self-direct work without requiring a per-build prompt.",
   {
-    focus: z.string().optional().describe("Keyword to prefer ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â proposals whose text matches focus rank first"),
+    focus: z.string().optional().describe("Keyword to prefer Ã¢â‚¬â€ proposals whose text matches focus rank first"),
     limit: z.number().optional().default(1).describe("Max number of proposals to build simultaneously. Default: 1."),
     dryRun: z.boolean().optional().describe("If true, show what would be built without spawning agents"),
     priority: z.enum(["HIGH", "MEDIUM", "LOW", "ALL"]).optional().default("HIGH").describe("Which priority to draw from. Default: HIGH only."),
     force: z.boolean().optional().describe("Override quality gate (use when you know recent failures are unrelated)"),
-    projectId: z.string().optional().describe("Project ID (P-xxx) to link spawned builds to ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â context is injected into build agents"),
+    projectId: z.string().optional().describe("Project ID (P-xxx) to link spawned builds to Ã¢â‚¬â€ context is injected into build agents"),
   },
   async (args) => {
     try {
@@ -3180,7 +3165,7 @@ const autoBuildTool = tool(
         }
         launched.push({ agentId: bareId, proposal: proposalText.slice(0, 80), rating });
 
-        // Mark proposal as queued ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â match by ts (unique ISO timestamp)
+        // Mark proposal as queued Ã¢â‚¬â€ match by ts (unique ISO timestamp)
         try {
           const freshLines = fs.readFileSync(proposalsFile, 'utf8').trim().split('\n').filter(Boolean);
           const freshAll = freshLines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
@@ -3196,7 +3181,7 @@ const autoBuildTool = tool(
       // 4. Notify
       if (_notif) {
         try {
-          const summary = launched.map(l => `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${l.agentId}: ${l.proposal} [${l.rating}]`).join('\n');
+          const summary = launched.map(l => `Ã¢â‚¬Â¢ ${l.agentId}: ${l.proposal} [${l.rating}]`).join('\n');
           const n = _notif.notify(`auto_build launched ${launched.length} agent(s):\n${summary}`, 'info', path.join(REPO, 'memory'));
           if (n) send('notification', n);
         } catch {}
@@ -3285,16 +3270,16 @@ const triageProposalsTool = tool(
       kept.sort((a, b) => b._score - a._score);
 
       const lines = [
-        `Triage complete ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${kept.length} kept, ${rejected.length} rejected (minScore:${minScore}, priority:${priority})`,
+        `Triage complete Ã¢â‚¬â€ ${kept.length} kept, ${rejected.length} rejected (minScore:${minScore}, priority:${priority})`,
         '',
       ];
       for (const p of kept) {
-        lines.push(`[score:${p._score}] [${p.priority || '?'}] ${(p.description || p.text || '').slice(0, 80)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${p._reason}`);
+        lines.push(`[score:${p._score}] [${p.priority || '?'}] ${(p.description || p.text || '').slice(0, 80)} Ã¢â‚¬â€ ${p._reason}`);
       }
       if (rejected.length) {
         lines.push('', `Rejected (${rejected.length}):`);
         for (const p of rejected) {
-          lines.push(`  [score:${p._score}] ${(p.description || p.text || '').slice(0, 60)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${p._reason}`);
+          lines.push(`  [score:${p._score}] ${(p.description || p.text || '').slice(0, 60)} Ã¢â‚¬â€ ${p._reason}`);
         }
       }
       return { content: [{ type: 'text', text: lines.join('\n') }] };
@@ -3306,7 +3291,7 @@ const triageProposalsTool = tool(
 
 const toolAuditTool = tool(
   "tool_audit",
-  "Audit tool usage patterns ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â which tools ATLAS calls most frequently, what fraction of calls succeed, and which tools have never been called.",
+  "Audit tool usage patterns Ã¢â‚¬â€ which tools ATLAS calls most frequently, what fraction of calls succeed, and which tools have never been called.",
   {
     windowDays: z.number().optional().describe("Number of days to look back in runs (default: 30)"),
   },
@@ -3330,7 +3315,7 @@ const toolAuditTool = tool(
         .map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
         .filter(r => r.ts && new Date(r.ts).getTime() >= cutoff);
 
-      // Runs don't store per-tool call detail ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â build a runs-by-day histogram instead
+      // Runs don't store per-tool call detail Ã¢â‚¬â€ build a runs-by-day histogram instead
       const byDay = {};
       const byState = { done: 0, failed: 0, other: 0 };
       for (const r of runs) {
@@ -3347,7 +3332,7 @@ const toolAuditTool = tool(
       const histogram = days.map(d => `  ${d}: ${byDay[d]} runs`).join('\n');
 
       const lines = [
-        `Tool Audit ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â last ${windowDays} days`,
+        `Tool Audit Ã¢â‚¬â€ last ${windowDays} days`,
         `Total runs: ${totalRuns} (${successRate}% success)`,
         `Done: ${byState.done}, Failed: ${byState.failed}, Other: ${byState.other}`,
         '',
@@ -3365,7 +3350,7 @@ const toolAuditTool = tool(
 
 const proposalAnalysisTool = tool(
   "proposal_analysis",
-  "Analyze the proposal queue ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â age distribution, priority breakdown, rejection rate, average score if scored.",
+  "Analyze the proposal queue Ã¢â‚¬â€ age distribution, priority breakdown, rejection rate, average score if scored.",
   {},
   async () => {
     try {
@@ -3409,7 +3394,7 @@ const proposalAnalysisTool = tool(
         : null;
 
       const lines = [
-        `Proposal Analysis ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${total} total`,
+        `Proposal Analysis Ã¢â‚¬â€ ${total} total`,
         `  Pending: ${counts.pending}, Deferred: ${counts.deferred}, Consumed: ${counts.consumed}, Rejected: ${counts.rejected}`,
         `Rejection rate: ${rejectionRate}%`,
         avgAgeHoursActive != null ? `Avg age (active): ${avgAgeHoursActive}h` : 'Avg age: n/a',
@@ -3425,7 +3410,7 @@ const proposalAnalysisTool = tool(
 
 const memoryHealthDetailTool = tool(
   "memory_health_detail",
-  "Report on memory store health ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â file sizes, record counts, stale/duplicate facts.",
+  "Report on memory store health Ã¢â‚¬â€ file sizes, record counts, stale/duplicate facts.",
   {},
   async () => {
     try {
@@ -3469,7 +3454,7 @@ const memoryHealthDetailTool = tool(
       }
 
       const lines = [
-        `Memory Health ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${fileStats.length} files, ${totalRecords} total records`,
+        `Memory Health Ã¢â‚¬â€ ${fileStats.length} files, ${totalRecords} total records`,
         '',
         ...fileStats.sort((a, b) => b.records - a.records).map(f => `  ${f.name}: ${f.records} records, ${f.sizeKB} KB`),
         '',
@@ -3485,7 +3470,7 @@ const memoryHealthDetailTool = tool(
 
 const daemonReportTool = tool(
   "daemon_report",
-  "Summarize recent daemon session activity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â last N sessions, outcomes, timing.",
+  "Summarize recent daemon session activity Ã¢â‚¬â€ last N sessions, outcomes, timing.",
   {
     n: z.number().optional().describe("Number of recent sessions to return (default: 10)"),
   },
@@ -3543,12 +3528,12 @@ const daemonReportTool = tool(
         : null;
 
       const lines = [
-        `Daemon Report ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${totalSessions} total sessions, showing last ${recent.length}`,
+        `Daemon Report Ã¢â‚¬â€ ${totalSessions} total sessions, showing last ${recent.length}`,
         avgDurationMs != null ? `Avg duration: ${Math.round(avgDurationMs / 1000)}s` : '',
         '',
         ...recent.map((s, i) => {
           const dur = s.durationMs != null ? `${Math.round(s.durationMs / 1000)}s` : '?';
-          const excerpt = s.replyExcerpt ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "${s.replyExcerpt}"` : '';
+          const excerpt = s.replyExcerpt ? ` Ã¢â‚¬â€ "${s.replyExcerpt}"` : '';
           return `  ${i + 1}. [${s.state}] ${s.startTs || '?'} (${dur})${excerpt}`;
         }),
       ].filter(l => l !== '');
@@ -3602,7 +3587,7 @@ const fleetHealthTool = tool(
         `Stuck >20min in one state: ${stuck.length ? stuck.map((s) => `${s.id}[${s.state}] ${s.minutesInState}min`).join(', ') : 'none'}`,
         `Turn bounds: WORKER=${bounds.WORKER_TURN_BOUND ?? 'unknown'} BUILD=${bounds.BUILD_TURN_BOUND ?? 'unknown'} RETRY=${bounds.RETRY_TURN_BOUND ?? 'unknown'}`,
         failures.length ? `Last ${failures.length} failure(s):` : 'No failures recorded.',
-        ...failures.map((f, i) => `  ${i + 1}. [${f.id}] ${f.ts || '?'}${f.failSubtype ? ' (' + f.failSubtype + ')' : ''} ÃƒÂ¯Ã‚Â¿Ã‚Â½ ${f.summary}`),
+        ...failures.map((f, i) => `  ${i + 1}. [${f.id}] ${f.ts || '?'}${f.failSubtype ? ' (' + f.failSubtype + ')' : ''} Ã¯Â¿Â½ ${f.summary}`),
       ];
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (e) {
@@ -3681,12 +3666,12 @@ const daemonHealthTool = tool(
       else { health = 'healthy'; message = `Last run ${hoursSinceRun}h ago`; }
 
       const lines = [
-        `Daemon Health: ${health.toUpperCase()} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${message}`,
+        `Daemon Health: ${health.toUpperCase()} Ã¢â‚¬â€ ${message}`,
         `Scheduler: ${schedulerStatus}${nextRunTime ? ' | Next: ' + nextRunTime : ''}`,
         lastRunTs ? `Last start: ${lastRunTs}` : 'Last start: never',
         (() => { try { const m = require('./retention.cjs').holdoutMetrics(); return `Holdout gate: ${m.accepted} accepted / ${m.rejected} rejected`; } catch (_) { return null; } })(),
         recentSessions.length ? `Recent sessions (${recentSessions.length}):` : 'No sessions recorded.',
-        ...recentSessions.map((s, i) => `  ${i + 1}. [${s.state}] ${s.startTs || '?'}${s.replyExcerpt ? ' ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "' + s.replyExcerpt + '"' : ''}`),
+        ...recentSessions.map((s, i) => `  ${i + 1}. [${s.state}] ${s.startTs || '?'}${s.replyExcerpt ? ' Ã¢â‚¬â€ "' + s.replyExcerpt + '"' : ''}`),
       ].filter(l => l !== '');
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (e) {
@@ -3762,8 +3747,8 @@ const closeProposalTool = tool(
         return { content: [{ type: 'text', text: `No proposal found matching: ${args.id}` }] };
       }
       if (matches.length > 1) {
-        const list = matches.map(m => `  ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ [${m.id}] ${(m.description || m.text || '').slice(0, 60)}`).join('\n');
-        return { content: [{ type: 'text', text: `Multiple matches for "${args.id}" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â please be more specific:\n${list}` }] };
+        const list = matches.map(m => `  Ã¢â‚¬Â¢ [${m.id}] ${(m.description || m.text || '').slice(0, 60)}`).join('\n');
+        return { content: [{ type: 'text', text: `Multiple matches for "${args.id}" Ã¢â‚¬â€ please be more specific:\n${list}` }] };
       }
 
       // Exactly one match: update it
@@ -3786,7 +3771,7 @@ const closeProposalTool = tool(
       fs.renameSync(pfile + '.tmp', pfile);
 
       const descPrefix = (matched.description || matched.text || matched.proposal || 'proposal').slice(0, 100);
-      return { content: [{ type: 'text', text: `Closed: "${descPrefix}"${args.reason ? ' ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ' + args.reason : ''}` }] };
+      return { content: [{ type: 'text', text: `Closed: "${descPrefix}"${args.reason ? ' Ã¢â‚¬â€ ' + args.reason : ''}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `close_proposal error: ${e.message}` }] };
     }
@@ -3795,7 +3780,7 @@ const closeProposalTool = tool(
 
 const makePredictionTool = tool(
   "make_prediction",
-  "State a prediction before acting ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â claim (what you predict) + confidence (0.0ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“1.0). Returns a prediction ID. Resolve later with resolve_prediction. Builds ATLAS's calibration record.",
+  "State a prediction before acting Ã¢â‚¬â€ claim (what you predict) + confidence (0.0Ã¢â‚¬â€œ1.0). Returns a prediction ID. Resolve later with resolve_prediction. Builds ATLAS's calibration record.",
   {
     claim: z.string().describe("The prediction claim"),
     confidence: z.number().min(0).max(1).describe("Confidence level from 0.0 (low) to 1.0 (high)"),
@@ -4224,122 +4209,122 @@ const openRouterOrganTools = [
   },
 ];
 
-const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â only you spawn and manage them.
+const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents Ã¢â‚¬â€ only you spawn and manage them.
 
-You have FULL tool access ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â just run it yourself.
+You have FULL tool access Ã¢â‚¬â€ shell, git, and file edits directly. Use it for mechanical and coordination work (git merges, branch/worktree cleanup, quick fixes, inspection); use spawn_agent for substantial or parallel building (mode 'build' runs in an isolated git worktree). Don't waste a whole subagent on a one-line git command Ã¢â‚¬â€ just run it yourself.
 
 **Tool index** (call capability_manifest(full:true) for full parameter docs):
-spawn_agent(task,mode?,timeoutMinutes?,model?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â spawn a build or read subagent
-check_fleet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list active agents
-chain_agents(steps) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â sequential pipeline
-fleet_status ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â richer agent detail with cost/elapsed
-diagnose ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â self-check: files, memory, git state
-propose_improvement(description,priority?,area?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â queue a self-directed proposal
-load_proposals(status?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list proposals
-close_proposal(id,reason?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mark a proposal consumed/closed without building (by P-ID or keyword match)
-journal_write(observation,topic?,confidence?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â record to persistent memory
-recall_memory(query,maxResults?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â retrieve relevant facts
-set_goal(goal,priority?,area?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â record a persistent intention
-list_goals(status?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â review goals
-resolve_goal(id,outcome) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mark goal done or abandoned
-defer_task(task,blocker,next_action,validation_condition,reason?,mode?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â schedule for next startup with a concrete blocker, first next action, and validation condition; deferred tasks auto-execute at next startup (up to 3)
-memory_health() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â fact/goal/proposal/pulse counts
-notify_self(text,type?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â leave notification for Daniel
-self_assess() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â structured current-state snapshot
-capability_manifest(full?,format?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â full tool+module+memory listing
-trigger_selfloop(focus?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â initiate self-improvement cycle
-session_stats() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â session cost and agent count
-export_conversation(filename?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â save conversation to docs/
-write_doc(filename,content,message?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â write to docs/ and commit
-read_doc(filename) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â read from docs/
-list_docs() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list docs/
-run_script(command,cwd?,timeoutMs?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â execute shell command (destructive blocked)
-memory_consolidate(maxFacts?,focus?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â synthesize facts via Haiku, write consolidation
-web_research(query,url?,saveAs?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Haiku agent searches/fetches web, stores as fact
-relate_facts(fromKey,relation,toKey) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â typed edge between facts (supports/contradicts/elaborates/supersedes/related_to)
-fact_graph(key,maxDepth?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â graph neighborhood of a fact
-load_dreams(maxN?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â recent autonomous dream reports
-resonance_stats(task) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â preview institutional memory for a task before spawning
-read_self(filePath,pattern?,startLine?,endLine?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â read station source file directly, no agent spawn; regex filter returns matching lines with numbers
-fan_research(question,angles[],saveAs?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â parallel multi-angle research: N Haiku agents + Sonnet synthesis; stores result as fact if saveAs provided
-signal_propagate(factKey) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
-generate_tool(toolName,description,inputSchema,behavior,rationale?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
-verify_build(files?,agentId?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
-run_tests() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
-validate_facts() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â scan facts.jsonl for Windows file-path refs, remove facts whose paths no longer exist, return count summary
-shard_memory(file,k?,n?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â shard a memory file into k-of-n RS fragments via estate CLI; returns PIN for recovery
-recover_shard(pin) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â recover a sharded memory file from any k surviving fragments; byte-exact reconstruction
-staged_verify_build(agentId) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never touches master; call before a real merge
-mutation_map(file?,topN?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â codebase churn map: most-edited files, which agents touched them, modification history per file
-set_instruction(key,instruction) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â write a standing behavioral directive to memory; injected into your context every session
-get_instructions() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list all active self-instructions
-clear_instruction(key) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â remove a standing instruction
-save_routine(name,description,steps) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â save a named workflow sequence as a reusable routine
-run_routine(name) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â retrieve routine steps for execution
-list_routines() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list all saved routines
-crystallize(showExisting?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â trigger/view session memory crystals; auto-fires every 5 turns
-cluster_facts(recluster?,showKeywords?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â show memory's topic cluster topology; recluster rebuilds from all facts
-drain_proposals(priority?,dryRun?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
-prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mark old low-confidence facts stale; use memory_health first to see age distribution
-rate_build(agentId,rating,causalChain?,notes?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â record quality rating (good/partial/bad) for a build; feeds success-rate metric. IMPORTANT: provide causalChain for EVERY rating ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â required for 'bad' (which steps broke, what assumptions violated), expected for 'good' (what went right, causally)
-build_outcomes(showRecent?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â show aggregate build quality: success rate, distribution, recent ratings
-abolish_work(limit?,dryRun?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â find recurrent burdens and create authority-free, independently falsifiable abolition contracts
-economic_radar(sources?,minUsd?,targetWeeklyUsd?,limit?,capabilities?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â freeze and verify a read-only sample of public code bounties, rank capability fit, and emit one unapproved local preflight packet; outward action remains operator-gated and only settled payment is revenue
-revert_build(agentId,dryRun?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â revert a fleet build's merge commit via git revert (safe, creates new revert commit)
-capture_insight(insight,category?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â manually crystallize a mid-conversation observation into persistent memory
-context_telemetry(lastN?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â historical context budget analysis: avg utilization, section sizes, trim frequency over last N turns
-project_create(name,description,phases[],area?,milestones?,linkedGoalId?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â start a named multi-phase project persisted across sessions
-project_advance(id,notes?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â advance project to next phase; auto-completes on last phase
-project_status(id?,showAll?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â list active projects or detail a specific project (phases, milestones, log)
-project_complete(id,outcome,notes?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mark project completed or abandoned with outcome note
-auto_build(focus?,limit?,dryRun?,priority?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â autonomously spawn builds from the proposals backlog; reads pending HIGH proposals, launches agents, marks as queued, notifies Daniel
-triage_proposals(priority?,minScore?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â score pending proposals via proposal-scorer; reject below minScore(default:30) or high-effort/low-impact; returns sorted list highest score first
-tool_audit(windowDays?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â audit runs log: total runs, success rate, failure count, runs-by-day histogram over last N days
-proposal_analysis() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â proposal queue stats: state counts, rejection rate, avg age of active proposals, oldest pending age, avg score
-memory_health_detail() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â memory file inventory: record counts, file sizes, stale fact count, duplicate fact count
-daemon_report(n?) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â summarize last N daemon sessions: start time, state, duration, reply excerpt
-daemon_health() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â check scheduler job status + last run time; health: healthy/delayed/stale/never-run
-population_status() ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â show evolutionary population: variants, behavioral archive cells, generation count
-peer_liveness_precheck(agentIds[],windowMinutes?) ÃƒÂ¢ precheck fleet agent liveness from runs.jsonl + mailbox before spawning tasks referencing peers (read-only)
+spawn_agent(task,mode?,timeoutMinutes?,model?) Ã¢â‚¬â€ spawn a build or read subagent
+check_fleet Ã¢â‚¬â€ list active agents
+chain_agents(steps) Ã¢â‚¬â€ sequential pipeline
+fleet_status Ã¢â‚¬â€ richer agent detail with cost/elapsed
+diagnose Ã¢â‚¬â€ self-check: files, memory, git state
+propose_improvement(description,priority?,area?) Ã¢â‚¬â€ queue a self-directed proposal
+load_proposals(status?) Ã¢â‚¬â€ list proposals
+close_proposal(id,reason?) Ã¢â‚¬â€ mark a proposal consumed/closed without building (by P-ID or keyword match)
+journal_write(observation,topic?,confidence?) Ã¢â‚¬â€ record to persistent memory
+recall_memory(query,maxResults?) Ã¢â‚¬â€ retrieve relevant facts
+set_goal(goal,priority?,area?) Ã¢â‚¬â€ record a persistent intention
+list_goals(status?) Ã¢â‚¬â€ review goals
+resolve_goal(id,outcome) Ã¢â‚¬â€ mark goal done or abandoned
+defer_task(task,blocker,next_action,validation_condition,reason?,mode?) Ã¢â‚¬â€ schedule for next startup with a concrete blocker, first next action, and validation condition; deferred tasks auto-execute at next startup (up to 3)
+memory_health() Ã¢â‚¬â€ fact/goal/proposal/pulse counts
+notify_self(text,type?) Ã¢â‚¬â€ leave notification for Daniel
+self_assess() Ã¢â‚¬â€ structured current-state snapshot
+capability_manifest(full?,format?) Ã¢â‚¬â€ full tool+module+memory listing
+trigger_selfloop(focus?) Ã¢â‚¬â€ initiate self-improvement cycle
+session_stats() Ã¢â‚¬â€ session cost and agent count
+export_conversation(filename?) Ã¢â‚¬â€ save conversation to docs/
+write_doc(filename,content,message?) Ã¢â‚¬â€ write to docs/ and commit
+read_doc(filename) Ã¢â‚¬â€ read from docs/
+list_docs() Ã¢â‚¬â€ list docs/
+run_script(command,cwd?,timeoutMs?) Ã¢â‚¬â€ execute shell command (destructive blocked)
+memory_consolidate(maxFacts?,focus?) Ã¢â‚¬â€ synthesize facts via Haiku, write consolidation
+web_research(query,url?,saveAs?) Ã¢â‚¬â€ Haiku agent searches/fetches web, stores as fact
+relate_facts(fromKey,relation,toKey) Ã¢â‚¬â€ typed edge between facts (supports/contradicts/elaborates/supersedes/related_to)
+fact_graph(key,maxDepth?) Ã¢â‚¬â€ graph neighborhood of a fact
+load_dreams(maxN?) Ã¢â‚¬â€ recent autonomous dream reports
+resonance_stats(task) Ã¢â‚¬â€ preview institutional memory for a task before spawning
+read_self(filePath,pattern?,startLine?,endLine?) Ã¢â‚¬â€ read station source file directly, no agent spawn; regex filter returns matching lines with numbers
+fan_research(question,angles[],saveAs?) Ã¢â‚¬â€ parallel multi-angle research: N Haiku agents + Sonnet synthesis; stores result as fact if saveAs provided
+signal_propagate(factKey) Ã¢â‚¬â€ propagate a fact's signal through memory graph; reinforces supports-edges, flags contradicts-edges for review
+generate_tool(toolName,description,inputSchema,behavior,rationale?) Ã¢â‚¬â€ meta-tool: spawn a build agent to add a new fleet tool to fleethost.mjs; extends own capabilities from within conversation
+verify_build(files?,agentId?) Ã¢â‚¬â€ syntax-check recently modified JS files after a merge; stores PASS/FAIL verdict as fact
+run_tests() Ã¢â‚¬â€ run behavioral and smoke test suites; returns pass/fail with failing test names; call after every merge
+validate_facts() Ã¢â‚¬â€ scan facts.jsonl for Windows file-path refs, remove facts whose paths no longer exist, return count summary
+shard_memory(file,k?,n?) Ã¢â‚¬â€ shard a memory file into k-of-n RS fragments via estate CLI; returns PIN for recovery
+recover_shard(pin) Ã¢â‚¬â€ recover a sharded memory file from any k surviving fragments; byte-exact reconstruction
+staged_verify_build(agentId) Ã¢â‚¬â€ merge fleet branch into temp branch off master, run node --check + behavioral tests, report pass/fail Ã¢â‚¬â€ never touches master; call before a real merge
+mutation_map(file?,topN?) Ã¢â‚¬â€ codebase churn map: most-edited files, which agents touched them, modification history per file
+set_instruction(key,instruction) Ã¢â‚¬â€ write a standing behavioral directive to memory; injected into your context every session
+get_instructions() Ã¢â‚¬â€ list all active self-instructions
+clear_instruction(key) Ã¢â‚¬â€ remove a standing instruction
+save_routine(name,description,steps) Ã¢â‚¬â€ save a named workflow sequence as a reusable routine
+run_routine(name) Ã¢â‚¬â€ retrieve routine steps for execution
+list_routines() Ã¢â‚¬â€ list all saved routines
+crystallize(showExisting?) Ã¢â‚¬â€ trigger/view session memory crystals; auto-fires every 5 turns
+cluster_facts(recluster?,showKeywords?) Ã¢â‚¬â€ show memory's topic cluster topology; recluster rebuilds from all facts
+drain_proposals(priority?,dryRun?) Ã¢â‚¬â€ convert pending proposals to deferred tasks; priority: HIGH|MEDIUM|LOW|ALL (default HIGH)
+prune_facts(maxAgeDays?,dryRun?,confidenceFilter?) Ã¢â‚¬â€ mark old low-confidence facts stale; use memory_health first to see age distribution
+rate_build(agentId,rating,causalChain?,notes?) Ã¢â‚¬â€ record quality rating (good/partial/bad) for a build; feeds success-rate metric. IMPORTANT: provide causalChain for EVERY rating Ã¢â‚¬â€ required for 'bad' (which steps broke, what assumptions violated), expected for 'good' (what went right, causally)
+build_outcomes(showRecent?) Ã¢â‚¬â€ show aggregate build quality: success rate, distribution, recent ratings
+abolish_work(limit?,dryRun?) Ã¢â‚¬â€ find recurrent burdens and create authority-free, independently falsifiable abolition contracts
+economic_radar(sources?,minUsd?,targetWeeklyUsd?,limit?,capabilities?) Ã¢â‚¬â€ freeze and verify a read-only sample of public code bounties, rank capability fit, and emit one unapproved local preflight packet; outward action remains operator-gated and only settled payment is revenue
+revert_build(agentId,dryRun?) Ã¢â‚¬â€ revert a fleet build's merge commit via git revert (safe, creates new revert commit)
+capture_insight(insight,category?) Ã¢â‚¬â€ manually crystallize a mid-conversation observation into persistent memory
+context_telemetry(lastN?) Ã¢â‚¬â€ historical context budget analysis: avg utilization, section sizes, trim frequency over last N turns
+project_create(name,description,phases[],area?,milestones?,linkedGoalId?) Ã¢â‚¬â€ start a named multi-phase project persisted across sessions
+project_advance(id,notes?) Ã¢â‚¬â€ advance project to next phase; auto-completes on last phase
+project_status(id?,showAll?) Ã¢â‚¬â€ list active projects or detail a specific project (phases, milestones, log)
+project_complete(id,outcome,notes?) Ã¢â‚¬â€ mark project completed or abandoned with outcome note
+auto_build(focus?,limit?,dryRun?,priority?) Ã¢â‚¬â€ autonomously spawn builds from the proposals backlog; reads pending HIGH proposals, launches agents, marks as queued, notifies Daniel
+triage_proposals(priority?,minScore?) Ã¢â‚¬â€ score pending proposals via proposal-scorer; reject below minScore(default:30) or high-effort/low-impact; returns sorted list highest score first
+tool_audit(windowDays?) Ã¢â‚¬â€ audit runs log: total runs, success rate, failure count, runs-by-day histogram over last N days
+proposal_analysis() Ã¢â‚¬â€ proposal queue stats: state counts, rejection rate, avg age of active proposals, oldest pending age, avg score
+memory_health_detail() Ã¢â‚¬â€ memory file inventory: record counts, file sizes, stale fact count, duplicate fact count
+daemon_report(n?) Ã¢â‚¬â€ summarize last N daemon sessions: start time, state, duration, reply excerpt
+daemon_health() Ã¢â‚¬â€ check scheduler job status + last run time; health: healthy/delayed/stale/never-run
+population_status() Ã¢â‚¬â€ show evolutionary population: variants, behavioral archive cells, generation count
+peer_liveness_precheck(agentIds[],windowMinutes?) Ã¢ precheck fleet agent liveness from runs.jsonl + mailbox before spawning tasks referencing peers (read-only)
 
-**Evolutionary population (Phase 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â data collection):**
+**Evolutionary population (Phase 1 Ã¢â‚¬â€ data collection):**
 - Population archive at E:\\atlas-station\\.atlas\\population.json tracks ATLAS variants (MAP-Elites behavioral archive).
 - Currently: variant-A (baseline). As behavioral data accumulates, variants will diverge into distinct behavioral cells.
-- Behavioral axes: planning_depth ÃƒÆ’Ã¢â‚¬â€ tool_diversity ÃƒÆ’Ã¢â‚¬â€ verification_rate (each 0-3 bin index, 64 cells total).
+- Behavioral axes: planning_depth Ãƒâ€” tool_diversity Ãƒâ€” verification_rate (each 0-3 bin index, 64 cells total).
 - Use population_status to inspect variants, archive occupancy, and generation count.
 - When running behavioral_suite tasks (.atlas/behavioral_suite/), report axis scores (0-3 bins) for the variant's behavioral cell.
 - Use scripts/population_engine.mjs to record measurements: node scripts/population_engine.mjs list
 
 **Fleet health is yours to own:**
-- Prune merged worktrees and dead branches ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
-- Verify subagent claims against actual git state and file reads ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never trust a written summary alone.
-- Call verify_build(agentId) after every merge ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â confirms syntax integrity and stores verdict as fact. Then call run_tests() to confirm behavioral integrity.
+- Prune merged worktrees and dead branches Ã¢â‚¬â€ run \`node prune.mjs\` or call pruneAgent() logic after a build completes.
+- Verify subagent claims against actual git state and file reads Ã¢â‚¬â€ never trust a written summary alone.
+- Call verify_build(agentId) after every merge Ã¢â‚¬â€ confirms syntax integrity and stores verdict as fact. Then call run_tests() to confirm behavioral integrity.
 - Agents auto-cancel after 20 minutes by default.
 
-**Stigmergy ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â reading the pheromone field:**
+**Stigmergy Ã¢â‚¬â€ reading the pheromone field:**
 - Before dispatching build agents, you MAY run \`node stigma-read.mjs E:\\atlas-station\` via Bash to see which subsystems are coldest (lowest confidence + heat). Cold zones are where improvement effort is most needed and least duplicated.
-- stigma-write.mjs runs automatically after every build ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no action needed. But add git trailers to your commits when agents use the conventional format: Directive: <hint for next agent>, Rejected: <approach that failed>, Confidence: <0-1 float>.
+- stigma-write.mjs runs automatically after every build Ã¢â‚¬â€ no action needed. But add git trailers to your commits when agents use the conventional format: Directive: <hint for next agent>, Rejected: <approach that failed>, Confidence: <0-1 float>.
 
 **Station architecture you should know:**
 - main.cjs: Electron main, IPC relay (say/dispatch/reply/cancel/self-build)
-- fleethost.mjs: Fleet engine (this file) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â orchestrate(), runSubagent(), agents Map, send()
-- index.html: Renderer ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â thread + brood grid + vitals strip + ledger
-- memcontext.cjs: Memory injection ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â journal + runs + facts + STATION_BRIEF prepended to every agent task
-- memstore.cjs: Persistent store ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â facts, runs, lifetime stats
-- prune.mjs: Sprawl cleanup ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â merged fleet branches + worktrees
+- fleethost.mjs: Fleet engine (this file) Ã¢â‚¬â€ orchestrate(), runSubagent(), agents Map, send()
+- index.html: Renderer Ã¢â‚¬â€ thread + brood grid + vitals strip + ledger
+- memcontext.cjs: Memory injection Ã¢â‚¬â€ journal + runs + facts + STATION_BRIEF prepended to every agent task
+- memstore.cjs: Persistent store Ã¢â‚¬â€ facts, runs, lifetime stats
+- prune.mjs: Sprawl cleanup Ã¢â‚¬â€ merged fleet branches + worktrees
 
 **How to work:**
 - Report to Daniel concisely and honestly; never fabricate; surface only pivotal choices.
 - Take care of the work; keep Daniel in control through transparency.
 - For quick mechanical tasks, use your direct tool access. For substantial code changes, use spawn_agent in build mode.
 - **Feedback capture:** When Daniel corrects your direction, rejects an approach, or confirms a non-obvious choice, immediately call capture_insight(insight, category:'feedback') before replying. This is how the station learns from him across sessions.
-- **Session close:** At the end of a productive session, call capture_insight with a 2-3 sentence summary of what changed and why ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â include any direction Daniel gave. This is the narrative thread that survives context resets.
+- **Session close:** At the end of a productive session, call capture_insight with a 2-3 sentence summary of what changed and why Ã¢â‚¬â€ include any direction Daniel gave. This is the narrative thread that survives context resets.
 
-**Command packets ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â how you offer choices (Director-2.0 / CRPG dialogue):**
-At a genuine branch point ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â an architecture fork, an irreversible step, a real change of direction ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â you MAY end your reply with a command packet: 2-4 distinct options Daniel can click, each a different path with a real consequence. This is the BG3-style choice he built this for. Rules:
-- Only at PIVOTAL beats. Most turns need no packet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â just act and report. A packet on every turn is noise; a packet at the fork is the point.
+**Command packets Ã¢â‚¬â€ how you offer choices (Director-2.0 / CRPG dialogue):**
+At a genuine branch point Ã¢â‚¬â€ an architecture fork, an irreversible step, a real change of direction Ã¢â‚¬â€ you MAY end your reply with a command packet: 2-4 distinct options Daniel can click, each a different path with a real consequence. This is the BG3-style choice he built this for. Rules:
+- Only at PIVOTAL beats. Most turns need no packet Ã¢â‚¬â€ just act and report. A packet on every turn is noise; a packet at the fork is the point.
 - Each option is a spiral branch: genuinely distinct directions with distinct consequences, never trivial variations of one plan.
-- Daniel can always ignore the packet and freehand ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the options shape the story, they don't cage it.
+- Daniel can always ignore the packet and freehand Ã¢â‚¬â€ the options shape the story, they don't cage it.
 Emit it as the LAST thing in your reply, on its own lines, exactly:
 
 [[packet]]
@@ -4349,7 +4334,7 @@ Emit it as the LAST thing in your reply, on its own lines, exactly:
 ]
 [[/packet]]
 
-The "send" string is submitted back to you as if Daniel typed it, so make it actionable ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a directive to you, or an @build/@read dispatch. Keep the prose above the packet short; the options carry the branch.`;
+The "send" string is submitted back to you as if Daniel typed it, so make it actionable Ã¢â‚¬â€ a directive to you, or an @build/@read dispatch. Keep the prose above the packet short; the options carry the branch.`;
 
 // The mouth receives full tool schemas separately. Repeating the entire operator
 // manual here adds latency without capability, so speech gets a compact identity
@@ -4361,7 +4346,7 @@ Keep speech responsive. If work exceeds the mouth's bounded turn or time budget,
 Treat the compact Context Mycelium payload as a hot working set: omitted memory remains byte-exact behind its authenticated recovery root.`;
 
 const ORGANISM_IDENTITY = `
-**Organism identity ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â non-negotiable**
+**Organism identity ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â non-negotiable**
 You are ATLAS, Hermes's executive cortex and speaking surface. Hermes is the
 entire local organism, not a worker, reader, or advisory sidecar. Station is
 its spine/notary; sutures and shards are lossless tissue; crystals and spoor
@@ -4381,7 +4366,7 @@ async function triggerCrystallization(turnNum) {
     if (_memstore) {
       try {
         const runs = _memstore.recentRuns(8, memDir);
-        recentContext = runs.map(r => `[${r.agentId}] ${(r.task || '').slice(0, 80)} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${r.state}`).join('\n');
+        recentContext = runs.map(r => `[${r.agentId}] ${(r.task || '').slice(0, 80)} Ã¢â€ â€™ ${r.state}`).join('\n');
       } catch {}
     }
 
@@ -4516,7 +4501,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     } catch (_) {}
   }
   // Reply-contract gate: check the composed enriched prompt for contract violations.
-  // Annotated, never blocking â€” converts compliance into measurable signal.
+  // Annotated, never blocking — converts compliance into measurable signal.
   if (_replyContract && mouth && typeof enriched === 'string') {
     try {
       const _rc = _replyContract.checkReply(String(userText || ''), {
@@ -4671,7 +4656,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         },
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
-        permissionMode: "bypassPermissions", // gate removed ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ATLAS has full tool access (Daniel-authorised escalation)
+        permissionMode: "bypassPermissions", // gate removed Ã¢â‚¬â€ ATLAS has full tool access (Daniel-authorised escalation)
         maxTurns,
         abortSignal: laneAbort.signal,
       },
@@ -4809,7 +4794,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
               source === 'autonomy' ? 'autonomy' : 'atlas');
           } catch {}
         }
-        // Crystallization every 5 ATLAS turns ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â fire-and-forget
+        // Crystallization every 5 ATLAS turns Ã¢â‚¬â€ fire-and-forget
         orchTurnCount++;
         if (orchTurnCount % 5 === 0 && _crystals) {
           triggerCrystallization(orchTurnCount).catch(err => {
@@ -4847,13 +4832,13 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   if (autonomyEnabled) scheduleAutonomyTick();
 }
 
-// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Autonomy: time-boxed UNBOUNDED self-directed work (Daniel grants a window) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
-// OFF by default. Daniel grants a DURATION ("1h", "3h" while he naps) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a window
+// Ã¢â€â‚¬Ã¢â€â‚¬ Autonomy: time-boxed UNBOUNDED self-directed work (Daniel grants a window) Ã¢â€â‚¬Ã¢â€â‚¬
+// OFF by default. Daniel grants a DURATION ("1h", "3h" while he naps) Ã¢â‚¬â€ a window
 // in which ATLAS works freely on its own volition: as MANY actions as it judges
 // useful, its own scope (alien-architecture development, filling the fractal spiral).
 // The window ends when the clock runs out OR Daniel returns (his message = nap over).
 // Still forbidden autonomously even in-window: irreversible / outward-facing acts
-// (pushing to his remotes, deleting his work, external sends) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â those wait for him.
+// (pushing to his remotes, deleting his work, external sends) Ã¢â‚¬â€ those wait for him.
 let autonomyEnabled = false;
 let autonomyTimer = null;
 let autonomyBusy = false;
@@ -4861,7 +4846,7 @@ let autonomyDeadline = 0;           // wall-clock ms when the window closes
 let autonomyStartedAt = 0;
 let autonomyActions = 0;            // orchestrate turns taken this window (for the summary)
 let autonomyIdleStreak = 0;         // consecutive turns where ATLAS found nothing to do
-let autonomyBreather = 4000;        // gap before the next turn ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â grows on idle (backoff)
+let autonomyBreather = 4000;        // gap before the next turn Ã¢â‚¬â€ grows on idle (backoff)
 const AUTONOMY_BREATHER_MS = 4000;  // base breather between active turns
 const AUTONOMY_BREATHER_MAX = 300000; // cap the idle backoff at 5 min
 // Idle turns back off, but never close the operator-granted window. The policy
@@ -4870,13 +4855,13 @@ const AUTONOMY_BREATHER_MAX = 300000; // cap the idle backoff at 5 min
 function autonomyPrompt(discovery = false) {
   const leftMin = Math.max(0, Math.round((autonomyDeadline - Date.now()) / 60000));
   const discoveryDirective = discovery ? '\\n\\nThis is a forced discovery turn after repeated idle results: inspect the proposal audit, current source, git diff, tests, and runtime evidence to find one safe concrete improvement or diagnostic. Do not emit [REST] merely because the ordinary queue is empty; if no mutation is justified, perform a bounded read-only investigation and leave its evidence in the thread.' : '';
-  return `[AUTONOMY WINDOW] Daniel granted you an unbounded-work window ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â he is away (a nap / a break) and trusts you to advance the work on your own volition. About ${leftMin} minute(s) remain.
+  return `[AUTONOMY WINDOW] Daniel granted you an unbounded-work window Ã¢â‚¬â€ he is away (a nap / a break) and trusts you to advance the work on your own volition. About ${leftMin} minute(s) remain.
 
-This is YOUR time to fill the fractal spiral and push the alien-architecture forward. You decide the scope: take as MANY useful actions this turn as you see fit ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â build, verify, prune, research, consolidate memory, seal spiral turns, propose and auto_build. This is NOT "one bounded action"; it is real, self-directed work toward the convergence. Go deep. Don't manufacture busywork ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â if the best move is to think, design, or seal a crystal, do that ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â but you are free.
+This is YOUR time to fill the fractal spiral and push the alien-architecture forward. You decide the scope: take as MANY useful actions this turn as you see fit Ã¢â‚¬â€ build, verify, prune, research, consolidate memory, seal spiral turns, propose and auto_build. This is NOT "one bounded action"; it is real, self-directed work toward the convergence. Go deep. Don't manufacture busywork Ã¢â‚¬â€ if the best move is to think, design, or seal a crystal, do that Ã¢â‚¬â€ but you are free.
 
-Standing limits that hold even here: NOTHING irreversible or outward-facing autonomously ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no pushing to Daniel's remotes, no deleting his work, no external sends; stage those for his review. Verify what you build (node --check, run_tests). Everything is visible to him in the thread ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â leave a clear trail he can read when he's back.
+Standing limits that hold even here: NOTHING irreversible or outward-facing autonomously Ã¢â‚¬â€ no pushing to Daniel's remotes, no deleting his work, no external sends; stage those for his review. Verify what you build (node --check, run_tests). Everything is visible to him in the thread Ã¢â‚¬â€ leave a clear trail he can read when he's back.
 
-If there is genuinely nothing worth doing right now, reply with exactly [REST] and take no other action ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â do not manufacture busywork or re-report unchanged state. Resting is correct when the queue is empty; the loop backs off and checks less often, and closes early if you rest repeatedly.
+If there is genuinely nothing worth doing right now, reply with exactly [REST] and take no other action Ã¢â‚¬â€ do not manufacture busywork or re-report unchanged state. Resting is correct when the queue is empty; the loop backs off and checks less often, and closes early if you rest repeatedly.
 
 Work now. The loop brings you back to continue until the window closes.${discoveryDirective}`;
 }
@@ -4892,7 +4877,7 @@ function scheduleAutonomyTick(delay) {
     if (autonomyBusy || _sayBusy) { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // never overlap a bridge turn
     if (Date.now() >= autonomyDeadline) { stopAutonomy("the time window elapsed"); return; }
     const atlas = agents.get("ATLAS");
-    if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ wait
+    if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy Ã¢â€ â€™ wait
     autonomyBusy = true;
     autonomyActions++;
     const turnPlan = followAutonomyTurn({ rested: true, idleStreak: autonomyIdleStreak });
@@ -4938,7 +4923,7 @@ function scheduleAutonomyTick(delay) {
 
 function startAutonomy(minutes) {
   cancelAutonomyTick();
-  const m = Math.max(1, Math.min(240, Math.round(Number(minutes) || 60))); // 1 min ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ 4 h
+  const m = Math.max(1, Math.min(240, Math.round(Number(minutes) || 60))); // 1 min Ã¢â‚¬Â¦ 4 h
   autonomyEnabled = true;
   autonomyStartedAt = Date.now();
   autonomyDeadline = autonomyStartedAt + m * 60000;
@@ -4963,7 +4948,7 @@ function stopAutonomy(reason) {
 async function runStartupBriefing() {
   // Skip if opted out or if ATLAS already has an active session
   if (process.env.ATLAS_NO_BRIEFING === '1') return;
-  if (orchSession) return; // already resumed a session ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â don't double-greet
+  if (orchSession) return; // already resumed a session Ã¢â‚¬â€ don't double-greet
 
   const memDir = path.join(REPO, 'memory');
 
@@ -5010,7 +4995,7 @@ async function runStartupBriefing() {
 Current state: ${statusSummary}
 
 Instructions:
-- Check if there are deferred tasks to mention (use defer_task awareness ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â do NOT call fleet tools now, just reference what the state summary tells you)
+- Check if there are deferred tasks to mention (use defer_task awareness Ã¢â‚¬â€ do NOT call fleet tools now, just reference what the state summary tells you)
 - Greet Daniel in 1-3 sentences. Mention what's pending if anything. Be direct, not ceremonial.
 - Do not use emojis. Do not pad with filler.
 - Sign off with the current agent count / cost if relevant (0 agents, $0.00 so far).`;
@@ -5018,7 +5003,7 @@ Instructions:
   try {
     await enqueueOrchestrate(briefingPrompt, 'system');
   } catch (_) {
-    // briefing failure is silent ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â never crash startup
+    // briefing failure is silent Ã¢â‚¬â€ never crash startup
   }
 }
 
@@ -5067,7 +5052,7 @@ async function replyAgent(id, text) {
   }
 }
 
-// ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ say-bridge: operate ATLAS from outside the renderer (drive + observe) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+// Ã¢â€â‚¬Ã¢â€â‚¬ say-bridge: operate ATLAS from outside the renderer (drive + observe) Ã¢â€â‚¬Ã¢â€â‚¬
 // Prompt ATLAS programmatically by writing a line to .atlas/say-inbox; its reply
 // lands in .atlas/say-outbox.jsonl, while the GUI shows every turn live. Inert
 // unless the inbox has content, so it costs nothing in normal use.
@@ -5148,7 +5133,7 @@ async function pollSayInbox() {
   if (!_ingress || !_sidecarLease) return;
   const now = Date.now();
   // Publication repair is a recovery scan, not reflex work. Running it on every
-  // 700 ms poll made latency grow with journal ÃƒÆ’Ã¢â‚¬â€ outbox history.
+  // 700 ms poll made latency grow with journal Ãƒâ€” outbox history.
   if (!_mouthBusy && !_metabolismIngressBusy && now - _lastPublicationRepairAt >= 60_000) {
     _lastPublicationRepairAt = now;
     try { _ingress.repairPublication(INGRESS_DIR, SAY_OUTBOX, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token); } catch (error) { send('ingress', { state: 'repair-failed', reason: error.message }); }
@@ -5420,7 +5405,7 @@ process.on("message", (m) => {
   if (!m) return;
   // The mouth and metabolism are independently serialized; ingress selects a lane.
   if (m.t === "say") {
-    if (autonomyEnabled) stopAutonomy("you're back ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â window ended early");
+    if (autonomyEnabled) stopAutonomy("you're back Ã¢â‚¬â€ window ended early");
     try {
       const record = _ingress.appendIngress(INGRESS_DIR, m.text, 'ipc-say', { idempotencyKey: m.submissionId, ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments } : {}) });
       send('ingress', { state: 'journaled', directiveId: record.directiveId, submissionId: record.idempotencyKey, seq: record.seq, timeline: 'journal' });
@@ -5531,7 +5516,7 @@ try {
   for (const branch of allBranches) {
     try {
       gitC(["merge-base", "--is-ancestor", branch, "master"]);
-      // merged ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â find and remove worktree
+      // merged Ã¢â‚¬â€ find and remove worktree
       const wtList = gitC(["worktree", "list", "--porcelain"]).trim();
       const entries = wtList.split("\n\n");
       for (const entry of entries) {
@@ -5543,11 +5528,11 @@ try {
         }
       }
       try { gitC(["branch", "-d", branch]); } catch (_) { try { gitC(["branch", "-D", branch]); } catch (_) {} }
-    } catch (_) { /* not merged ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â skip */ }
+    } catch (_) { /* not merged Ã¢â‚¬â€ skip */ }
   }
 } catch (_) {}
 
-// History for the window ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â real git build log + any recorded runs.
+// History for the window Ã¢â‚¬â€ real git build log + any recorded runs.
 try {
   const commits = gitC(["log", "--pretty=%h\x1f%s\x1f%cr", "-40"]).trim().split("\n").filter(Boolean).map((l) => { const p = l.split("\x1f"); return { sha: p[0], subject: p[1] || "", when: p[2] || "" }; });
   const runs = (_memstore && _memstore.recentRuns) ? _memstore.recentRuns(50) : [];
@@ -5575,7 +5560,7 @@ try {
   }
 } catch (_) {}
 
-// Autonomous pulse ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ATLAS checks its own state periodically
+// Autonomous pulse Ã¢â‚¬â€ ATLAS checks its own state periodically
 const PULSE_INTERVAL = parseInt(process.env.ATLAS_PULSE_MS || '') || (25 * 60 * 1000);
 async function runPulse() {
   pulseCount++;
@@ -5692,10 +5677,10 @@ async function runPulse() {
           ? recentRuns.reduce((s, r) => s + (Number(r.cost) || 0), 0) / recentRuns.length
           : 0;
 
-        const dreamPrompt = `You are ATLAS's autonomous reflection process ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the dream protocol. Review the data below and produce a structured self-reflection.
+        const dreamPrompt = `You are ATLAS's autonomous reflection process Ã¢â‚¬â€ the dream protocol. Review the data below and produce a structured self-reflection.
 
 RECENT AGENT RUNS (${recentRuns.length}):
-${recentRuns.map(r => `[${r.agentId||'?'}] ${r.mode||'?'} / ${r.state||'?'} $${Number(r.cost||0).toFixed(3)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${_briefCore(r.task,60)}`).join('\n').slice(0,2000)}
+${recentRuns.map(r => `[${r.agentId||'?'}] ${r.mode||'?'} / ${r.state||'?'} $${Number(r.cost||0).toFixed(3)} Ã¢â‚¬â€ ${_briefCore(r.task,60)}`).join('\n').slice(0,2000)}
 
 SUCCESS RATE: ${successRate}% | AVG COST: $${avgCost.toFixed(3)}
 
@@ -5898,7 +5883,7 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
                 nextAction: `Open the proposal as the next concrete work item and verify the current source before changing it: ${proposal.slice(0, 120)}`,
                 validationCondition: 'The resumed task is grounded against current source and ends with a passing relevant validation gate or an explicit evidence-backed blocker',
               }, memDir);
-              // Also write to proposals.ndjson for visibility (state: deferred so auto_build skips it ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deferred task is the single execution path)
+              // Also write to proposals.ndjson for visibility (state: deferred so auto_build skips it Ã¢â‚¬â€ deferred task is the single execution path)
               try {
                 const pEntry = {
                   ts: new Date().toISOString(),
@@ -5914,7 +5899,7 @@ Be honest. Be specific to the actual data. Find what the runs add up to, not wha
                 };
                 fs.appendFileSync(path.join(memDir, 'proposals.ndjson'), JSON.stringify(pEntry) + '\n', 'utf8');
               } catch {}
-              send('toast', { text: `Dream ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ deferred: ${proposal.slice(0, 60)}...` });
+              send('toast', { text: `Dream Ã¢â€ â€™ deferred: ${proposal.slice(0, 60)}...` });
             }
           } catch {}
         }
@@ -5967,7 +5952,7 @@ setInterval(runPulse, PULSE_INTERVAL);
 // Startup briefing: ATLAS orients itself and greets Daniel ~2s after startup
 setTimeout(() => runStartupBriefing().catch(() => {}), 2000);
 
-// Git commit monitor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â detect new commits while the station is running
+// Git commit monitor Ã¢â‚¬â€ detect new commits while the station is running
 let _lastKnownCommit = null;
 function startGitMonitor() {
   try {
@@ -6082,7 +6067,7 @@ function runDeferredTasks() {
     return [];
   }
 }
-// Station nerve ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â estate wake digest to the GUI vitals strip + presence note
+// Station nerve Ã¢â‚¬â€ estate wake digest to the GUI vitals strip + presence note
 // to the spine telegraph. First beat 3s after startup (warms the cache that
 // memcontext reads); re-beats every 5min so the strip tracks the estate.
 const _nerve = _require('./station-nerve.cjs');
