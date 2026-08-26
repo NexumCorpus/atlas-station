@@ -622,6 +622,14 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 #typing-label{font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.08em;margin-left:8px;font-style:italic}
 #typing-label b{color:var(--accent);font-weight:600}
 @keyframes title-flash{0%,100%{opacity:1}50%{opacity:.4}}
+#cmdk{position:fixed;inset:0;background:rgba(4,5,10,.6);backdrop-filter:blur(3px);z-index:9000;display:none;align-items:flex-start;justify-content:center;padding-top:14vh}
+#cmdk.open{display:flex}
+#cmdk-box{width:440px;max-width:90vw;background:#0c0e18;border:1px solid rgba(157,107,255,.4);border-radius:10px;box-shadow:0 12px 48px rgba(0,0,0,.6);overflow:hidden}
+#cmdk-input{width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:var(--fg);font-family:var(--mono);font-size:var(--fs-sm);padding:12px 14px;border-bottom:1px solid var(--border)}
+#cmdk-list{max-height:300px;overflow-y:auto}
+.cmdk-item{display:flex;justify-content:space-between;padding:9px 14px;cursor:pointer;font-size:var(--fs-xs);color:#bcc2d6}
+.cmdk-item.sel,.cmdk-item:hover{background:rgba(157,107,255,.15);color:#fff}
+.cmdk-item .k{font-size:var(--fs-3xs);color:var(--dim)}
 </style>
 </head>
 <body>
@@ -3896,5 +3904,24 @@ setInterval(refreshRelTimes,30000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)stop();});
 function stop(){if(!blinking)return;blinking=false;if(fh)clearInterval(fh);document.title=base;}
 window.__nudge=function(){if(!document.hidden)return;blinking=true;var on=false;fh=setInterval(function(){document.title=(on?'\u25cf ':'')+'reply ready'+(on?'':' \u25cf');on=!on;},900);};
+})();</script><div id="cmdk"><div id="cmdk-box"><input id="cmdk-input" placeholder="type a command..." autocomplete="off"><div id="cmdk-list"></div></div></div><script>(function(){var ov,inp,list,items,sel=0;
+var cmds=[
+ {n:'Export conversation',k:'export',fn:function(){var b=document.getElementById('exportbtn');if(b)b.click();}},
+ {n:'Jump to bottom',k:'end',fn:function(){scrollThread(true);}},
+ {n:'Tab: Fleet',k:'1',fn:function(){act(document.querySelector('.tab[data-tab=\"fleet\"]'));}},
+ {n:'Tab: Ecology',k:'2',fn:function(){act(document.querySelector('.tab[data-tab=\"ecology\"]'));}},
+ {n:'Tab: Memory',k:'3',fn:function(){act(document.querySelector('.tab[data-tab=\"memory\"]'));}},
+ {n:'Tab: Station',k:'4',fn:function(){act(document.querySelector('.tab[data-tab=\"station\"]'));}},
+ {n:'Tab: Empire',k:'5',fn:function(){act(document.querySelector('.tab[data-tab=\"empire\"]'));}},
+ {n:'Show shortcuts',k:'?',fn:function(){var b=document.querySelector('.kb-overlay-open,[onclick*=\"shortcut\"]');if(b)b.click();}},
+ {n:'Focus input',k:'i',fn:function(){var s=document.getElementById('say');if(s)s.focus();}}
+];
+function act(el){if(!el)return;el.click();}
+function open(){ov=document.getElementById('cmdk');inp=document.getElementById('cmdk-input');list=document.getElementById('cmdk-list');ov.classList.add('open');inp.value='';render('');sel=0;setTimeout(function(){inp.focus();},0);}
+function close(){ov.classList.remove('open');}
+function render(q){q=q.toLowerCase();items=cmds.filter(function(c){return c.n.toLowerCase().indexOf(q)>=0;});list.innerHTML=items.map(function(c,i){return '<div class="cmdk-item'+(i===sel?' sel':'')+'" data-i="'+i+'"><span>'+c.n+'</span><span class="k">'+c.k+'</span></div>';}).join('')||'<div class="cmdk-item"><span class="k">no match</span></div>';Array.prototype.forEach.call(list.querySelectorAll('.cmdk-item[data-i]'),function(el){el.onclick=function(){run(items[+el.getAttribute('data-i')]);};});}
+function run(c){if(!c)return;close();try{c.fn();}catch(e){}}
+document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='p'){e.preventDefault();if(!ov||!ov.classList.contains('open'))open();}else if(e.key==='Escape'&&ov&&ov.classList.contains('open')){close();}});
+window.__cmdkOpen=open;
 })();</script></body>
 </html>
