@@ -51,3 +51,10 @@ Goal (G): make Atlas behave like a fluid desktop coding agent while retaining th
 What drifted / what went wrong: the system prompt described dozens of organs, but the active OpenRouter route exposed only three native tools; meanwhile a 700 ms recovery poll reparsed the entire ingress journal once per historical outbox row, periodically blocking the event loop for roughly 18 seconds.
 Fix / resolution: generated the OpenRouter tool surface from the same SDK registry used by the fleet server, preserved strict schemas and serial mutation semantics, reduced publication repair to one journal snapshot, removed it from the reflex hot path, and tested the active provider through native SSE.
 Generalizes to: capability must be measured at the provider boundary, and recovery work must scale with current damage rather than total history; vocabulary and dashboards are not evidence that an organ is reachable or responsive.
+
+## 2026-08-25 -- renderer boot must fail open and parse in the fast contract
+
+Goal (G): restore Atlas to a coherent, fully usable UI while preserving the underlying fleet/runtime work and unrelated operator changes.
+What drifted / what went wrong: a cosmetic UI commit malformed a packet ternary, the regex-only renderer contract missed the syntax failure, and boot CSS kept the main cockpit invisible when the script could not run. A later commit also placed scroll-progress JavaScript outside its script element, rendering source text in the window. Atlas then advanced HEAD while the first repair was being validated, invalidating that evidence.
+Fix / resolution: repaired the syntax and markup defects, made boot visibility fail open, added executable inline-script parsing plus raw-script and button-boundary guards, re-anchored on the moving HEAD, and validated the live Electron renderer.
+Generalizes to: cosmetic renderer changes require executable parse and live-render checks; boot animation must never make basic visibility depend on JavaScript; re-check a moving repository immediately before acceptance.
