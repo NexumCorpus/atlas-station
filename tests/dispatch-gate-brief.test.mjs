@@ -5,10 +5,16 @@ const source = fs.readFileSync(new URL('../fleethost.mjs', import.meta.url), 'ut
 
 const start = source.indexOf('function _wrapBuildBrief(');
 assert.ok(start >= 0, 'missing _wrapBuildBrief');
-const end = source.indexOf('\nfunction ', start + 1);
-assert.ok(end > start, 'missing end of _wrapBuildBrief');
+// extract balanced-brace body of the function
+let i = source.indexOf('{', start), depth = 0, j = i;
+for (; j < source.length; j++) {
+  if (source[j] === '{') depth++;
+  else if (source[j] === '}') { depth--; if (depth === 0) break; }
+}
+assert.ok(depth === 0, 'unbalanced braces extracting _wrapBuildBrief');
+const fnSrc = source.slice(start, j + 1);
 // eslint-disable-next-line no-eval
-const _wrapBuildBrief = eval('(' + source.slice(start, end).trim().replace(/^function _wrapBuildBrief/, 'function') + ')');
+const _wrapBuildBrief = eval('(' + fnSrc + ')');
 
 // 1) rejects thin brief: <200 chars, no directive verb
 let threw = null;
@@ -38,5 +44,5 @@ const good = [
 assert.ok(good.length > 300, 'test fixture should exceed 300 chars');
 const wrapped = String(_wrapBuildBrief(good));
 assert.match(wrapped, /^## Build Brief/, 'accepted brief must come back wrapped');
-assert.ok(wrapped.includes(good.trim()) || wrapped.length > good.length, 'wrapped output must contain the task');
+assert.ok(wrapped.length > good.length, 'wrapped output must contain the task');
 console.log('dispatch-gate-brief: all assertions passed');
