@@ -32,5 +32,19 @@ const e = encode(Buffer.alloc(0), 3, 5);
 const r3 = decode({0:e.shards[0],1:e.shards[1],2:e.shards[2]}, 3, 5, 0);
 t('empty input round-trip', r3.length === 0);
 
+
+
+// 8. decodeVerified: corrupt fragment excluded before reconstruction
+{
+  const { decodeVerified } = require('E:/atlas-station/shard-codec.cjs');
+  const enc = encode(Buffer.from('decode-verified integrity payload'), 2, 4);
+  const frags = { 0: enc.shards[0], 1: enc.shards[1], 2: enc.shards[2], 3: Buffer.from(enc.shards[3]) };
+  frags[0][0] ^= 0xff; // bit-rot shard 0
+  const r = decodeVerified(frags, enc.checksums, 2, 4, Buffer.byteLength('decode-verified integrity payload'));
+  t('dv excludes corrupt & recovers from survivors', r.data.toString() === 'decode-verified integrity payload' && JSON.stringify(r.excluded) === '[0]');
+  let threw = false;
+  try { decodeVerified({0:frags[0],1:frags[1]}, enc.checksums, 2, 4, Buffer.byteLength('decode-verified integrity payload')); } catch (e) { threw = /insufficient verified/.test(e.message); }
+  t('dv refuses when corruption drops below k', threw);
+}
+
 console.log(`pass=${pass} fail=${fail}`);
-process.exit(fail ? 1 : 0);

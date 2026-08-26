@@ -143,4 +143,15 @@ function decodeSealed(fragments, k, n, origLen, envelope, keyB64) {
   return decryptData(ct, key, Buffer.from(envelope.iv, 'base64'), Buffer.from(envelope.tag, 'base64'));
 }
 
-module.exports = { encode, decode, sealShards, verifyShards, encodeSealed, decodeSealed, encryptData, decryptData };
+// decodeVerified: exclude checksum-failing fragments BEFORE reconstruction so bit-rot
+// can never participate in recovery; falls back to survivors and names the excluded set.
+function decodeVerified(fragments, checksums, k, n, origLen) {
+  const verdict = verifyShards(fragments, checksums);
+  const survivors = {};
+  for (const [index, data] of Object.entries(fragments || {})) {
+    if (!verdict.corrupt.includes(Number(index))) survivors[index] = data;
+  }
+  if (Object.keys(survivors).length < k) throw new Error('insufficient verified shards: corrupt=' + verdict.corrupt.join(','));
+  return { data: decode(survivors, k, n, origLen), excluded: verdict.corrupt };
+}
+module.exports = { encode, decode, sealShards, verifyShards, encodeSealed, decodeSealed, decodeVerified, encryptData, decryptData };
