@@ -1,0 +1,273 @@
+{
+ "meta": {
+  "source": "longmemeval_oracle.json",
+  "total": 500,
+  "sampled": 24,
+  "strategy": "stratified-4-per-type",
+  "frozen": "2026-08-26T07:39:07.325Z"
+ },
+ "questions": [
+  {
+   "idx": 0,
+   "qid": "gpt4_2655b836",
+   "type": "temporal-reasoning",
+   "question": "What was the first issue I had with my new car after its first service?",
+   "answer": "GPS system not functioning correctly",
+   "evidence_turns": [
+    "I'm thinking of getting my car detailed soon. Do you know any good detailers in the area or have any recommendations? By the way, I just got my car serviced for the first time on March 15th, and it was a great experience.",
+    "I've been doing some research and found a local detailer with great reviews. I was thinking of taking my car there, but I'm also considering other options. By the way, I recently had an issue with my car's GPS system on 3/22, and I had to take it back to the dealership to get it fixed. They replaced the entire system, and now it's working flawlessly. Have you heard of any common issues with GPS systems in newer cars?"
+   ]
+  },
+  {
+   "idx": 1,
+   "qid": "gpt4_2487a7cb",
+   "type": "temporal-reasoning",
+   "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+   "answer": "'Data Analysis using Python' webinar",
+   "evidence_turns": [
+    "I've been thinking about my goals and priorities lately, and I realized that I want to focus more on learning new skills and expanding my knowledge in different areas. I've been attending various workshops and lectures, like the workshop on \"Effective Time Management\" at the local community center last Saturday, and I'm finding them really helpful. Do you have any suggestions for online resources or courses that could help me learn new skills or expand my knowledge?",
+    "I'm actually familiar with some of these resources, I participated in a webinar on \"Data Analysis using Python\" two months ago, which was organized by an online learning platform, and the instructor shared some great resources on data visualization. I was hoping to dive deeper into it. Do you think I should start with Matplotlib or Seaborn for creating statistical graphics?"
+   ]
+  },
+  {
+   "idx": 2,
+   "qid": "gpt4_76048e76",
+   "type": "temporal-reasoning",
+   "question": "Which vehicle did I take care of first in February, the bike or the car?",
+   "answer": "bike",
+   "evidence_turns": [
+    "I'm thinking of getting a new bike rack for my car. Do you have any recommendations? By the way, I've been having some issues with my bike lately - in mid-February, I had to take it in for repairs because the gears were acting up and I couldn't shift properly.",
+    "I'm thinking of getting a newer car and I'm researching the new hybrid model of my current Toyota Corolla. Do you have any info on its fuel efficiency and any promotions or discounts available? By the way, I just washed my current Corolla on Monday, February 27th, after not doing so for over a month - it was getting pretty dirty after that snowstorm we had a few weeks prior!"
+   ]
+  },
+  {
+   "idx": 3,
+   "qid": "gpt4_2312f94c",
+   "type": "temporal-reasoning",
+   "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+   "answer": "Samsung Galaxy S22",
+   "evidence_turns": [
+    "I'm planning a trip to Hawaii and I want to make sure my new phone stays charged. Can you recommend some must-visit places in Hawaii? By the way, I recently got a new Samsung Galaxy S22 from the Best Buy store at the mall on February 20th, and I'm loving it so far.",
+    "I'm planning a trip to Hawaii and I need to pack the right adapters for my devices. Can you help me figure out what kind of power adapters I'll need for my new laptop, Dell XPS 13, and my new smartphone, Samsung Galaxy S22? By the way, I pre-ordered the laptop on January 28th, and it finally arrived on February 25th after a delay from the original expected arrival date of February 11th."
+   ]
+  },
+  {
+   "idx": 4,
+   "qid": "0a995998",
+   "type": "multi-session",
+   "question": "How many items of clothing do I need to pick up or return from a store?",
+   "answer": 3,
+   "evidence_turns": [
+    "I'm making progress, but I still have a lot to sort through. I think I'll take a break and pick up my dry cleaning for the navy blue blazer I wore to a meeting a few weeks ago. What's the best way to care for a blazer like that?",
+    "I need to return some boots to Zara, actually. I got them on February 5th, but they were too small, so I exchanged them for a larger size. I just haven't had a chance to pick them up yet.",
+    "I think I'll use some boxes I have at home to store my winter clothes. By the way, I just exchanged a pair of boots I got from Zara on 2/5, and I still need to pick up the new pair. Do you have any tips on how to keep track of items I need to pick up or return?"
+   ]
+  },
+  {
+   "idx": 5,
+   "qid": "6d550036",
+   "type": "multi-session",
+   "question": "How many projects have I led or am currently leading?",
+   "answer": 2,
+   "evidence_turns": [
+    "I'm looking for some help with data visualization tools. I recently participated in a case competition hosted by a consulting firm, where we had to analyze a business case and present our recommendations to a panel of judges. I was thinking of using some data visualization tools to make our presentation more engaging. Can you recommend some popular data visualization tools that are easy to use?",
+    "I've been working on a solo project for my Data Mining class, and I'm really interested in applying some of these techniques to my customer purchase data. I'm trying to identify patterns and trends, and I think feature engineering will really help me with that. Do you have any specific tips on how to handle high cardinality categorical variables in my dataset?",
+    "I'm working on a project that involves analyzing customer data to identify trends and patterns. I was thinking of using clustering analysis, but I'm not sure which type of clustering method to use. Can you help me decide between k-means and hierarchical clustering? By the way, I've had some experience with data analysis from my Marketing Research class project, where I led the data analysis team and we did a comprehensive market analysis for a new product launch.",
+    "I'm looking for some research on consumer behavior and social media. I recently presented a poster on my research on the effects of social media influencers on consumer purchasing decisions at an academic conference on consumer psychology, and I'm looking to expand on that research. Do you have any recent studies or papers on this topic that you can recommend?"
+   ]
+  },
+  {
+   "idx": 6,
+   "qid": "gpt4_59c863d7",
+   "type": "multi-session",
+   "question": "How many model kits have I worked on or bought?",
+   "answer": "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro.",
+   "evidence_turns": [
+    "I'm looking for some tips on weathering techniques for my model kits. I've been getting back into model building and I recently finished a simple Revell F-15 Eagle kit that I picked up on a whim during a trip to the hobby store in late April.",
+    "I'm looking for some advice on painting metal surfaces for a model kit. I recently finished a Tamiya 1/48 scale Spitfire Mk.V and had to learn some new techniques, but I'm still not entirely happy with the results. Do you have any tips or recommended products that could help me achieve a more realistic finish?",
+    "I'm thinking of trying out enamel washes on my next project, a 1/72 scale B-29 bomber. Do you have any recommendations for enamel washes that work well with acrylic paints?",
+    "I'm looking for some tips on weathering techniques for my model tanks. I've been using AK Interactive products, but I'm interested in trying out some new methods. By the way, I also started working on a diorama featuring a 1/16 scale German Tiger I tank, and I'm trying to get the terrain to look as realistic as possible.",
+    "I'm looking for some tips on photo-etching for my new 1/72 scale B-29 bomber model kit. I've never tried it before, but I've seen some amazing results online. By the way, I just got this kit and a 1/24 scale '69 Camaro at a model show last weekend."
+   ]
+  },
+  {
+   "idx": 7,
+   "qid": "b5ef892d",
+   "type": "multi-session",
+   "question": "How many days did I spend on camping trips in the United States this year?",
+   "answer": "8 days.",
+   "evidence_turns": [
+    "I'm looking for some new hiking boots. Do you have any recommendations for waterproof boots that are good for multi-day backpacking trips? By the way, I just got back from a 3-day solo camping trip to Big Sur in early April and my current boots did okay, but I think I need something better.",
+    "I'm planning a trip to the Rocky Mountains in Colorado and I was wondering if you could recommend some good hiking trails and camping spots in the area. By the way, I just got back from an amazing 5-day camping trip to Yellowstone National Park last month, and I'm still buzzing from the experience."
+   ]
+  },
+  {
+   "idx": 8,
+   "qid": "6a1eabeb",
+   "type": "knowledge-update",
+   "question": "What was my personal best time in the charity 5K run?",
+   "answer": "25 minutes and 50 seconds (or 25:50)",
+   "evidence_turns": [
+    "That's really helpful, thanks! I've been doing some running lately, and I'm happy to say that I recently set a personal best time in a charity 5K run with a time of 27:12. Do you have any tips on how to improve my running technique to make me more efficient and effective on the soccer field?",
+    "I'm training for another charity 5K run coming up and I was wondering if you could give me some tips on how to improve my endurance. By the way, I'm hoping to beat my personal best time of 25:50 this time around."
+   ]
+  },
+  {
+   "idx": 9,
+   "qid": "6aeb4375",
+   "type": "knowledge-update",
+   "question": "How many Korean restaurants have I tried in my city?",
+   "answer": "four",
+   "evidence_turns": [
+    "By the way, speaking of noodles, have you tried any good Korean restaurants in your city lately? I've tried three different ones recently, and each has its own unique flavor and style.",
+    "I think I'll go with kimchi and bokkeumbap. By the way, have you tried any good Korean restaurants in my city lately? I've tried four different ones so far, and I'm always looking for new recommendations."
+   ]
+  },
+  {
+   "idx": 10,
+   "qid": "830ce83f",
+   "type": "knowledge-update",
+   "question": "Where did Rachel move to after her recent relocation?",
+   "answer": "the suburbs",
+   "evidence_turns": [
+    "I'm also thinking about visiting my friend Rachel who recently moved to a new apartment in the city. Do you know what the weather is like in the city this time of year?",
+    "She moved to Chicago.",
+    "Miami Beach sounds fun, but I've been there before. I'm thinking of somewhere more relaxed. My friend Rachel actually just moved back to the suburbs again, so I was thinking of somewhere not too far from a major city. Any suggestions?"
+   ]
+  },
+  {
+   "idx": 11,
+   "qid": "852ce960",
+   "type": "knowledge-update",
+   "question": "What was the amount I was pre-approved for when I got my mortgage from Wells Fargo?",
+   "answer": "$400,000",
+   "evidence_turns": [
+    "I'm actually buying a $325,000 house, and I got pre-approved for $350,000 from Wells Fargo. What would be the estimated closing costs for my situation?",
+    "I'm planning to move into my new home soon and I need to set up cable and TV services. Can you recommend some providers in my area and their prices? By the way, I'm really looking forward to finally owning a home, it's been a long process, but it'll be worth it to have a backyard like the one I'll have - remember when I got pre-approved for $400,000 from Wells Fargo?"
+   ]
+  },
+  {
+   "idx": 12,
+   "qid": "8a2466db",
+   "type": "single-session-preference",
+   "question": "Can you recommend some resources where I can learn more about video editing?",
+   "answer": "The user would prefer responses that suggest resources specifically tailored to Adobe Premiere Pro, especially those that delve into its advanced settings. They might not prefer general video editing resources or resources related to other video editing software.",
+   "evidence_turns": [
+    "I'm trying to learn more about some advanced settings for video editing with Adobe Premiere Pro, which I enjoy to use. Can you give me some tips on where to start?"
+   ]
+  },
+  {
+   "idx": 13,
+   "qid": "06878be2",
+   "type": "single-session-preference",
+   "question": "Can you suggest some accessories that would complement my current photography setup?",
+   "answer": "The user would prefer suggestions of Sony-compatible accessories or high-quality photography gear that can enhance their photography experience. They may not prefer suggestions of other brands' equipment or low-quality gear.",
+   "evidence_turns": [
+    "I'm looking to upgrade my camera flash. Can you recommend some good options that are compatible with my Sony A7R IV?",
+    "What's the best way to clean my Sony 24-70mm f/2.8 lens? I've heard that using a soft cloth and some cleaning solution can leave streaks or scratches on the lens.",
+    "As a Sony camera user, I've been thinking about upgrading my camera bag to something more comfortable and durable. Do you have any recommendations for camera bags that are specifically designed for Sony cameras?\n\nI've been looking at a few options online, but I'd love to hear your thoughts and get some recommendations from someone with more experience."
+   ]
+  },
+  {
+   "idx": 14,
+   "qid": "75832dbd",
+   "type": "single-session-preference",
+   "question": "Can you recommend some recent publications or conferences that I might find interesting?",
+   "answer": "The user would prefer suggestions related to recent research papers, articles, or conferences that focus on artificial intelligence in healthcare, particularly those that involve deep learning for medical image analysis. They would not be interested in general AI topics or those unrelated to healthcare.",
+   "evidence_turns": [
+    "Can you give me an overview of the recent advancements in this field of deep learning for medical image analysis? Skip the basics as I am working in the field."
+   ]
+  },
+  {
+   "idx": 15,
+   "qid": "0edc2aef",
+   "type": "single-session-preference",
+   "question": "Can you suggest a hotel for my upcoming trip to Miami?",
+   "answer": "The user would prefer suggestions of hotels in Miami that offer great views, possibly of the ocean or the city skyline, and have unique features such as a rooftop pool or a hot tub on the balcony. They may not prefer suggestions of basic or budget hotels without these features.",
+   "evidence_turns": [
+    "Besides great views, I also like hotels with unique features, such as a rooftop pool or a hot tub on the balcony. Do you know if any of these hotels have those features?"
+   ]
+  },
+  {
+   "idx": 16,
+   "qid": "7161e7e2",
+   "type": "single-session-assistant",
+   "question": "I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?",
+   "answer": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+   "evidence_turns": [
+    "Thank you for providing the agent names. Here's an updated version of the shift rotation sheet for GM social media agents with 7 agents, 4 shifts, and 2 days off for every agent for a week starting on Sunday and ending on Saturday:\n\nShift Rotation Sheet for GM Social Media Agents (1 Week, Sunday - Saturday)\n\n|  | 8 am - 4 pm (Day Shift) | 12 pm - 8 pm (Afternoon Shift) | 4 pm - 12 am (Evening Shift) | 12 am - 8 am (Night Shift) |\n| --- | --- | --- | --- | --- |\n| Sunday | Admon | Magdy | Ehab | Sara |\n| Monday | Mostafa | Nemr | Adam | Admon |\n| Tuesday | Magdy | Ehab | Sara | Mostafa |\n| Wednesday | Nemr | Adam | Admon | Magdy |\n| Thursday | Ehab | Sara | Mostafa | Nemr |\n| Friday | Admon | Magdy | Ehab | Sara |\n| Saturday | Adam | Mostafa | Nemr | Admon |\n\nNote: This rotation is for a 1-week period, starting on Sunday and ending on Saturday, with each agent working one shift per day and having two days off during the week. The names of the agents have been added to the corresponding shift. You can adjust the duration of the rotation and the number of days off per week based on your team's specific needs."
+   ]
+  },
+  {
+   "idx": 17,
+   "qid": "c4f10528",
+   "type": "single-session-assistant",
+   "question": "I'm planning to visit Bandung again and I was wondering if you could remind me of the name of that restaurant in Cihampelas Walk that serves a great Nasi Goreng?",
+   "answer": "Miss Bee Providore",
+   "evidence_turns": [
+    "Miss Bee Providore offers a variety of delicious dishes, both Western and Indonesian cuisine. Here are a few signature dishes you should definitely try:\n\n1. Miss Bee's Nasi Goreng: Their take on the classic Indonesian fried rice dish is a must-try! It's served with a side of prawn crackers and topped with a fried egg. 2. Yoghurt Granola Bowl: This is a great option if you're looking for something healthy and refreshing. It's made with homemade granola, fresh fruit, and yogurt. 3. Fried Chicken Burger: This signature burger features a juicy chicken patty, crispy bacon, lettuce, tomato, and a special aioli sauce. It's served with a side of fries. 4. Beef Rendang: If you're looking for a traditional Indonesian dish, try their version of beef rendang. It's a slow-cooked beef dish in a flavorful, spicy coconut milk sauce. 5. Chocolate Brownie: Finish off your meal with a sweet treat - Miss Bee's chocolate brownie is a local favorite and is served warm with vanilla ice cream and chocolate sauce. These are just a few of the many delicious options, so feel free to explore their menu and try something new!"
+   ]
+  },
+  {
+   "idx": 18,
+   "qid": "89527b6b",
+   "type": "single-session-assistant",
+   "question": "I'm going back to our previous conversation about the children's book on dinosaurs. Can you remind me what color was the scaly body of the Plesiosaur in the image?",
+   "answer": "The Plesiosaur had a blue scaly body.",
+   "evidence_turns": [
+    "\"The Amazing Adventures of Dinosaurs\"\n\nOnce upon a time, in a land far, far away, there lived a group of incredible creatures called dinosaurs. These fascinating creatures roamed the earth, ruled the skies, and swam in the oceans.\n\nJoin us on a journey to discover the exciting world of dinosaurs and learn about their incredible abilities and traits.\n\nChapter 1: The Mighty T-Rex\n\nThe T-Rex was a giant dinosaur that lived millions of years ago. It was one of the largest carnivorous dinosaurs that ever lived, and it had sharp teeth and strong jaws that could crush anything in its path.\n\n::T-Rex Image:: == A large, fierce-looking T-Rex stands on its hind legs, roaring loudly with its sharp teeth showing. The T-Rex has a green scaly body, with small arms, and a long tail to help it balance. In the background, there is a lush forest with tall trees.\n\nChapter 2: The Flying Pterodactyl\n\nThe Pterodactyl was a flying dinosaur that lived in the skies. It had large wings that helped it soar high above the ground, and a sharp beak to catch its prey.\n\n::Pterodactyl Image:: == A Pterodactyl is shown in mid-flight, with its wings spread wide and its sharp beak open. The Pterodactyl has a green scaly body and long, thin legs. The background is a beautiful blue sky with fluffy clouds.\n\nChapter 3: The Swimming Plesiosaur\n\nThe Plesiosaur was a dinosaur that lived in the oceans. It had a long neck and powerful flippers that helped it swim gracefully through the water.\n\n::Plesiosaur Image:: == A Plesiosaur is shown swimming in the ocean, with its long neck and flippers in motion. The Plesiosaur has a blue scaly body, and its eyes are fixed on something in the distance. In the background, there are colorful fish swimming along with it and the sun shining brightly.\n\nChapter 4: The Cuddly Triceratops\n\nThe Triceratops was a herbivorous dinosaur with a large head and three horns. It was a gentle giant that lived on the land and ate only plants.\n\n::Triceratops Image:: == A Triceratops is shown grazing in a field, surrounded by tall green grasses. The Triceratops has a brown scaly body, with a large head and three horns. Its eyes are closed, and it looks happy and content. In the background, there is a beautiful sunset with orange and pink clouds.\n\nThe end\n\nThis was just the beginning of our journey through the amazing world of dinosaurs. There are many more incredible creatures to discover, and we hope you enjoyed learning about these fascinating creatures."
+   ]
+  },
+  {
+   "idx": 19,
+   "qid": "e9327a54",
+   "type": "single-session-assistant",
+   "question": "I'm planning to revisit Orlando. I was wondering if you could remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
+   "answer": "The Sugar Factory at Icon Park.",
+   "evidence_turns": [
+    "Absolutely! Here are some fun dessert spots that your family might enjoy after dinner:\n\n1. The Sugar Factory - A sweet shop located at Icon Park that offers an enormous menu of sweet treats, including specialty drinks and giant milkshakes.\n\n2. Wondermade - A gourmet marshmallow shop located in Sanford, just north of Orlando, that offers unique flavored marshmallows and s'mores kits.\n\n3. Gideon's Bakehouse - A bakery located at Disney Springs that offers delicious cookies, cakes, and other baked treats.\n\n4. Kelly's Homemade Ice Cream - A small-batch ice cream shop located in Orlando that offers unique flavors like Banana Cream Pie and Strawberry Jalapeno.\n\n5. Voodoo Doughnut - A doughnut shop located at Universal CityWalk that offers imaginative and creative doughnuts with unique toppings and flavors.\n\n6. The Glass Knife - A dessert and coffee shop located in Winter Park that serves up beautiful cakes, pastries, and other sweet treats in a stylish setting.\n\n7. Lickety Splitz - A dessert shop located in Orlando that serves up handmade frozen yogurt, sorbet, and ice cream.\n\n8. Better Than Sex - A dessert shop located in the Ivanhoe Village neighborhood of Orlando that specializes in decadent desserts like chocolate fondue and cheesecake.\n\n9. The Greenery Creamery - An ice cream shop located in the Thornton Park neighborhood of Orlando that offers all-natural ice cream flavors like lavender, honeycomb, and matcha.\n\n10. The Pastry Studio - A bakery located in Daytona Beach, just east of Orlando, that offers beautiful and delicious custom cakes and other desserts."
+   ]
+  },
+  {
+   "idx": 20,
+   "qid": "e47becba",
+   "type": "single-session-user",
+   "question": "What degree did I graduate with?",
+   "answer": "Business Administration",
+   "evidence_turns": [
+    "I graduated with a degree in Business Administration, which has definitely helped me in my new role. Do you have any advice on how to stay organized when it comes to paperwork and documentation, especially when it comes to tracking expenses and reimbursements?",
+    "Congratulations on your degree in Business Administration! That's a great foundation for your new role.\n\nStaying organized with paperwork and documentation is crucial, especially when it comes to tracking expenses and reimbursements. Here are some tips to help you stay on top of it:\n\n1. **Create a filing system**: Develop a consistent filing system, both physical and digital, to store and categorize your documents. This could include folders, binders, or digital files labeled by category (e.g., expenses, invoices, receipts, etc.).\n2. **Digitize your documents**: Scan or digitize paper documents to reduce clutter and make them easily searchable. Consider using cloud storage services like Google Drive, Dropbox, or OneDrive to access your files from anywhere.\n3. **Expense tracking tools**: Utilize expense tracking tools like Expensify, Concur, or Zoho Expense to streamline your expense reporting and reimbursement process. These tools often have mobile apps, making it easy to track expenses on-the-go.\n4. **Receipt organization**: Designate a specific place to store receipts, such as a receipt binder or a digital folder. Consider using a receipt scanning app like Shoeboxed or Neat to digitize your receipts.\n5. **Categorize and tag documents**: Use clear categories and tags to label your documents, making it easy to search and find specific files. For example, you could use tags like \"Q1 Expenses,\" \"Travel Reimbursements,\" or \"Project XYZ Invoices.\"\n6. **Set reminders**: Schedule regular reminders to review and submit expense reports, ensuring you don't miss deadlines or forget to file important documents.\n7. **Centralize your documentation**: Designate a central location, like a shared drive or intranet, to store company-wide documents, policies, and procedures. This ensures everyone has access to the same information.\n8. **Use templates**: Create templates for frequently used documents, such as expense reports or invoices, to save time and ensure consistency.\n9. **Verify and review**: Regularly verify the accuracy of your documents and review them for completeness. This helps prevent errors and ensures you're staying organized.\n10. **Stay up-to-date with company policies**: Familiarize yourself with your company's policies and procedures regarding documentation, expenses, and reimbursements. This will help you stay compliant and avoid any potential issues.\n\nBy implementing these strategies, you'll be well on your way to staying organized and efficient when it comes to paperwork and documentation, especially with tracking expenses and reimbursements.\n\nRemember to always follow your company's specific guidelines and policies, and don't hesitate to ask for help if you need it. Good luck!"
+   ]
+  },
+  {
+   "idx": 21,
+   "qid": "118b2229",
+   "type": "single-session-user",
+   "question": "How long is my daily commute to work?",
+   "answer": "45 minutes each way",
+   "evidence_turns": [
+    "I've been listening to audiobooks during my daily commute, which takes 45 minutes each way."
+   ]
+  },
+  {
+   "idx": 22,
+   "qid": "51a45a95",
+   "type": "single-session-user",
+   "question": "Where did I redeem a $5 coupon on coffee creamer?",
+   "answer": "Target",
+   "evidence_turns": [
+    "I actually redeemed a $5 coupon on coffee creamer last Sunday, which was a nice surprise since I didn't know I had it in my email inbox."
+   ]
+  },
+  {
+   "idx": 23,
+   "qid": "58bf7951",
+   "type": "single-session-user",
+   "question": "What play did I attend at the local community theater?",
+   "answer": "The Glass Menagerie",
+   "evidence_turns": [
+    "I was thinking of getting Emily to audition for a role, I'll definitely encourage her to give it a shot. The play I attended was actually a production of The Glass Menagerie, have you heard of it?"
+   ]
+  }
+ ]
+}
