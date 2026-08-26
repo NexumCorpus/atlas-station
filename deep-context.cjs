@@ -11,7 +11,7 @@ const EXTENSIONS = new Set([
 ]);
 const EXTENSIONLESS = new Set(['dockerfile', 'makefile', 'license', 'readme', 'procfile']);
 const EXCLUDED_DIRS = new Set([
-  '.atlas', '.git', '.gm', '.next', 'build', 'coverage', 'dist', 'memory', 'node_modules', 'out', 'target', 'vendor',
+  '.atlas', '.cache', '.git', '.agentplug-kv', '.cache', '.claude', '.gm', '.next', 'build', 'coverage', 'dist', 'memory', 'node_modules', 'out', 'target', 'vendor',
 ]);
 const EXCLUDED_FILES = new Set([
   'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', '.npmrc', '.pypirc', '.netrc',
