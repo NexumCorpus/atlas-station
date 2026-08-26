@@ -519,7 +519,8 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       // Output-length guard: peers burn rounds re-reading walls of text; truncate before storing/broadcasting.
       try { if (final.length > 4000) { final = '[truncated] ' + final.slice(0, 4000); } } catch {}
       flushThinking(true);
-      set(id, { state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(build ? { checkpointPath: agents.get(id)?.checkpointPath ?? null } : {}), ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
+      const __fc = done ? undefined : _classifyFailure({ summary: final, failSubtype: m.subtype });
+      set(id, { state: done ? "done" : "failed", ...(done ? {} : { failureClass: __fc }), cost: m.total_cost_usd ?? null, summary: final.slice(0, 220), reply: final, failSubtype: done ? undefined : m.subtype, lastToolArg: null, ...(build ? { checkpointPath: agents.get(id)?.checkpointPath ?? null } : {}), ...(isOrch && m.usage ? { usage: m.usage } : {}), ...(isOrch && m.duration_ms != null ? { durationMs: m.duration_ms } : {}), ...extra });
       if (_memstore && _memstore.recordTerminalOnce(id)) try { _memstore.appendRun({ agentId: id, task: agents.get(id)?.task, mode: build ? "build" : "read", state: done ? "done" : "failed", cost: m.total_cost_usd ?? null, summary: final.slice(0, 500), branch: branch ?? null, commitRefs, transcriptPath: null,
         checkpointPath: build ? (agents.get(id)?.checkpointPath ?? null) : null,
         hermes: { v: 1, flow_id: `run:${id}:${Date.now()}`, parent_flow_id: null, stage: 'verification', actor: id, provenance: [], completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' }, authority: { level: build ? 'propose' : 'observe', human_grant: null, mutation_allowed: false }, loss: { kind: 'derived', input_bytes: 0, output_bytes: final.length, status: 'unmeasured' }, falsifiers: [] } }); } catch {}
@@ -634,6 +635,14 @@ function armAgentRetry(record) {
   }, delay);
   timer.unref?.();
   agentRetryTimers.set(record.id, timer);
+}
+// Failure classification (DREAM-644/640: gate read failureClass but no writer
+// existed, so every failure fell into grace and auto-retried blindly).
+function _classifyFailure(record) {
+  const sig = String((record && (record.summary || record.failSubtype)) || '').toLowerCase();
+  if (/merge conflict|conflict in|automatic merge failed/.test(sig)) return 'brief-defect';
+  if (/syntaxerror|enoent|permission denied|eacces|module_not_found/.test(sig)) return 'brief-defect';
+  return 'constraint-era'; // exhaustion/timeout classes convert reliably on -R rerun
 }
 // Retry-classification gate (fleet/B-343 salvage): only constraint-era
 // exhaustion converts reliably under a -R rerun; brief-defect/unclassified
@@ -810,7 +819,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
         scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, id, "provider tool-round error", execution);
         return "Subagent " + id + " hit a provider tool-round error; one-shot retry queued in 15min";
       }
-      set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180) });
+      set(id, { state: "failed", summary: String(e?.message ?? e).slice(0, 180), failureClass: _classifyFailure({ summary: String(e?.message ?? e), failSubtype: failureMode }) });
       final = "(subagent errored: " + String(e?.message ?? e).slice(0, 120) + ")";
       if (_outcomeTracker) {
         try { _outcomeTracker.rateOutcome(id, 'bad', 'auto-tagged: ' + failureMode, path.join(REPO, 'memory'), failureMode); } catch {}
