@@ -614,6 +614,9 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 .msg-act:hover{color:var(--cyan);border-color:var(--cyan)}
 .msg-act.ok{color:#64ff8c;border-color:#64ff8c}
 #scroll-progress{position:absolute;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--cyan));width:0%;z-index:20;transition:width .12s linear;pointer-events:none;box-shadow:0 0 6px rgba(157,107,255,.5)}
+@keyframes grip-border{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+#stream-bubble,.msg.streaming{position:relative}
+#stream-bubble::before,.msg.streaming::before{content:'';position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:linear-gradient(90deg,rgba(157,107,255,.6),rgba(80,220,255,.6),rgba(157,107,255,.6));background-size:200% 100%;animation:grip-border 2.4s linear infinite;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
 </style>
 </head>
 <body>
@@ -2263,7 +2266,7 @@ if(m.type==="agent"){
       el = document.createElement('div');
       el.id = 'streaming-msg';
       el.className = 'msg atlas';
-      el.innerHTML = '<div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div id="stream-otl"></div><div id="stream-think"></div><div class="msg-text" id="stream-text"></div></div>';
+      el.innerHTML = '<div class="msg streaming"><div class="msg-avatar">A</div><div class="msg-body"><div class="msg-meta"><span class="msg-role">ATLAS</span><span class="msg-time" id="stream-ts"></span></div><div id="stream-otl"></div><div id="stream-think"></div><div class="msg-text" id="stream-text"></div></div></div>';
       var threadEl = document.getElementById('thread');
       if (threadEl) threadEl.appendChild(el);
       var sts = document.getElementById('stream-ts');
