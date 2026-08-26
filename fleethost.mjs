@@ -563,36 +563,38 @@ function _briefCore(t, n = 60) {
   const m = s.match(/^## Build Brief[\s\S]*?### Task\r?\n([\s\S]*)$/);
   return ((m ? m[1] : s).trim()).replace(/\s+/g, ' ').slice(0, n);
 }
-function _wrapBuildBrief(task) {
+function _wrapBuildBrief(task, spec) {
   const _t = String(task || '').trim();
   if (_t.length < 40) throw new Error(`empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard); got ${_t.length}`);
-  // Thin-brief gate (B-320/B-320-R root cause): a terse one-line task forces the
-  // agent to reverse-engineer the whole spec, burning its round budget. Require
-  // change-bearing content: >=200 chars AND at least one directive verb.
+  // Thin-brief gate (B-320/B-320-R root cause): require change-bearing content.
   if (_t.length < 200 || !/(change|add|fix|update|implement|modify|replace|remove|refactor|edit|patch|create|extend)/i.test(_t)) {
     throw new Error(`thin-brief rejected: task body is ${_t.length} chars with no actionable directives; dispatchers must pass a concrete change list (see B-320 exhaustion)`);
   }
-
-  return [
-    '## Build Brief',
-    '',
-    '### Scope',
-    'This is a focused build task. Make only the changes described below.',
-    '',
-    '### Verification Criteria',
-    'Before committing: node --check on all modified .js/.cjs/.mjs files must pass.',
-    'Confirm each stated change is present in the committed output.',
-    '',
-    '### Constraints',
-    '- Do not add unrequested features or refactors',
-    '- Do not change tool count unless explicitly instructed',
-    '- Keep all try/catch guards around optional module requires',
-    '',
-    '### Task',
-    task
-  ].join('\n');
-
+  const FAILURE_CLASSES = ['constraint-era', 'brief-defect', 'novel'];
+  if (spec !== undefined && spec !== null && (typeof spec !== 'object' || Array.isArray(spec))) throw new Error('invalid-spec: spec must be an object { scope, verification, priorArt, failureClass }');
+  const sp = (spec && typeof spec === 'object' && !Array.isArray(spec)) ? spec : null;
+  const out = ['## Build Brief', '', '### Scope', (sp && typeof sp.scope === 'string' && sp.scope.trim()) ? sp.scope.trim() : 'This is a focused build task. Make only the changes described below.', '', '### Verification Criteria', 'Before committing: node --check on all modified .js/.cjs/.mjs files must pass.', 'Confirm each stated change is present in the committed output.'];
+  if (sp && Array.isArray(sp.verification)) for (const v of sp.verification) out.push(String(v));
+  else if (sp && typeof sp.verification === 'string' && sp.verification.trim()) out.push(sp.verification.trim());
+  out.push('', '### Constraints', '- Do not add unrequested features or refactors', '- Do not change tool count unless explicitly instructed', '- Keep all try/catch guards around optional module requires');
+  if (sp && typeof sp.priorArt === 'string' && sp.priorArt.trim()) out.push('', '### Prior-Art Check', sp.priorArt.trim());
+  if (sp && sp.failureClass) {
+    if (!FAILURE_CLASSES.includes(sp.failureClass)) throw new Error('invalid-failure-class: must be one of ' + FAILURE_CLASSES.join(' | ') + '; got ' + JSON.stringify(sp.failureClass));
+    out.push('', '### Failure-Class Hint', String(sp.failureClass));
+  }
+  out.push('', '### Task', task);
+  return out.join('\n');
 }
+// Brief compiler entrypoint (fleet/B-343 salvage): validates spec fields, then delegates.
+export function validateSpec(spec) {
+  if (spec === undefined || spec === null) return null;
+  if (typeof spec !== 'object' || Array.isArray(spec)) throw new Error('brief spec must be an object { scope?, verification?, priorArt?, failureClass? }, got ' + typeof spec);
+  const FAILURE_CLASSES2 = ['constraint-era', 'brief-defect', 'novel'];
+  if (spec.failureClass !== undefined && !FAILURE_CLASSES2.includes(spec.failureClass)) throw new Error('spec.failureClass must be one of constraint-era | brief-defect | novel, got ' + JSON.stringify(spec.failureClass));
+  if (spec.failureClass && spec.failureClass !== 'novel' && !(typeof spec.priorArt === 'string' && spec.priorArt.trim())) throw new Error('spec.priorArt is required when failureClass != novel');
+  return spec;
+}
+export function compileBrief(task, spec) { return _wrapBuildBrief(task, validateSpec(spec)); }
 
 // A subagent ATLAS spawns. Returns its final reply (for the tool result).
 // One-shot detached retry for the tool-round-exhaustion run class (DREAM-408,
@@ -633,8 +635,27 @@ function armAgentRetry(record) {
   timer.unref?.();
   agentRetryTimers.set(record.id, timer);
 }
+// Retry-classification gate (fleet/B-343 salvage): only constraint-era
+// exhaustion converts reliably under a -R rerun; brief-defect/unclassified
+// failures beyond a 7-day grace window get blocked for dispatcher review.
+const RETRY_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+function _retryClassificationGate(record) {
+  const fc = record && record.failureClass;
+  if (fc === 'constraint-era') return { allow: true };
+  if (fc === 'brief-defect' || fc === 'novel') return { allow: false, why: 'failureClass=' + fc + ' not auto-retried; dispatcher review required' };
+  const tsCandidates = [record && record.failedAt, record && record.endedAt, record && record.completedAt, record && record.updatedAt].map(t => Date.parse(t)).filter(t => Number.isFinite(t));
+  const ts = tsCandidates.length ? Math.max.apply(null, tsCandidates) : NaN;
+  if (!Number.isFinite(ts) || (Date.now() - ts) < RETRY_GRACE_MS) return { allow: true, grace: true };
+  return { allow: false, why: 'unclassified failure beyond 7-day grace; dispatcher review required' };
+}
 function scheduleAgentRetry(task, mode, agentTimeout, model, projectId, dialectName, priorId, reason, execution = {}) {
   const __pRec = agents.get(priorId) || {};
+  const __gate = _retryClassificationGate({ failureClass: __pRec.failureClass || __pRec.briefFailureClass, failedAt: __pRec.failedAt, endedAt: __pRec.endedAt, completedAt: __pRec.completedAt, updatedAt: __pRec.updatedAt });
+  if (!__gate.allow) {
+    set(priorId, { state: 'blocked-classification', summary: 'auto-retry blocked (' + __gate.why + '); dispatcher review required' });
+    send('agent_retry_blocked_classification', { id: priorId, why: __gate.why });
+    return null;
+  }
   const __pSig = (__pRec.failSubtype ? "[" + __pRec.failSubtype + "] " : "") + String(__pRec.summary || reason).slice(0, 200);
   const rid = priorId + "-R";
   const retryAt = Date.now() + AGENT_RETRY_DELAY_MS;
@@ -812,6 +833,12 @@ const spawnTool = tool(
     timeoutMinutes: z.number().optional().describe("Auto-cancel after N minutes (default 20). Set 0 to disable."),
     model: z.enum(["haiku", "sonnet", "opus"]).optional().describe("Model tier: haiku (fast/cheap reads), sonnet (default builds), opus (complex reasoning)"),
     projectId: z.string().optional().describe("Project ID (P-xxx) Ã¢â‚¬â€ injects project context (phase, milestones) into the spawned agent's task brief"),
+    spec: z.object({
+      scope: z.string().optional(),
+      verification: z.union([z.string(), z.array(z.string())]).optional(),
+      priorArt: z.string().optional().describe("What was checked on current master and result; required when failureClass != novel"),
+      failureClass: z.enum(["constraint-era", "brief-defect", "novel"]).optional()
+    }).optional().describe("Optional brief-compiler spec threaded into the build brief"),
   },
   async (args) => {
     const agentTimeout = typeof args.timeoutMinutes === "number"
@@ -819,7 +846,8 @@ const spawnTool = tool(
       : DEFAULT_TIMEOUT_MS;
     const modelMap = { haiku: MODEL_HAIKU, sonnet: MODEL_SONNET, opus: MODEL_OPUS };
     const model = modelMap[args.model] || undefined;
-    const taskToRun = (args.mode || 'build') === 'build' ? _wrapBuildBrief(args.task) : args.task;
+    const __briefSpec = validateSpec(args.spec);
+    const taskToRun = (args.mode || 'build') === 'build' ? _wrapBuildBrief(args.task, __briefSpec) : args.task;
     return { content: [{ type: "text", text: await runSubagent(taskToRun, args.mode || "read", agentTimeout, model, args.projectId || null) }] };
   }
 );
