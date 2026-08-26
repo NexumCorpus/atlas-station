@@ -304,6 +304,8 @@ body:has(#tab-ecology:target) .tab[data-tab="fleet"]{color:var(--dim);border-bot
 .gpri.high{color:#ff784e}
 .gpri.medium{color:#f0b840}
 .gpri.low{color:#7ab8e8}
+#memwritebar{height:2px;width:100%;background:linear-gradient(90deg,#22a55a,#5588ff,#22a55a);background-size:200% 100%;animation:mempulse 1.5s linear infinite;animation-play-state:paused;opacity:.8}
+@keyframes mempulse{0%{background-position:0% 0}100%{background-position:200% 0}}
 #memfacts{max-height:280px;overflow-y:auto;flex:none}
 #memfsearch{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--fg);font-size:var(--fs-2xs);padding:3px 7px;border-radius:var(--r-sm);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;margin:3px 0 4px}
 #memfsearch:focus{border-color:rgba(157,107,255,.4);background:rgba(157,107,255,.04)}
@@ -703,6 +705,7 @@ input:focus-visible{outline:none}
 
       <!-- MEMORY TAB -->
       <div id="tab-memory" class="tab-panel" style="display:none">
+        <div id="memwritebar"></div>
         <div id="memfactslab" class="lab panel-hd" style="display:none"><span class="ph-title">memory</span><span class="ph-count" id="memfacts-count"></span><span class="ph-chevron">�€�</span></div>
         <div id="memfacts" style="display:none;flex-direction:column"></div>
         <div id="docslab" class="panel-hd"><span class="ph-title">docs</span><span class="ph-count" id="docsbadge"></span><span class="ph-chevron">�€�</span></div>
@@ -754,6 +757,11 @@ input:focus-visible{outline:none}
             <div id="sh-goals"><div class="sh-empty">loading�€�</div></div>
           </div>
           <div class="sh-divider"></div>
+          <div class="sh-divider"></div>
+          <div class="sh-section" id="sh-git-wrap">
+            <div class="sh-sec-title">git <span style="color:var(--dim);font-weight:400;font-size:var(--fs-3xs)">last commits</span></div>
+            <div id="sh-git"><div class="sh-empty">awaiting sync</div></div>
+          </div>
           <div class="sh-section" id="sh-proposals-wrap">
             <div class="sh-sec-title">Proposals (pending HIGH)</div>
             <div id="sh-proposals"><div class="sh-empty">loading�€�</div></div>
@@ -1669,9 +1677,9 @@ if(m.type==="agent"){
           }
         });
       }
-      renderThread();renderBrood();updateEye();
+      renderThread();renderBrood();updateEye();renderStationGit();
     } else if(m.type==="history"){
-      HIST={commits:(m.commits||[]),runs:(m.runs||[])};
+      HIST={commits:(m.commits||[]),runs:(m.runs||[])};renderStationGit();
       renderLedger();
     } else if(m.type==="startup"){
       var health=[];
@@ -3402,6 +3410,17 @@ if(m.type==="agent"){
       +bar
       +'<div style="font-size:var(--fs-2xs);color:var(--ink)">novelty <span style="color:var(--cyan)">'+esc(nov||'?')+'</span> · CERT-margin <span style="color:'+(m>=0?acid:ember)+';font-weight:700">'+esc(mar||'?')+'</span> �†’ <span style="color:'+acid+'">'+esc(region)+'</span></div>'
       +'<div style="font-size:var(--fs-3xs);color:var(--dim);margin-top:4px;line-height:1.4">fill(QD)�†’trojan(hidden-holdout)�†’certify(meta-holdout, cleared-noise). Proves the mechanism certifies a crossing <em>when one exists</em>. The RDE wall above stays uncrossed �€” a real crossing must land in its target band with a positive holdout margin.</div>';
+  }
+  function renderStationGit() {
+    try {
+      var el = document.getElementById('sh-git');
+      if (!el) return;
+      var cs = HIST.commits || [];
+      if (!cs.length) { el.innerHTML = '<div class="sh-empty">&#8635; awaiting sync</div>'; return; }
+      el.innerHTML = cs.slice(0,5).map(function(c){
+        return '<div style="font-family:ui-monospace,Consolas,monospace;font-size:var(--fs-3xs);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:var(--cyan)">' + esc((c.sha||'').slice(0,7)) + '</span> ' + esc(c.subject||'') + '</div>';
+      }).join('');
+    } catch(e) {}
   }
   function loadStationHealth() {
     if (window.atlas && window.atlas.stationHealth) {
