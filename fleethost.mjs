@@ -549,6 +549,16 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
   return final;
 }
 
+// Strip the standard build-brief wrapper from a stored/dispatched task so
+// displays and dream reflections show the ACTUAL work content, not the
+// boilerplate head ending in Make. DREAM-636 root cause: the dream protocol read
+// display-sliced wrapped tasks, hallucinated truncated briefs, and re-minted
+// HIGH proposals about a defect that never existed - every pulse.
+function _briefCore(t, n = 60) {
+  const s = String(t || '');
+  const m = s.match(/^## Build Brief[\s\S]*?### Task\r?\n([\s\S]*)$/);
+  return ((m ? m[1] : s).trim()).replace(/\s+/g, ' ').slice(0, n);
+}
 function _wrapBuildBrief(task) {
   const _t = String(task || '').trim();
   if (_t.length < 40) throw new Error(`empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard); got ${_t.length}`);
@@ -5598,7 +5608,7 @@ async function runPulse() {
         const dreamPrompt = `You are ATLAS's autonomous reflection process Ã¢â‚¬â€ the dream protocol. Review the data below and produce a structured self-reflection.
 
 RECENT AGENT RUNS (${recentRuns.length}):
-${recentRuns.map(r => `[${r.agentId||'?'}] ${r.mode||'?'} / ${r.state||'?'} $${Number(r.cost||0).toFixed(3)} Ã¢â‚¬â€ ${(r.task||'').slice(0,60)}`).join('\n').slice(0,2000)}
+${recentRuns.map(r => `[${r.agentId||'?'}] ${r.mode||'?'} / ${r.state||'?'} $${Number(r.cost||0).toFixed(3)} Ã¢â‚¬â€ ${_briefCore(r.task,60)}`).join('\n').slice(0,2000)}
 
 SUCCESS RATE: ${successRate}% | AVG COST: $${avgCost.toFixed(3)}
 
