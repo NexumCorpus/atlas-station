@@ -4990,7 +4990,7 @@ function scheduleAutonomyTick(delay) {
   autonomyTimer = setTimeout(async () => {
     autonomyTimer = null;
     if (!autonomyEnabled) return;
-    if (autonomyBusy || _sayBusy) { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // never overlap a bridge turn
+    if (autonomyBusy || _mouthBusy || _metabolismIngressBusy) { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // never overlap an ingress turn
     if (Date.now() >= autonomyDeadline) { stopAutonomy("the time window elapsed"); return; }
     const atlas = agents.get("ATLAS");
     if (atlas && atlas.state === "working") { scheduleAutonomyTick(AUTONOMY_BREATHER_MS); return; } // ATLAS busy Ã¢â€ â€™ wait

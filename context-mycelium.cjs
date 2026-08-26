@@ -5,9 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const shardCodec = require('./shard-codec.cjs');
+const appendLock = require('./append-lock.cjs');
 
 const RUNTIME = path.join(__dirname, '.atlas', 'context-mycelium');
 const MANIFEST = path.join(RUNTIME, 'crystals.ndjson');
+const MANIFEST_LOCK = `${MANIFEST}.lock`;
 
 function sha(value) { return `sha256:${crypto.createHash('sha256').update(Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'utf8')).digest('hex')}`; }
 function bytes(text) { return Buffer.from(String(text), 'utf8'); }
@@ -37,21 +39,38 @@ function unshard(record) {
   try { return shardCodec.decode(frags, record.k, record.n, record.origLen); }
   catch { throw new ContextTissueError('insufficient or singular shards', 'CONTEXT_SHARDS_INSUFFICIENT'); }
 }
-function appendCrystal(record) {
-  fs.mkdirSync(RUNTIME, { recursive: true });
-  const prior = fs.existsSync(MANIFEST) ? fs.readFileSync(MANIFEST, 'utf8').trim().split(/\r?\n/).filter(Boolean).at(-1) : '';
-  const prev = prior ? JSON.parse(prior) : null;
-  const body = { ...record, seq: (prev?.seq || 0) + 1, priorHash: prev?.recordHash || null, issuedAt: new Date().toISOString() };
-  body.recordHash = sha(JSON.stringify(body));
-  fs.appendFileSync(MANIFEST, JSON.stringify(body) + '\n', 'utf8');
-  return body;
-}
-function readCrystals(untilSeq = Infinity) {
+function readCrystalsUnlocked(untilSeq = Infinity) {
   if (!fs.existsSync(MANIFEST)) return [];
   const rows = fs.readFileSync(MANIFEST, 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse).filter(r => r.seq <= untilSeq);
   let prior = null; let expected = 1;
   for (const row of rows) { const copy = { ...row }; delete copy.recordHash; if (row.seq !== expected || row.priorHash !== prior || row.recordHash !== sha(JSON.stringify(copy))) throw new ContextTissueError('crystal manifest chain mismatch', 'CONTEXT_MANIFEST_TAMPERED'); prior = row.recordHash; expected++; }
   return rows;
+}
+function appendCrystal(record) {
+  fs.mkdirSync(RUNTIME, { recursive: true });
+  let lock;
+  try {
+    lock = appendLock.acquire(MANIFEST_LOCK, 10_000);
+    const rows = readCrystalsUnlocked();
+    const prev = rows.at(-1) || null;
+    const body = { ...record, seq: (prev?.seq || 0) + 1, priorHash: prev?.recordHash || null, issuedAt: new Date().toISOString() };
+    body.recordHash = sha(JSON.stringify(body));
+    const fd = fs.openSync(MANIFEST, 'a', 0o600);
+    try { fs.writeSync(fd, `${JSON.stringify(body)}\n`, null, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return body;
+  } finally {
+    appendLock.release(MANIFEST_LOCK, lock);
+  }
+}
+function readCrystals(untilSeq = Infinity) {
+  fs.mkdirSync(RUNTIME, { recursive: true });
+  let lock;
+  try {
+    lock = appendLock.acquire(MANIFEST_LOCK, 10_000);
+    return readCrystalsUnlocked(untilSeq);
+  } finally {
+    appendLock.release(MANIFEST_LOCK, lock);
+  }
 }
 function tissueFor(section, rows) {
   const found = rows.find(row => row.shards && row.contentHash === section.sourceHash);

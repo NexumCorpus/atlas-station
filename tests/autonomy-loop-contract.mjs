@@ -14,7 +14,8 @@ assert.match(source, /catch \(error\) \{[\s\S]*send\("autonomy_progress", \{[\s\
 assert.match(source, /const turnPlan = followAutonomyTurn\(\{ rested: true, idleStreak: autonomyIdleStreak \}\)/);
 assert.match(source, /failure,[\s\S]*discovery: turnPlan\.discovery/);
 assert.match(source, /This is a forced discovery turn after repeated idle results/);
-assert.match(source, /autonomyBusy \|\| _sayBusy\) \{ scheduleAutonomyTick/);
+assert.doesNotMatch(source, /\b_sayBusy\b/, "autonomy scheduling must not reference the removed bridge-busy flag");
+assert.match(source, /autonomyBusy \|\| _mouthBusy \|\| _metabolismIngressBusy\) \{ scheduleAutonomyTick/);
 assert.match(source, /const failure = String\(error\?\.message \|\| error\)\.slice\(0, 240\)/);
 assert.match(source, /cancelAutonomyTick\(\);[\r\n]+  const m =/);
 
