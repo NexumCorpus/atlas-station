@@ -80,6 +80,38 @@ async function fetchBeforeResponse(url, init, env) {
   return requestFetch(url, init);
 }
 
+// Transport-level failures (connection reset/aborted mid-read, socket hangup,
+// premature close, fetch failed) are provider/network transients. They are
+// distinct from HTTP status retries: the request was admitted but the body
+// read died. Bounded retry is safe because no model output has been observed.
+const TRANSPORT_RETRY_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE", "ETIMEDOUT", "UND_ERR_SOCKET"]);
+export function isTransportRetryable(err) {
+  if (!err) return false;
+  if (err.name === "AbortError" || err.name === "TimeoutError") return false;
+  if (TRANSPORT_RETRY_CODES.has(err.code)) return true;
+  if (err.cause && err.cause !== err && isTransportRetryable(err.cause)) return true;
+  const msg = String(err.message || "");
+  return /\b(ECONNRESET|socket hang up|premature close|terminated|fetch failed|other side closed)\b/i.test(msg);
+}
+
+// Retries ONLY the fetch-until-headers phase using the same configured
+// retry budget/backoff as every other retry policy in this provider. It makes
+// NO claim about body-read coverage: body-read failures are handled inside
+// requestStreaming's own bounded attempt loop.
+async function fetchBeforeResponseRetryable(url, init, env) {
+  const configuredRetries = Number(env.ATLAS_OPENROUTER_HTTP_RETRIES);
+  const maxAttempts = 1 + Math.max(0, Math.min(3, Number.isFinite(configuredRetries) ? configuredRetries : 2));
+  const baseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetchBeforeResponse(url, init, env);
+    } catch (err) {
+      if (init.signal?.aborted || !isTransportRetryable(err) || attempt >= maxAttempts - 1) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(15_000, baseMs * 2 ** attempt)));
+    }
+  }
+}
+
 function powershellFetch(url, init = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", POWERSHELL_TRANSPORT], {
@@ -343,12 +375,13 @@ async function request(messages, env, signal, tools) {
   const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
   const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const response = await fetchBeforeResponse(API_URL, {
+    const response = await fetchBeforeResponseRetryable(API_URL, {
       method: "POST",
       signal: requestSignal,
       headers: authHeaders(env),
       body: requestJson,
     }, env);
+    if (response.transportError && attempt < retries && isTransportRetryable({ message: response.transportError })) { await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal); continue; }
     if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
     const payload = await response.json().catch(() => ({}));
     if (response.ok) return payload;
@@ -365,6 +398,12 @@ async function request(messages, env, signal, tools) {
 // Streaming variant: parses OpenRouter SSE chunks, forwards text / reasoning /
 // tool_call deltas to onDelta as they arrive, and resolves with the assembled
 // message + usage. Handles both delta.reasoning and delta.reasoning_content.
+// The ENTIRE fetch + body-consume attempt runs inside the bounded retry loop:
+// transport errors thrown mid-body-read (e.g. ECONNRESET after headers) are
+// retried ONLY while zero semantic frames were accepted in that attempt,
+// signal not aborted, and attempts remain. This function only assembles model
+// output; tool execution happens later, after successful assembly, so a retry
+// can never replay tool execution.
 async function requestStreaming(messages, env, signal, onDelta, tools) {
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 1_200_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
@@ -374,68 +413,93 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
   const retries = Math.max(0, Math.min(3, Number.isFinite(configuredRetries) ? configuredRetries : 2));
   const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
   const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
-  let response;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    response = await fetchBeforeResponse(API_URL, {
-      method: "POST",
-      signal: requestSignal,
-      headers: authHeaders(env),
-      body: requestJson,
-    }, env);
-    if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
-    if (response.ok && response.body) break;
-    const payload = await response.json().catch(() => ({}));
-    const isRateLimited = response.status === 429;
-    const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
-    if (transientStatuses.has(response.status) && attempt < attemptsAllowed && await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal)) continue;
-    const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
-    error.status = response.status;
-    throw error;
-  }
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let content = "";
-  let reasoning = "";
+
+  let content = '';
+  let reasoning = '';
   const toolAcc = new Map(); // index -> { id, name, args }
   let usage = null;
   let finishReason = null;
-  streamLoop: for await (const chunk of response.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let nl;
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl).replace(/\r$/, "");
-      buffer = buffer.slice(nl + 1);
-      if (!line.startsWith("data:")) continue; // skips SSE comments (e.g. ": OPENROUTER PROCESSING")
-      const data = line.slice(5).trim();
-      if (!data) continue;
-      if (data === "[DONE]") break streamLoop;
-      let evt; try { evt = JSON.parse(data); } catch { continue; }
-      if (evt.usage) usage = evt.usage;
-      const choice = evt.choices?.[0];
-      if (!choice) continue;
-      if (choice.finish_reason) finishReason = choice.finish_reason;
-      const d = choice.delta || {};
-      const rText = d.reasoning ?? d.reasoning_content;
-      if (typeof rText === "string" && rText) { reasoning += rText; onDelta?.({ kind: "thinking", text: rText }); }
-      if (typeof d.content === "string" && d.content) { content += d.content; onDelta?.({ kind: "text", text: d.content }); }
-      if (Array.isArray(d.tool_calls)) {
-        for (const tc of d.tool_calls) {
-          const idx = Number.isInteger(tc.index) ? tc.index : 0;
-          let slot = toolAcc.get(idx);
-          if (!slot) { slot = { id: "", name: "", args: "" }; toolAcc.set(idx, slot); }
-          if (tc.id) slot.id = String(tc.id);
-          if (tc.function?.name) slot.name += String(tc.function.name);
-          if (tc.function?.arguments) {
-            slot.args += String(tc.function.arguments);
-            onDelta?.({ kind: "tool_arg", index: idx });
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    // Fresh attempt: reset all accumulators so a retried stream can never
+    // duplicate deltas already forwarded to onDelta (safe only because we
+    // reach a retry exclusively with zero semantic output observed).
+    content = ''; reasoning = ''; toolAcc.clear(); usage = null; finishReason = null;
+    let semanticSeen = false;
+
+    try {
+      const response = await fetchBeforeResponseRetryable(API_URL, {
+        method: 'POST',
+        signal: requestSignal,
+        headers: authHeaders(env),
+        body: requestJson,
+      }, env);
+      if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
+
+      if (!(response.ok && response.body)) {
+        const payload = await response.json().catch(() => ({}));
+        const isRateLimited = response.status === 429;
+        const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
+        if (transientStatuses.has(response.status) && attempt < attemptsAllowed && (await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal))) continue;
+        const error = new Error(payload?.error?.message || response.statusText || 'OpenRouter request failed');
+        error.status = response.status;
+        throw error;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      streamLoop: for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).replace(/\r$/, '');
+          buffer = buffer.slice(nl + 1);
+          if (!line.startsWith('data:')) continue; // skips SSE comments (e.g. ': OPENROUTER PROCESSING')
+          const data = line.slice(5).trim();
+          if (!data) continue;
+          if (data === '[DONE]') { semanticSeen = true; break streamLoop; }
+          let evt; try { evt = JSON.parse(data); } catch { continue; }
+          if (evt.usage) { usage = evt.usage; semanticSeen = true; }
+          const choice = evt.choices?.[0];
+          if (!choice) continue;
+          if (choice.finish_reason) { finishReason = choice.finish_reason; semanticSeen = true; }
+          const d = choice.delta || {};
+          const rText = d.reasoning ?? d.reasoning_content;
+          if (typeof rText === 'string' && rText) { reasoning += rText; semanticSeen = true; onDelta?.({ kind: 'thinking', text: rText }); }
+          if (typeof d.content === 'string' && d.content) { content += d.content; semanticSeen = true; onDelta?.({ kind: 'text', text: d.content }); }
+          if (Array.isArray(d.tool_calls)) {
+            for (const tc of d.tool_calls) {
+              const idx = Number.isInteger(tc.index) ? tc.index : 0;
+              let slot = toolAcc.get(idx);
+              if (!slot) { slot = { id: '', name: '', args: '' }; toolAcc.set(idx, slot); }
+              if (tc.id) slot.id = String(tc.id);
+              if (tc.function?.name) slot.name += String(tc.function.name);
+              if (tc.function?.arguments) {
+                slot.args += String(tc.function.arguments);
+                semanticSeen = true;
+                onDelta?.({ kind: 'tool_arg', index: idx });
+              }
+            }
           }
         }
       }
+      break; // successful assembly
+    } catch (err) {
+      const aborted = requestSignal.aborted || err?.name === 'AbortError' || err?.name === 'TimeoutError';
+      if (!semanticSeen && !aborted && attempt < retries && isTransportRetryable(err)) {
+        await waitForRetry(Math.min(15_000, retryBaseMs * 2 ** attempt), requestSignal);
+        continue;
+      }
+      if (semanticSeen && isTransportRetryable(err)) {
+        throw new Error(`OpenRouter stream failed mid-response after partial output (no replay): ${err?.message || err}`);
+      }
+      throw err;
     }
   }
+
   const tool_calls = [...toolAcc.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([, s]) => ({ id: s.id || `call_${s.name}`, type: "function", function: { name: s.name || "shell", arguments: s.args || "{}" } }));
+    .map(([, s]) => ({ id: s.id || `call_${s.name}`, type: 'function', function: { name: s.name || 'shell', arguments: s.args || '{}' } }));
   return {
     message: {
       content: content || null,
