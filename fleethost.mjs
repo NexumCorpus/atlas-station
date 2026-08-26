@@ -551,6 +551,22 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
       }
     }
   }
+      // Auto-capture the Value Claim Mandate (415ff17): extract the falsifiable
+      // outcome claim from the build terminal output and record it. A build that
+      // states no claim is flagged so its merge cannot pass silently unclaimed.
+      if (build && _valueClaims && done) {
+        try {
+          const __vc = final.match(/VALUE CLAIM:\s*([\s\S]{10,400}?)(?:\n\n|\n[A-Z#]|$)/);
+          const __kc = final.match(/KILL CONDITION:\s*([\s\S]{10,300}?)(?:\n\n|\n[A-Z#]|$)/);
+          if (__vc) {
+            _valueClaims.recordClaim(id, __vc[1].trim(), __kc ? __kc[1].trim() : 'dispatcher must witness stated post-merge outcome or revert within dueDays', path.join(REPO,'memory'));
+            send('agent_value_claim_recorded', { id, statement: __vc[1].trim().slice(0,120) });
+          } else {
+            set(id, { valueClaimMissing: true });
+            send('agent_value_claim_missing', { id });
+          }
+        } catch {}
+      }
   return final;
 }
 
@@ -601,7 +617,7 @@ function _wrapBuildBrief(task, spec) {
       }
     } catch { /* probe failure is non-fatal */ }
   }
-  out.push('', '### Value Claim Mandate', '- Before committing, state ONE falsifiable post-merge outcome this change should produce and how it will be checked (the dispatcher records it via value_claims record). No claim = no merge.', '');
+  out.push('', '### Value Claim Mandate', '- End your final output with exactly two labeled lines:', '  VALUE CLAIM: <one falsifiable observable post-merge outcome>', '  KILL CONDITION: <how/when to check it; what proves the change worthless and triggers revert>', '- No VALUE CLAIM line = the build is recorded as value-claim-missing and cannot pass review silently.', '');
 out.push('', '### Task', task);
   return out.join('\n');
 }
