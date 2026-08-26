@@ -621,6 +621,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 @keyframes typing-wave{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px);box-shadow:0 0 6px var(--accent)}}
 #typing-label{font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.08em;margin-left:8px;font-style:italic}
 #typing-label b{color:var(--accent);font-weight:600}
+@keyframes title-flash{0%,100%{opacity:1}50%{opacity:.4}}
 </style>
 </head>
 <body>
@@ -1429,7 +1430,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     if(window.atlas&&typeof window.atlas.cancel==='function')window.atlas.cancel('ATLAS',submissionId);
     // Stop rendering speculative text immediately, but do not mark the turn
     // interrupted until the sidecar publishes the authoritative lifecycle.
-    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
     var status=$('status');if(status)status.textContent='overseer · stopping';
     updateComposerState();
     return true;
@@ -1446,7 +1447,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     rememberSubmission(pend.submissionId||sid,'settled');
     agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:'interrupted',summary:text,reply:text});
     atlasCancelRequested=false;
-    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+    captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
     var status=$('status');if(status)status.textContent='overseer · interrupted';
     updateComposerState();renderThread();
     return true;
@@ -1463,7 +1464,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     var activeSubmissionId=activeAtlasSubmissionId();
     if(!activeSubmissionId||activeSubmissionId===sid){
       agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:m.state,submissionId:sid,summary:text,reply:text});
-      captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);
+      captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
       var status=$('status');if(status)status.textContent=interrupted?'overseer · interrupted':m.state==='failed'?'overseer · failed':'overseer · idle';
     }
     atlasCancelRequested=false;
@@ -3891,5 +3892,9 @@ function relTime(ts){if(!ts)return '';var s=(Date.now()-new Date(ts).getTime())/
 function refreshRelTimes(){var els=document.querySelectorAll('.msg-time[data-ts]');var now=Date.now();els.forEach(function(el){var age=(now-new Date(el.getAttribute('data-ts')).getTime())/1000;if(age<86400)el.textContent=relTime(el.getAttribute('data-ts'));});}
 setInterval(refreshRelTimes,30000);
 </script>
-<script>(function(){var t0=null;window.__typingStart=function(){t0=Date.now();var e=document.getElementById('typing-elapsed');if(e)e.textContent='0s';};setInterval(function(){if(t0===null)return;var e=document.getElementById('typing-elapsed');if(!e||!document.getElementById('typing').offsetParent){t0=null;return;}var s=Math.floor((Date.now()-t0)/1000);e.textContent=s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s';},1000);})();</script></body>
+<script>(function(){var t0=null;window.__typingStart=function(){t0=Date.now();var e=document.getElementById('typing-elapsed');if(e)e.textContent='0s';};setInterval(function(){if(t0===null)return;var e=document.getElementById('typing-elapsed');if(!e||!document.getElementById('typing').offsetParent){t0=null;return;}var s=Math.floor((Date.now()-t0)/1000);e.textContent=s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s';},1000);})();</script><script>(function(){var base=document.title,fh=null,blinking=false;
+document.addEventListener('visibilitychange',function(){if(!document.hidden)stop();});
+function stop(){if(!blinking)return;blinking=false;if(fh)clearInterval(fh);document.title=base;}
+window.__nudge=function(){if(!document.hidden)return;blinking=true;var on=false;fh=setInterval(function(){document.title=(on?'\u25cf ':'')+'reply ready'+(on?'':' \u25cf');on=!on;},900);};
+})();</script></body>
 </html>
