@@ -617,6 +617,10 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 @keyframes grip-border{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 #stream-bubble,.msg.streaming{position:relative}
 #stream-bubble::before,.msg.streaming::before{content:'';position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:linear-gradient(90deg,rgba(157,107,255,.6),rgba(80,220,255,.6),rgba(157,107,255,.6));background-size:200% 100%;animation:grip-border 2.4s linear infinite;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.typing-dots span{animation:typing-wave 1.2s ease-in-out infinite}
+@keyframes typing-wave{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px);box-shadow:0 0 6px var(--accent)}}
+#typing-label{font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.08em;margin-left:8px;font-style:italic}
+#typing-label b{color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -721,7 +725,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
         <div style="font-size:var(--fs-xs);letter-spacing:.08em">type to talk to ATLAS</div>
         <div style="font-size:var(--fs-3xs);color:var(--dim)">? for shortcuts</div>
       </div>
-      <div id="queuehint" class="queue-hint">queued — ATLAS is mid-turn, message will follow</div><div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
+      <div id="queuehint" class="queue-hint">queued — ATLAS is mid-turn, message will follow</div><div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div><span id="typing-label">thinking <b id="typing-elapsed">0s</b></span></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">&#8595;</button><button id="new-activity-pill" title="Scroll to new activity" onclick="scrollThread(true)">&#8595; new activity</button>�†“</button>
     </div>
     <div id="coldivider"></div>
@@ -2257,6 +2261,7 @@ if(m.type==="agent"){
   document.body.classList.toggle('streaming', !!on);
     var t = $('typing');
     if (t) t.style.display = (on && !atlasCancelRequested) ? 'flex' : 'none';
+    if (window.__typingStart) window.__typingStart();
   }
 
   // �”€�”€ streaming message (ATLAS reply building live) �”€�”€�”€�”€
@@ -3886,5 +3891,5 @@ function relTime(ts){if(!ts)return '';var s=(Date.now()-new Date(ts).getTime())/
 function refreshRelTimes(){var els=document.querySelectorAll('.msg-time[data-ts]');var now=Date.now();els.forEach(function(el){var age=(now-new Date(el.getAttribute('data-ts')).getTime())/1000;if(age<86400)el.textContent=relTime(el.getAttribute('data-ts'));});}
 setInterval(refreshRelTimes,30000);
 </script>
-</body>
+<script>(function(){var t0=null;window.__typingStart=function(){t0=Date.now();var e=document.getElementById('typing-elapsed');if(e)e.textContent='0s';};setInterval(function(){if(t0===null)return;var e=document.getElementById('typing-elapsed');if(!e||!document.getElementById('typing').offsetParent){t0=null;return;}var s=Math.floor((Date.now()-t0)/1000);e.textContent=s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s';},1000);})();</script></body>
 </html>
