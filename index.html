@@ -549,7 +549,7 @@ input:focus-visible{outline:none}
     <span class="nm">ATLAS // station</span>
     <span class="dim">// orchestrator</span>
     <span id="counts"><span id="wcount">0</span> working · <span id="subcount">0</span> agents · <span id="totalcost">$0.00</span> session</span>
-    <span id="lifetime" style="display:none; color:var(--dim); font-size:var(--fs-3xs); margin-left:12px; padding-left:12px; border-left:1px solid var(--border);"></span>
+    <svg id="spark" width="120" height="18" style="margin-left:12px;display:none"><polyline id="sparkline" fill="none" stroke="#49f" stroke-width="1.5" points=""/></svg><span id="lifetime" style="display:none; color:var(--dim); font-size:var(--fs-3xs); margin-left:12px; padding-left:12px; border-left:1px solid var(--border);"></span>
     <button id="memtoggle" style="margin-left:8px;font-family:inherit;font-size:var(--fs-3xs);padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="browse memory facts">mem</button>
     <span id="uiscale" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.06em" title="UI scale · Ctrl - / Ctrl = · Ctrl 0 resets">
       <button class="uiscale-btn" data-scale="-1" title="smaller (Ctrl -)">�ˆ’</button>
@@ -1692,7 +1692,20 @@ if(m.type==="agent"){
       if(health.length===0)health.push('fleet clean');
       thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false,ts:Date.now()});
       renderThread();
-    } else if(m.type==="lifetime"){
+      // ui-grip-r5: activity sparkline sampling working-agent count
+  (function(){
+    var samples=[], el=document.getElementById('spark'), ln=document.getElementById('sparkline');
+    if(!el||!ln) return;
+    setInterval(function(){
+      var wc=document.getElementById('wcount'); if(!wc) return;
+      samples.push(parseInt(wc.textContent,10)||0);
+      if(samples.length>40) samples.shift();
+      var max=Math.max.apply(null,samples.concat([1]));
+      var pts=samples.map(function(v,i){return (i*(120/39)).toFixed(1)+','+(16-(v/max)*14).toFixed(1)}).join(' ');
+      ln.setAttribute('points',pts); el.style.display='inline';
+    },10000);
+  })();
+} else if(m.type==="lifetime"){
       if(m.totalRuns>0){
         var li=$('lifetime');
         if(li){
