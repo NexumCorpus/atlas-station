@@ -194,6 +194,9 @@ let _obligationCompiler = null;
 try { _obligationCompiler = _require('./scripts/obligation-compiler-run.cjs'); } catch { _obligationCompiler = null; }
 let _proposalScorer = null;
 try { _proposalScorer = _require('./proposal-scorer.cjs'); } catch { _proposalScorer = null; }
+let _priorityQueue = null;
+try { _priorityQueue = _require('./priority-queue.cjs'); } catch { _priorityQueue = null; }
+
 let _predict = null;
 try { _predict = _require('./predict.cjs'); } catch { _predict = null; }
 let _decisionLoop = null;
@@ -1022,6 +1025,24 @@ const proposeTool = tool(
       _effortLevel: intakeEffort,
       _impactLevel: intakeImpact,
     };
+    // Priority-queue intake (fleet/B-342 salvage): dream-misdiagnosis guard + rank metadata.
+    let misdiagnosisRejected = false;
+    if (_priorityQueue && !autoRejected) {
+      try { if (_priorityQueue.dreamMisdiagnosisGuard({ text: proposal.description, source: args.source })) misdiagnosisRejected = true; } catch {}
+    }
+    try {
+      if (_priorityQueue) {
+        const cls = _priorityQueue.classifyPriority({ source: args.source || 'agent', score: intakeScore == null ? undefined : intakeScore });
+        proposal._pqRank = cls.rank;
+        proposal._pqReason = cls.reason;
+      }
+    } catch {}
+    if (misdiagnosisRejected) {
+      proposal.state = 'rejected';
+      proposal.rejectionReason = 'known-misdiagnosis-class';
+      send('proposal', proposal);
+      return { content: [{ type: `text`, text: `Proposal ${proposal.id} rejected: known-misdiagnosis-class` }] };
+    }
     // Persist to disk
     try {
       const fs = _require('fs');
@@ -3169,6 +3190,15 @@ const autoBuildTool = tool(
         ? all.filter(p => p.state === 'pending')
         : all.filter(p => p.state === 'pending' && (p.priority || '').toUpperCase() === targetPriority);
 
+      // Misdiagnosis guard + priority ordering at selection time (B-342 salvage).
+      if (_priorityQueue) {
+        try {
+          const preCount = candidates.length;
+          candidates = candidates.filter(p => { let r = false; try { r = _priorityQueue.dreamMisdiagnosisGuard({ text: p.description || p.text || '', source: p.source }); } catch {} return !r; });
+          if (candidates.length < preCount) console.log(`[auto_build] misdiagnosis guard rejected ${preCount - candidates.length}`);
+        } catch {}
+        try { candidates = _priorityQueue.sortQueue(candidates); } catch {}
+      }
       if (!candidates.length)
         return { content: [{ type: 'text', text: `No pending ${targetPriority === 'ALL' ? '' : targetPriority + ' '}proposals found.` }] };
 
