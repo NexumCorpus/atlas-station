@@ -46,6 +46,24 @@ function settleClaim(agentId, realized, evidence, dir) {
   return open;
 }
 
+// expireOverdue: deterministically persists expiry of overdue open claims.
+// A claim past its dueDays with no witnessed settlement is unrealized-by-default;
+// silence must become data, not limbo.
+function expireOverdue(dir) {
+  const claims = readClaims(dir);
+  const now = Date.now();
+  let changed = 0;
+  for (const c of claims) {
+    if (c.status === 'open' && now - new Date(c.ts).getTime() > c.dueDays * 864e5) {
+      c.status = 'unrealized';
+      c.settledTs = new Date().toISOString();
+      c.evidence = 'auto: dueDays elapsed with no witnessed settlement (expired)';
+      changed++;
+    }
+  }
+  if (changed) fs.writeFileSync(claimsPath(dir), claims.map(c => JSON.stringify(c)).join('\n') + '\n');
+  return changed;
+}
 function valueStats(dir) {
   const claims = readClaims(dir);
   const now = Date.now();
@@ -62,4 +80,4 @@ function valueStats(dir) {
            recent: claims.slice(-5) };
 }
 
-module.exports = { recordClaim, settleClaim, readClaims, valueStats };
+module.exports = { recordClaim, settleClaim, readClaims, valueStats, expireOverdue };

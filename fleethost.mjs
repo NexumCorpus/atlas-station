@@ -2928,6 +2928,7 @@ function _findMergeCommit(agentId) {
 }
 
 function _recordRetention(agentId, verdict) {
+  try { if (_valueClaims && verdict === 'regressed') { _valueClaims.settleClaim(agentId, false, 'auto: merge regression witnessed by retention vital sign', path.join(REPO, 'memory')); send('value_claim_regressed', { id: agentId }); } } catch {}
   if (!_retention || !agentId) return;
   try {
     const found = _findMergeCommit(agentId);
@@ -5652,6 +5653,8 @@ async function runPulse() {
         done: allA.filter(a => a.state === 'done').length,
       },
     };
+    // value-claim reaper: silence on an overdue claim settles it unrealized
+    try { if (_valueClaims) { const n = _valueClaims.expireOverdue(path.join(REPO, 'memory')); if (n > 0) send('value_claim_expired', { count: n }); } } catch {}
     const line = JSON.stringify(snapshot) + '\n';
     const fs = _require('fs');
     fs.appendFileSync(pulsePath, line, 'utf8');
