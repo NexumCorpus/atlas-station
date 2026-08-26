@@ -2530,6 +2530,7 @@ if(m.type==="agent"){
     var text = input.value.trim();
     var imgs = (window.__sayImages && window.__sayImages.length) ? window.__sayImages.map(function(image){ return { durl:image.durl, mime:image.mime }; }) : null;
     if (!text && !imgs) return false;
+    input.classList.remove('sent-flash'); void input.offsetWidth; input.classList.add('sent-flash');
     if (!text) text = 'analyze this';
     window.__composerSnapshot = { text: text, images: (window.__sayImages || []).slice() };
     submitFromUI(text, imgs);
