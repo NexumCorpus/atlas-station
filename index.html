@@ -380,6 +380,8 @@ body.streaming #typing .msg-avatar{animation:avGlow 1.6s ease-in-out infinite}
 @keyframes sentFlash{0%{opacity:1}30%{opacity:.2;color:var(--cyan)}100%{opacity:1}}
 .queue-hint{position:absolute;right:14px;bottom:64px;font-size:var(--fs-3xs);color:var(--dim);background:rgba(16,13,30,.9);border:1px solid var(--border);border-radius:var(--r-sm);padding:3px 8px;pointer-events:none;opacity:0;transition:opacity .2s}
 .queue-hint.on{opacity:1}
+.ec-count,.live{transition:color .3s}
+.ec-count.live,.live{color:var(--cyan);text-shadow:0 0 6px rgba(73,255,249,.4)}
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:var(--fs-2xs);display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
@@ -2033,7 +2035,7 @@ if(m.type==="agent"){
         if (pk.options.length) {
           var chosen = msg.chosen;
           packetHtml = '<div class="packet' + (chosen ? ' resolved' : '') + '">' +
-            '<div class="pkt-lead">' + (chosen ? '�Ÿ� chose' : '�Ÿ� choose a path �€” or freehand below') + '</div>' +
+            '<div class="pkt-lead">✓ chose' : '�Ÿ� choose a path ↑↓ or freehand below') + '</div>' +
             pk.options.map(function(o, oi) {
               var send = o.send || o.label || '';
               var inner = '<span class="pkt-key">' + (oi + 1) + '</span>' +

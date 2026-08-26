@@ -93,6 +93,7 @@
     var count = countSpans[m.type];
     if (count && dot) {
       count.textContent = String((parseInt(count.textContent, 10) || 0) + 1);
+      if (count.className.indexOf('live') < 0) count.className += ' live';
       dot.style.background = COL.purple;
       setTimeout(function () { dot.style.background = 'transparent'; }, 350);
     }
