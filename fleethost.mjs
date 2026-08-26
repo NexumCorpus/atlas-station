@@ -519,6 +519,16 @@ if (m.type === "system" && m.subtype === "init") set(id, { session: m.session_id
         } catch (_) {}
       }
       final = String(m.result ?? agents.get(id)?.summary ?? "");
+      // Mouth-lane reply contract gate: annotate violations without blocking the turn.
+      if (isOrch && done && _replyContract && typeof final === 'string') {
+        try {
+          const __rc = _replyContract.checkReply(final, { tools: Array.isArray(globalThis.__atlasToolNames) ? globalThis.__atlasToolNames : null });
+          if (__rc && !__rc.pass) {
+            final = '[reply-contract: ' + __rc.violations.join('; ') + ']\n\n' + final;
+            try { send('reply_contract', { directiveId: id, pass: false, violations: __rc.violations }); } catch {}
+          }
+        } catch (_) {}
+      }
       // Output-length guard: peers burn rounds re-reading walls of text; truncate before storing/broadcasting.
       try { if (final.length > 4000) { final = '[truncated] ' + final.slice(0, 4000); } } catch {}
       flushThinking(true);
@@ -4202,6 +4212,8 @@ const valueClaimTool = tool(
 
 const fleetSdkTools = [spawnTool, valueClaimTool, agentSendTool, agentInboxTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, economicRadarTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool, fleetHealthTool, retentionReportTool, peerLivenessPrecheckTool];
 const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: fleetSdkTools });
+// Reply-contract registry snapshot: names only, no tool-count change.
+globalThis.__atlasToolNames = fleetSdkTools.map((t) => t?.definition?.function?.name || t?.name).filter(Boolean);
 
 function launchOpenRouterAgent(args, trustedExecution = {}) {
   const mode = args?.mode === 'build' ? 'build' : 'read';
