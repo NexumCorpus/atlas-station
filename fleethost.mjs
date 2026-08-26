@@ -562,6 +562,12 @@ function _briefCore(t, n = 60) {
 function _wrapBuildBrief(task) {
   const _t = String(task || '').trim();
   if (_t.length < 40) throw new Error(`empty-scope brief rejected: build brief task body must be >= 40 chars after trim (vacuous-success guard); got ${_t.length}`);
+  // Thin-brief gate (B-320/B-320-R root cause): a terse one-line task forces the
+  // agent to reverse-engineer the whole spec, burning its round budget. Require
+  // change-bearing content: >=200 chars AND at least one directive verb.
+  if (_t.length < 200 || !/(change|add|fix|update|implement|modify|replace|remove|refactor|edit|patch|create|extend)/i.test(_t)) {
+    throw new Error(`thin-brief rejected: task body is ${_t.length} chars with no actionable directives; dispatchers must pass a concrete change list (see B-320 exhaustion)`);
+  }
 
   return [
     '## Build Brief',
