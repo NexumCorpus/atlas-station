@@ -598,7 +598,17 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #bootscreen .boot-logo,#bootscreen .boot-bar i{animation:none!important}
 #bootscreen{transition:opacity .12s linear!important}
 }
-</style>
+
+/* ui-grip-r14: composer autogrow cap + streaming glow ring */
+#say{max-height:9.5em;overflow-y:auto}
+body.streaming #say{border-color:rgba(157,107,255,.75);background:rgba(157,107,255,.07);box-shadow:0 0 0 1px rgba(157,107,255,.35),0 0 16px -4px rgba(157,107,255,.55)}
+/* ui-grip-r14: status dot breathes while ATLAS is working */
+@keyframes vdot-breathe{0%,100%{box-shadow:0 0 3px var(--cyan);opacity:1}50%{box-shadow:0 0 11px var(--cyan);opacity:.6}}
+@media (prefers-reduced-motion:no-preference){
+body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
+}
+/* ui-grip-r14: staggered first-load fade-in */
+@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}</style>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute"><defs>
@@ -932,6 +942,40 @@ input:focus-visible,textarea:focus-visible{outline:none}
 </div>
 
 <div id="toastbox"></div>
+<script>
+(function(){
+  /* ui-grip-r14-1: composer autogrow up to ~6 lines then internal scroll */
+  var say=document.getElementById('say');
+  if(say){
+    var grow=function(){
+      say.style.height='auto';
+      var lh=(parseFloat(getComputedStyle(say).lineHeight)||20);
+      say.style.height=Math.min(say.scrollHeight,lh*6+18)+'px';
+    };
+    say.addEventListener('input',grow);
+    grow();
+  }
+  /* ui-grip-r14-4: staggered fade-in of transcript messages on first render only (cap 12) */
+  var thread=document.getElementById('thread');
+  if(thread&&window.MutationObserver&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    var armed=true;
+    var mo=new MutationObserver(function(){
+      if(!armed)return;
+      var msgs=thread.querySelectorAll(':scope > .msg');
+      if(!msgs.length)return;
+      armed=false;mo.disconnect();
+      var n=Math.min(msgs.length,12);
+      for(var i=0;i<n;i++){
+        msgs[i].style.opacity='0';
+        msgs[i].style.animation='msg-in .45s ease-out forwards';
+        msgs[i].style.animationDelay=(i*40)+'ms';
+      }
+    });
+    mo.observe(thread,{childList:true});
+    setTimeout(function(){armed=false;mo.disconnect();},4000);
+  }
+})();
+</script>
 
 <script>
 (function(){
@@ -3357,7 +3401,7 @@ if(m.type==="agent"){
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault(); var s = $('say'); if (s) { s.focus(); s.select ? s.select() : null; }
     }
-    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !(e.target && e.target.matches && e.target.matches('input,textarea'))) {
       toggleKb();
     }
     // Brood navigation (j/k/Enter/Escape) �€” only when not in an input
