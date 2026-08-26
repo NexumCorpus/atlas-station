@@ -378,6 +378,8 @@ body.streaming #typing .msg-avatar{animation:avGlow 1.6s ease-in-out infinite}
 .otl-fold.open .otl-fold-hint{display:none}
 .bar input.sent-flash{animation:sentFlash .35s ease-out}
 @keyframes sentFlash{0%{opacity:1}30%{opacity:.2;color:var(--cyan)}100%{opacity:1}}
+.queue-hint{position:absolute;right:14px;bottom:64px;font-size:var(--fs-3xs);color:var(--dim);background:rgba(16,13,30,.9);border:1px solid var(--border);border-radius:var(--r-sm);padding:3px 8px;pointer-events:none;opacity:0;transition:opacity .2s}
+.queue-hint.on{opacity:1}
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:var(--fs-2xs);display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
@@ -646,7 +648,7 @@ input:focus-visible{outline:none}
         <div style="font-size:var(--fs-xs);letter-spacing:.08em">type to talk to ATLAS</div>
         <div style="font-size:var(--fs-3xs);color:var(--dim)">? for shortcuts</div>
       </div>
-      <div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
+      <div id="queuehint" class="queue-hint">queued — ATLAS is mid-turn, message will follow</div><div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">�†“</button>
     </div>
     <div id="coldivider"></div>
@@ -1700,7 +1702,16 @@ if(m.type==="agent"){
       if(health.length===0)health.push('fleet clean');
       thread.push({role:'system',text:'station ready · '+health.join(' · '),error:false,ts:Date.now()});
       renderThread();
-      // ui-grip-r5: activity sparkline sampling working-agent count
+      // ui-grip-r8: queue hint while typing mid-turn
+  (function(){
+    var inp=document.getElementById('say'), hint=document.getElementById('queuehint');
+    if(!inp||!hint) return;
+    inp.addEventListener('input',function(){
+      var active = (typeof atlasTurnActive==='function') && atlasTurnActive();
+      hint.classList.toggle('on', active && inp.value.trim().length>0);
+    });
+  })();
+  // ui-grip-r5: activity sparkline sampling working-agent count
   (function(){
     var samples=[], el=document.getElementById('spark'), ln=document.getElementById('sparkline');
     if(!el||!ln) return;
