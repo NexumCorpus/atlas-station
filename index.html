@@ -562,6 +562,22 @@ input:focus-visible,textarea:focus-visible{outline:none}
 @keyframes bootAutoHide{0%,99.9%{opacity:1;visibility:visible}100%{opacity:0;visibility:hidden}}
 #bootscreen{animation:bootAutoHide 6s steps(1,end) forwards}
 /* ui-grip-r11: prefers-reduced-motion - disable nonessential motion */
+/* ui-grip-r12: fleet accents, organ bumps, empty states, tab ink */
+.arow::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent;border-radius:var(--r-sm) 0 0 var(--r-sm);pointer-events:none;z-index:1}
+.arow.st-working::after,.arow.st-needs-you::after{background:#49ff9e;box-shadow:0 0 6px rgba(73,255,158,.5)}
+.arow.was-failed:hover,.arow.st-failed:hover{background:rgba(255,100,100,.07);border-color:rgba(255,100,100,.45)}
+.faildur{color:#ff6464;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.03em}
+#organs .organ[data-organ] .odot{background:var(--oc,#5a5870);box-shadow:0 0 5px var(--oc,#5a5870)}
+.ocount{display:inline-block}
+.ocount.bump{animation:organbump .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes organbump{0%{transform:scale(1)}40%{transform:scale(1.55)}100%{transform:scale(1)}}
+#empire-organs:empty::before,#empire-workers:empty::before,#proposals:empty::before,#goals:empty::before{content:'\2014 quiet \00b7 nothing here yet \2014';display:block;padding:10px 12px;font-size:var(--fs-xs);color:var(--dim);font-style:italic;opacity:.55;letter-spacing:.05em;text-align:center}
+.tabbar-ink{position:absolute;bottom:0;height:2px;background:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.45);transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1);pointer-events:none;z-index:2}
+.tab.active{border-bottom-color:transparent}
+@media (prefers-reduced-motion:no-preference){
+.arow.st-working::after,.arow.st-needs-you::after{animation:accentpulse 1.8s ease-in-out infinite}
+@keyframes accentpulse{0%,100%{opacity:.45}50%{opacity:1}}
+}
 @media (prefers-reduced-motion:reduce){
 *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 #bootscreen .boot-logo,#bootscreen .boot-bar i{animation:none!important}
@@ -1536,9 +1552,15 @@ if(window.__ORGAN_ROUTER__!=="v1"){
     var label=def[0],cls=def[1];
     var o=window.__ORGANS__[label]||(window.__ORGANS__[label]={count:0,last:"",el:null});
     o.count++; o.last=new Date().toLocaleTimeString();
+    var HUES={crystal:"#9d6bff",shard:"#22e1ff",deferral:"#ff784e",decision:"#f0b840",continuity:"#49ff9e",xenosoma:"#ff2d95",dream:"#b48cff",tap:"#ffd75e"};
     var rail=document.getElementById("organs");
-    if(rail&&!o.el){ o.el=document.createElement("span"); o.el.className="organ"; o.el.innerHTML='<span class="odot"></span>'+label+' <span class="ocount">0</span>'; rail.appendChild(o.el); }
-    if(o.el){ o.el.className="organ "+cls+" hot"; o.el.title=label+" last:"+o.last+(detail?(" :: "+String(detail).slice(0,120)):""); var c=o.el.querySelector(".ocount"); if(c)c.textContent=o.count; setTimeout(function(){o.el&&(o.el.className="organ "+cls);},2500); }
+    if(rail&&!o.el){ o.el=document.createElement("span"); o.el.className="organ"; o.el.setAttribute("data-organ",label); o.el.style.setProperty("--oc",HUES[label]||"#7ab8e8"); o.el.innerHTML='<span class="odot"></span>'+label+' <span class="ocount">0</span>'; rail.appendChild(o.el); }
+    if(o.el){ o.el.className="organ "+cls+" hot"; o.el.title=label+" last:"+o.last+(detail?(" :: "+String(detail).slice(0,120)):""); var c=o.el.querySelector(".ocount");
+      if(c){ c.textContent=o.count;
+        if(o.prev!=null&&o.count>o.prev){ c.classList.remove("bump"); void c.offsetWidth; c.classList.add("bump");
+          c.addEventListener("animationend",function(){c.classList.remove("bump");},{once:true}); }
+        o.prev=o.count; }
+      setTimeout(function(){o.el&&(o.el.className="organ "+cls);},2500); }
     return true;
   };
 }
@@ -2286,8 +2308,9 @@ if(m.type==="agent"){
       if(a.state==='working'&&(a.startTs||a.ts)){
         elapsedStr='<span class="card-elapsed">'+elapsed(a.startTs||a.ts)+'</span>';
       }
-      var meta=(costStr||turnsStr||elapsedStr)
-        ?'<div class="card-meta">'+[costStr,turnsStr,elapsedStr].filter(Boolean).join('')+'</div>'
+      var failDurStr=(a.state==='failed'||failedAgentIds.has(a.id))?(function(){var d=(a.elapsedMs!=null?a.elapsedMs:(a.durationMs!=null?a.durationMs:null));return '<span class="faildur">\u2717 failed'+(d!=null?(' after '+Math.round(d/1000)+'s'):((a.startTs||a.ts)?' · '+elapsed(a.startTs||a.ts):''))+'</span>';})():'';
+      var meta=(failDurStr||costStr||turnsStr||elapsedStr)
+        ?'<div class="card-meta">'+[failDurStr,costStr,turnsStr,elapsedStr].filter(Boolean).join('')+'</div>'
         :'';
       var replyBody=a.reply||a.summary||'';
       var expTask=(a.task||'').trim().slice(0,300);
@@ -3198,8 +3221,19 @@ if(m.type==="agent"){
       document.getElementById('tab-station').style.display = which === 'station' ? '' : 'none';
       if (which === 'station') loadStationHealth();
       savePrefs({ activeTab: which });
+      moveTabInk();
     });
   });
+  // ui-grip-r12: sliding active-tab underline
+  var tabInk=null;
+  function moveTabInk(){
+    var act=document.querySelector('.tab.active'); if(!act)return;
+    if(!tabInk){ tabInk=document.createElement('div'); tabInk.className='tabbar-ink'; act.parentElement.appendChild(tabInk); act.parentElement.style.position='relative'; }
+    tabInk.style.left=act.offsetLeft+'px'; tabInk.style.width=act.offsetWidth+'px';
+  }
+  moveTabInk();
+  window.addEventListener('resize',moveTabInk);
+  window.__moveTabInk=moveTabInk;
   // restore saved tab
   (function() {
     var saved = loadPrefs().activeTab;
@@ -3253,7 +3287,7 @@ if(m.type==="agent"){
     var bc = document.getElementById('broodcount');
     if (bc) bc.textContent = total + ' agents' + (working ? ' · ' + working + ' active' : '');
     var fleetTab = document.querySelector('.tab[data-tab="fleet"]');
-    if (fleetTab) fleetTab.textContent = working > 0 ? 'FLEET · ' + working : 'FLEET';
+    if (fleetTab) { fleetTab.textContent = working > 0 ? 'FLEET · ' + working : 'FLEET'; if(window.__moveTabInk)window.__moveTabInk(); }
   }
   function updateProposalCount() {
     var count = document.querySelectorAll('#proposals .prow').length;
