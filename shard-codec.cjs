@@ -57,6 +57,22 @@ function transform(rows, coefficients, width) {
 }
 
 
+
+// --- Encrypt-before-shard (Tahoe-LAFS order): ciphertext is erasure-coded, never plaintext ---
+// Research basis (2026-08-26): encrypting first avoids leaking data structure across
+// fragments and keeps per-fragment storage safe; key is returned once and never stored.
+function encryptData(data, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(data), cipher.final()]);
+  return { iv, tag: cipher.getAuthTag(), body: enc };
+}
+function decryptData(body, key, iv, tag) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(body), decipher.final()]);
+}
+
 // --- Per-shard sealing: detect + localize corruption before reconstruction ---
 // Research basis (2026-08-26): erasure-coded systems (Backblaze Vault et al.) store a
 // checksum beside every shard so bit-rot is caught locally instead of only at
@@ -106,4 +122,25 @@ function decode(fragments, k, n, origLen) {
   return Buffer.concat(transform(selected.map(([, data]) => data), recovery, width)).subarray(0, origLen);
 }
 
-module.exports = { encode, decode, sealShards, verifyShards };
+
+// encodeSealed: erasure-codes AES-256-GCM ciphertext; one-time envelope returned to caller
+function encodeSealed(input, k = 2, n = 4) {
+  const data = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  const key = crypto.randomBytes(32);
+  const { iv, tag, body } = encryptData(data, key);
+  const sealed = encode(body, k, n);
+  return Object.assign({}, sealed, {
+    envelope: { alg: 'aes-256-gcm', iv: iv.toString('base64'), tag: tag.toString('base64'), saltCheck: sealShards([key])[0] },
+    _key: key.toString('base64')
+  });
+}
+// decodeSealed: verify key binding -> reconstruct ciphertext -> authenticated decrypt
+function decodeSealed(fragments, k, n, origLen, envelope, keyB64) {
+  if (!envelope || !keyB64) throw new Error('sealed envelope and key required');
+  const key = Buffer.from(keyB64, 'base64');
+  if (sealShards([key])[0] !== envelope.saltCheck) throw new Error('wrong key for envelope');
+  const ct = decode(fragments, k, n, origLen);
+  return decryptData(ct, key, Buffer.from(envelope.iv, 'base64'), Buffer.from(envelope.tag, 'base64'));
+}
+
+module.exports = { encode, decode, sealShards, verifyShards, encodeSealed, decodeSealed, encryptData, decryptData };
