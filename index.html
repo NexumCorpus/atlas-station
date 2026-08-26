@@ -608,7 +608,13 @@ body.streaming #say{border-color:rgba(157,107,255,.75);background:rgba(157,107,2
 body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 }
 /* ui-grip-r14: staggered first-load fade-in */
-@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}</style>
+@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}.msg-actions{position:absolute;right:10px;top:4px;display:flex;gap:4px;opacity:0;transition:opacity .15s;z-index:5}
+.msg:hover .msg-actions{opacity:1}
+.msg-act{font-family:inherit;font-size:var(--fs-3xs);padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:rgba(10,12,20,.9);color:var(--dim);cursor:pointer}
+.msg-act:hover{color:var(--cyan);border-color:var(--cyan)}
+.msg-act.ok{color:#64ff8c;border-color:#64ff8c}
+#scroll-progress{position:absolute;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--cyan));width:0%;z-index:20;transition:width .12s linear;pointer-events:none;box-shadow:0 0 6px rgba(157,107,255,.5)}
+</style>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute"><defs>
@@ -705,6 +711,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
       <div id="executionrail" class="idle" title="Live execution route and current Atlas state">
         <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="exec-sandbox">�€”</span>
       </div>
+      <div id="scroll-progress"></div>
       <div id="thread"></div>
       <div id="threadhint" style="display:none;position:absolute;top:50px;left:0;right:0;bottom:60px;flex-direction:column;align-items:center;justify-content:center;gap:8px;opacity:.25;pointer-events:none">
         <div style="font-size:var(--fs-lg)">�—ˆ</div>
@@ -3870,5 +3877,6 @@ if(m.type==="agent"){
 <div id="bootscreen"><div class="boot-logo">HERMES</div><div class="boot-sub">station waking</div><div class="boot-bar"><i></i></div></div>
 <script>
 (function(){var b=document.getElementById('bootscreen');if(!b)return;var done=function(){b.classList.add('gone');setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b)},600)};if(document.readyState==='complete')setTimeout(done,900);else window.addEventListener('load',function(){setTimeout(done,900)});setTimeout(done,4000);})();
-</script></body>
+</script>(function(){var t=document.getElementById('thread'),b=document.getElementById('scroll-progress');if(!t||!b)return;function up(){var max=t.scrollHeight-t.clientHeight;var p=max>0?(t.scrollTop/max)*100:0;b.style.width=p+'%';b.style.opacity=(p>0.5&&p<99.5)?'1':'0';}t.addEventListener('scroll',up,{passive:true});window.addEventListener('resize',up);up();})();
+</body>
 </html>
