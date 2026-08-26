@@ -601,7 +601,8 @@ function _wrapBuildBrief(task, spec) {
       }
     } catch { /* probe failure is non-fatal */ }
   }
-  out.push('', '### Task', task);
+  out.push('', '### Value Claim Mandate', '- Before committing, state ONE falsifiable post-merge outcome this change should produce and how it will be checked (the dispatcher records it via value_claims record). No claim = no merge.', '');
+out.push('', '### Task', task);
   return out.join('\n');
 }
 // Brief compiler entrypoint (fleet/B-343 salvage): validates spec fields, then delegates.
@@ -2901,6 +2902,8 @@ const revertBuildTool = tool(
 // ---- Post-merge retention tracking (vital sign r) ----
 let _retention = null;
 try { _retention = _require('./retention.cjs'); } catch { _retention = null; }
+let _valueClaims = null;
+try { _valueClaims = _require('./value_claims.cjs'); } catch { _valueClaims = null; }
 
 function _findMergeCommit(agentId) {
   try {
@@ -4114,7 +4117,40 @@ const agentInboxTool = tool(
     }
   }
 );
-const fleetSdkTools = [spawnTool, agentSendTool, agentInboxTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, economicRadarTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool, fleetHealthTool, retentionReportTool, peerLivenessPrecheckTool];
+
+const valueClaimTool = tool(
+  'value_claims',
+  'Falsifiable outcome claims for fleet builds: record a claim with a build dispatch, settle it after merge only from witnessed evidence, view realization stats. Survival is not value - a claim flips realized/unrealized only on external check.',
+  {
+    action: z.enum(['record','settle','stats']),
+    agentId: z.string().optional(),
+    statement: z.string().optional(),
+    killCondition: z.string().optional(),
+    realized: z.boolean().optional(),
+    evidence: z.string().optional(),
+  },
+  async (args) => {
+    if (!_valueClaims) return { content: [{ type: 'text', text: 'value_claims module not available' }] };
+    try {
+      const memDir = path.join(REPO, 'memory');
+      if (args.action === 'record') {
+        const rec = _valueClaims.recordClaim(args.agentId, args.statement, args.killCondition, memDir);
+        return { content: [{ type: 'text', text: 'Claim recorded for ' + rec.agentId + ': ' + rec.statement.slice(0,120) + ' | kill: ' + rec.killCondition.slice(0,100) + ' | due ' + rec.dueDays + 'd' }] };
+      }
+      if (args.action === 'settle') {
+        const rec = _valueClaims.settleClaim(args.agentId, !!args.realized, args.evidence, memDir);
+        return { content: [{ type: 'text', text: 'Settled ' + rec.agentId + ': ' + rec.status + ' | ' + (rec.evidence || '').slice(0,120) }] };
+      }
+      const st = _valueClaims.valueStats(memDir);
+      if (!st.total) return { content: [{ type: 'text', text: 'No value claims yet. Record one when dispatching a build.' }] };
+      return { content: [{ type: 'text', text: 'Value claims: ' + st.total + ' total | open ' + st.open + ' | realized ' + st.realized + ' | unrealized ' + st.unrealized + ' | expired ' + st.expired + ' | realization rate ' + st.realizationRate + '\n' + st.recent.map(c => '  [' + c.status + '] ' + c.agentId + ': ' + c.statement.slice(0,90)).join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: 'value_claims error: ' + e.message }] };
+    }
+  }
+);
+
+const fleetSdkTools = [spawnTool, valueClaimTool, agentSendTool, agentInboxTool, checkTool, chainTool, statusTool, diagnoseTool, proposeTool, loadProposalsTool, journalWriteTool, recallMemoryTool, setGoalTool, listGoalsTool, resolveGoalTool, deferTaskTool, memoryHealthTool, notifySelfTool, selfAssessTool, capabilityManifestTool, triggerSelfloopTool, sessionStatsTool, exportConvTool, writeDocTool, readDocTool, listDocsTool, runScriptTool, memConsolidateTool, webResearchTool, relateFactsTool, factGraphTool, loadDreamsTool, resonanceStatsTool, readSelfTool, fanResearchTool, signalPropagateTool, generateToolTool, verifyBuildTool, runTestsTool, validateFactsTool, shardMemoryTool, recoverShardTool, continuityStatusTool, stagedVerifyTool, mutationMapTool, setInstructionTool, getInstructionsTool, clearInstructionTool, saveRoutineTool, runRoutineTool, listRoutinesTool, crystallizeTool, clusterFactsTool, drainProposalsTool, pruneFactsTool, rateBuildTool, buildOutcomesTool, abolishWorkTool, economicRadarTool, revertBuildTool, captureInsightTool, contextTelemetryTool, projectCreateTool, projectAdvanceTool, projectStatusTool, projectCompleteTool, autoBuildTool, triageProposalsTool, toolAuditTool, proposalAnalysisTool, memoryHealthDetailTool, daemonReportTool, daemonHealthTool, closeProposalTool, populationStatusTool, makePredictionTool, resolvePredictionTool, predictionAccuracyTool, runVariantTool, skillCatalogTool, skillRouteTool, skillOutcomeTool, skillStageTool, skillAdmitTool, fleetHealthTool, retentionReportTool, peerLivenessPrecheckTool];
 const fleetServer = createSdkMcpServer({ name: "fleet", version: "1.0.0", tools: fleetSdkTools });
 
 function launchOpenRouterAgent(args, trustedExecution = {}) {
