@@ -370,6 +370,12 @@ body:has(#tab-ecology:target) .tab[data-tab="fleet"]{color:var(--dim);border-bot
 @keyframes msgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 body.streaming #typing .msg-avatar{animation:avGlow 1.6s ease-in-out infinite}
 @keyframes avGlow{0%,100%{box-shadow:0 0 6px rgba(157,107,255,.35)}50%{box-shadow:0 0 14px rgba(157,107,255,.7)}}
+.otl-fold{font-size:var(--fs-2xs);color:var(--dim);cursor:pointer;padding:2px 0;user-select:none}
+.otl-fold:hover{color:var(--cyan)}
+.otl-fold-hint{opacity:.5}
+.otl-rest{display:none}
+.otl-fold.open+.otl-rest{display:block}
+.otl-fold.open .otl-fold-hint{display:none}
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:var(--fs-2xs);display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
@@ -2163,6 +2169,13 @@ if(m.type==="agent"){
   }
   function otlFromList(list){
     if(!list||!list.length)return '';
+    if(list.length>4){
+      var head=list.slice(0,3).map(otlRowHtml).join('');
+      var rest=list.slice(3);
+      var summary='<div class="otl-fold" onclick="this.classList.toggle(\'open\')">&#9656; ran '+list.length+' tools <span class="otl-fold-hint">(click)</span></div>';
+      var hidden='<div class="otl-rest">'+rest.map(otlRowHtml).join('')+'</div>';
+      return '<div class="otl">'+head+summary+hidden+'</div>';
+    }
     return '<div class="otl">'+list.map(otlRowHtml).join('')+'</div>';
   }
   function captureOtlForFinal(){
