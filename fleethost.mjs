@@ -212,6 +212,8 @@ let _ingress = null;
 try { _ingress = _require('./ingress-journal.cjs'); } catch { _ingress = null; }
 let _ingressText = null;
 try { _ingressText = _require('./ingress-text.cjs'); } catch { _ingressText = null; }
+let _replyContract = null;
+try { _replyContract = _require('./reply-contract.cjs'); } catch { _replyContract = null; }
 let _mouthCancellationStore = null;
 try { _mouthCancellationStore = _require('./mouth-cancellations.cjs'); } catch { _mouthCancellationStore = null; }
 let _sidecarLease = null;
@@ -4455,9 +4457,22 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   if (_ingressText && mouth) {
     try {
       const ingressClass = _ingressText.classifyIngress(userText);
-      enriched = `{enriched}` + "\n\n[Ingress classification] " + JSON.stringify(ingressClass);
+      enriched = enriched + "\n\n[Ingress classification] " + JSON.stringify(ingressClass);
       if (ingressClass.intentClass === 'meta-instruction') {
         _ingressText.appendDirective(path.join(REPO, 'memory'), { text: String(userText || '') });
+      }
+    } catch (_) {}
+  }
+  // Reply-contract gate: check the composed enriched prompt for contract violations.
+  // Annotated, never blocking — converts compliance into measurable signal.
+  if (_replyContract && mouth && typeof enriched === 'string') {
+    try {
+      const _rc = _replyContract.checkReply(String(userText || ''), {
+        tools: Array.isArray(globalThis.__atlasToolNames) ? globalThis.__atlasToolNames : null,
+        handoffCount: 0,
+      });
+      if (_rc && !_rc.pass) {
+        enriched = enriched + "\n\n[Reply-contract pre-check] violations: " + JSON.stringify(_rc.violations);
       }
     } catch (_) {}
   }
