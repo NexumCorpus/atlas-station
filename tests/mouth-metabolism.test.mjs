@@ -90,6 +90,16 @@ await check('live progress is independent of durable claim renewal', async () =>
   assert.match(source, /heartbeatAt: new Date\(\)\.toISOString\(\)/);
 });
 
+await check('organism identity derives provider and model from runtime authority', async () => {
+  const source = fs.readFileSync(new URL('../fleethost.mjs', import.meta.url), 'utf8');
+  const identityStart = source.indexOf('const ORGANISM_IDENTITY = `');
+  const identityEnd = source.indexOf('`;', identityStart);
+  assert.ok(identityStart >= 0 && identityEnd > identityStart, 'organism identity prompt must exist');
+  const identity = source.slice(identityStart, identityEnd);
+  assert.match(identity, /\$\{ACTIVE_PROVIDER\}\/\$\{ORCHESTRATOR_MODEL_DIRECTIVE\}/);
+  assert.doesNotMatch(identity, /required gpt-5\.6-luna organism route/);
+});
+
 await check('Atlas cancellation is single-publisher and submission-correlated before or after admission', async () => {
   const source = fs.readFileSync(new URL('../fleethost.mjs', import.meta.url), 'utf8');
   assert.match(source, /const _queuedMouthCancellations = new Set\(\)/);
