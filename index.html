@@ -547,7 +547,15 @@ input:focus-visible{outline:none}
 #organs .odot{width:6px;height:6px;border-radius:50%;background:#5a5870;display:inline-block;}
 #organs .organ.ok .odot{background:#49ff9e;}#organs .organ.err .odot{background:#ff6a3d;}#organs .organ.warn .odot{background:#ff784e;}#organs .organ.run .odot{background:#22e1ff;}
 #organs .ocount{color:#d8deec;font-size:var(--fs-3xs);}
-</style>
+/* ui-grip-r10: boot sequence overlay */
+#bootscreen{position:fixed;inset:0;background:#0a0e14;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .5s;font-family:inherit}
+#bootscreen.gone{opacity:0;pointer-events:none}
+#bootscreen .boot-logo{color:var(--violet);letter-spacing:.35em;font-weight:700;font-size:20px;animation:bootFlicker 1.8s ease-in-out infinite}
+#bootscreen .boot-sub{color:var(--dim);font-size:11px;letter-spacing:.2em}
+#bootscreen .boot-bar{width:180px;height:2px;background:rgba(157,107,255,.15);overflow:hidden;border-radius:2px}
+#bootscreen .boot-bar i{display:block;height:100%;width:40%;background:linear-gradient(90deg,var(--violet),var(--cyan));animation:bootSlide 1.1s ease-in-out infinite}
+@keyframes bootSlide{0%{transform:translateX(-100%)}100%{transform:translateX(450%)}}
+@keyframes bootFlicker{0%,100%{opacity:1}50%{opacity:.55}}</style>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute"><defs>
@@ -3748,5 +3756,8 @@ if(m.type==="agent"){
 </script>
 <script src="gui/empire/tab-logic.js"></script>
 <script>window.addEventListener("load",function(){try{empireInit();}catch(e){}});</script>
-</body>
+<div id="bootscreen"><div class="boot-logo">HERMES</div><div class="boot-sub">station waking</div><div class="boot-bar"><i></i></div></div>
+<script>
+(function(){var b=document.getElementById('bootscreen');if(!b)return;var done=function(){b.classList.add('gone');setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b)},600)};if(document.readyState==='complete')setTimeout(done,900);else window.addEventListener('load',function(){setTimeout(done,900)});setTimeout(done,4000);})();
+</script></body>
 </html>
