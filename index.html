@@ -376,6 +376,8 @@ body.streaming #typing .msg-avatar{animation:avGlow 1.6s ease-in-out infinite}
 .otl-rest{display:none}
 .otl-fold.open+.otl-rest{display:block}
 .otl-fold.open .otl-fold-hint{display:none}
+.bar input.sent-flash{animation:sentFlash .35s ease-out}
+@keyframes sentFlash{0%{opacity:1}30%{opacity:.2;color:var(--cyan)}100%{opacity:1}}
 #typing{padding:8px 14px;display:none;align-items:center;gap:10px}
 #typing .msg-avatar{width:18px;height:18px;border-radius:50%;background:rgba(157,107,255,.25);color:var(--accent);border:1px solid rgba(157,107,255,.35);font-size:var(--fs-2xs);display:flex;align-items:center;justify-content:center;font-weight:700}
 .typing-dots{display:flex;gap:4px}
