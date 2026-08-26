@@ -42,6 +42,18 @@
     }
     workerRows = [];
     renderWorkers();
+    var hdr = document.getElementById('empire-header');
+    if (hdr && !document.getElementById('empire-activity')) {
+      var t = document.createElement('div');
+      t.id = 'empire-activity';
+      t.style.cssText = 'color:#6a7185;font-size:11px;margin-top:3px;';
+      hdr.appendChild(t);
+      setInterval(function () {
+        var newest = 0;
+        for (var i = 0; i < workerRows.length; i++) if (workerRows[i].ts > newest) newest = workerRows[i].ts;
+        t.textContent = newest ? 'last activity: ' + Math.max(0, Math.round((Date.now() - newest) / 1000)) + 's ago' : 'last activity: -';
+      }, 1000);
+    }
   };
 
   function renderWorkers() {
@@ -51,8 +63,9 @@
     for (var i = 0; i < workerRows.length; i++) {
       var r = workerRows[i]; // newest first
       var stateCol = r.state === 'success' ? COL.green : (r.state === 'failed' ? COL.red : COL.dim);
+      var glowCss = r.state === 'failed' ? ';box-shadow:-2px 0 0 0 #ff5566, inset 3px 0 6px -3px rgba(255,85,102,.8);border-left:2px solid #ff5566;' : (r.state === 'success' ? ';box-shadow:-2px 0 0 0 rgba(73,255,158,.35);border-left:2px solid rgba(73,255,158,.35);' : '');
       html +=
-        '<div style="background:transparent;color:' + COL.text + ';font-size:11px;padding:1px 0;border-bottom:1px dotted #22263a;">' +
+        '<div data-worker-row style="background:transparent;color:' + COL.text + ';font-size:11px;padding:1px 0;border-bottom:1px dotted #22263a;' + glowCss + '">' +
         '<span style="color:' + COL.text + ';">' + esc(r.id) + '</span>' +
         '<span style="color:' + COL.dim + ';"> &#8594; </span>' +
         '<span style="color:' + COL.cyan + ';">' + esc(r.route) + '</span>' +
@@ -69,7 +82,7 @@
 
     if (m.type === 'tap') {
       // newest first, hard cap of 8 rows
-      workerRows.unshift({ id: m.agentId, route: m.route, state: m.state, ms: m.ms });
+      workerRows.unshift({ id: m.agentId, route: m.route, state: m.state, ms: m.ms, ts: Date.now() });
       if (workerRows.length > MAX_WORKER_ROWS) workerRows.length = MAX_WORKER_ROWS;
       renderWorkers();
       return;
