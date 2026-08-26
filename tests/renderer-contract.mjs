@@ -66,3 +66,17 @@ assert.match(html, /function thinkFromList/);
 assert.match(html, /class="think"/);
 assert.match(html, /usage\.prompt_tokens/);
 console.log("renderer contract: ALL PASS");
+
+// ui-grip-r14 regression: an orphaned @keyframes fragment after </style> rendered
+// as raw visible text at the top of the window. Contract: every @keyframes /
+// @media at-rule must live inside a <style>...</style> boundary.
+{
+  const styleBlocks = [...html.matchAll(/<style[^>]*>[\s\S]*?<\/style>/gi)].map(m => m[0]);
+  const stripped = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+  assert.doesNotMatch(stripped, /@(?:keyframes|media)\b/, "no CSS at-rule text may appear outside <style> boundaries");
+  assert.ok(
+    styleBlocks.some(b => b.includes("@keyframes msg-in")),
+    "@keyframes msg-in must be defined inside a stylesheet",
+  );
+}
+
