@@ -583,6 +583,24 @@ function _wrapBuildBrief(task, spec) {
     if (!FAILURE_CLASSES.includes(sp.failureClass)) throw new Error('invalid-failure-class: must be one of ' + FAILURE_CLASSES.join(' | ') + '; got ' + JSON.stringify(sp.failureClass));
     out.push('', '### Failure-Class Hint', String(sp.failureClass));
   }
+  // Large-target structural-edit mandate (P-1787721855987): repeated string-anchor
+  // replaces on >1000-line files exhaust round budgets (B-311/-R, B-321, B-343).
+  const __lf = _t.match(/[\w.-]+\.(?:mjs|cjs|js|html|css|json)/g) || [];
+  for (const __fl of new Set(__lf)) {
+    try {
+      const __lfp = path.join(REPO, __fl);
+      if (fs.existsSync(__lfp)) {
+        const __lgl = fs.readFileSync(__lfp, 'utf8').split('\n').length;
+        if (__lgl > 1000) {
+          out.push('', '### Large-Target Edit Protocol (' + __fl + ', ' + __lgl + ' lines)',
+            '- Do NOT read this file in full; use targeted line ranges/patterns only.',
+            '- Use a scripted single-pass transform (Node script or PowerShell -replace) over repeated string-anchor edits.',
+            '- Commit a WIP checkpoint at most 10 rounds in; never hold more than 10 rounds of uncommitted edits.');
+          break;
+        }
+      }
+    } catch { /* probe failure is non-fatal */ }
+  }
   out.push('', '### Task', task);
   return out.join('\n');
 }
