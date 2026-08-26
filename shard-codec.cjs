@@ -56,6 +56,26 @@ function transform(rows, coefficients, width) {
   });
 }
 
+
+// --- Per-shard sealing: detect + localize corruption before reconstruction ---
+// Research basis (2026-08-26): erasure-coded systems (Backblaze Vault et al.) store a
+// checksum beside every shard so bit-rot is caught locally instead of only at
+// whole-file rehash during recovery. Sealed shards are verified on decode; corrupt
+// fragments are named and excluded, so recovery proceeds from survivors.
+const crypto = require('crypto');
+function sealShards(shards) {
+  return shards.map(data => crypto.createHash('sha256').update(data).digest('hex'));
+}
+function verifyShards(fragments, checksums) {
+  const corrupt = [];
+  for (const [index, data] of Object.entries(fragments)) {
+    if (!checksums || !checksums[index]) continue;
+    const actual = crypto.createHash('sha256').update(data).digest('hex');
+    if (actual !== checksums[index]) corrupt.push(Number(index));
+  }
+  return { ok: corrupt.length === 0, corrupt };
+}
+
 function encode(input, k = 2, n = 4) {
   const data = Buffer.isBuffer(input) ? input : Buffer.from(input);
   const matrix = generator(k, n);
@@ -63,7 +83,8 @@ function encode(input, k = 2, n = 4) {
   const padded = Buffer.alloc(width * k);
   data.copy(padded);
   const rows = Array.from({ length: k }, (_, index) => padded.subarray(index * width, (index + 1) * width));
-  return { origLen: data.length, shards: transform(rows, matrix, width) };
+  const shardOutputs = transform(rows, matrix, width);
+  return { origLen: data.length, shards: shardOutputs, checksums: sealShards(shardOutputs) };
 }
 
 function decode(fragments, k, n, origLen) {
@@ -85,4 +106,4 @@ function decode(fragments, k, n, origLen) {
   return Buffer.concat(transform(selected.map(([, data]) => data), recovery, width)).subarray(0, origLen);
 }
 
-module.exports = { encode, decode };
+module.exports = { encode, decode, sealShards, verifyShards };
