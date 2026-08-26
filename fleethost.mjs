@@ -210,6 +210,8 @@ try { _skillFitness = _require('./skill-fitness.cjs'); } catch { _skillFitness =
 try { _skillEvolution = _require('./skill-evolution.cjs'); } catch { _skillEvolution = null; }
 let _ingress = null;
 try { _ingress = _require('./ingress-journal.cjs'); } catch { _ingress = null; }
+let _ingressText = null;
+try { _ingressText = _require('./ingress-text.cjs'); } catch { _ingressText = null; }
 let _mouthCancellationStore = null;
 try { _mouthCancellationStore = _require('./mouth-cancellations.cjs'); } catch { _mouthCancellationStore = null; }
 let _sidecarLease = null;
@@ -4446,6 +4448,18 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     }
   } else {
     enriched = userText;
+  }
+  // Ingress text classification: annotate enriched context with a compact deterministic
+  // read of the operator message; persist meta-instructions. Classifier failure must
+  // never block orchestration.
+  if (_ingressText && mouth) {
+    try {
+      const ingressClass = _ingressText.classifyIngress(userText);
+      enriched = `{enriched}` + "\n\n[Ingress classification] " + JSON.stringify(ingressClass);
+      if (ingressClass.intentClass === 'meta-instruction') {
+        _ingressText.appendDirective(path.join(REPO, 'memory'), { text: String(userText || '') });
+      }
+    } catch (_) {}
   }
   // Named instrument execution is explicit and bounded. Ordinary dialogue
   // never runs or promotes an ecology experiment implicitly.

@@ -1,0 +1,16 @@
+{"ts":"2026-08-26T00:00:03.747Z","outcome":"accepted","agentId":"fleet/B-311-R"}
+{"ts":"2026-08-26T00:00:03.747Z","outcome":"accepted","agentId":"fleet/B-311-R"}
+{"ts":"2026-08-26T04:00:03.387Z","outcome":"rejected","agentId":"fleet/B-312-R"}
+{"ts":"2026-08-26T04:00:03.418Z","outcome":"rejected","agentId":"fleet/B-312-R"}
+{"ts":"2026-08-26T04:00:04.198Z","outcome":"rejected","agentId":"fleet/B-313"}
+{"ts":"2026-08-26T04:00:04.225Z","outcome":"rejected","agentId":"fleet/B-313"}
+{"ts":"2026-08-26T04:00:04.919Z","outcome":"rejected","agentId":"fleet/B-313-R"}
+{"ts":"2026-08-26T04:00:04.952Z","outcome":"rejected","agentId":"fleet/B-313-R"}
+{"ts":"2026-08-26T04:00:05.660Z","outcome":"rejected","agentId":"fleet/B-315"}
+{"ts":"2026-08-26T04:00:05.688Z","outcome":"rejected","agentId":"fleet/B-315"}
+{"ts":"2026-08-26T04:00:06.893Z","outcome":"accepted","agentId":"fleet/B-316"}
+{"ts":"2026-08-26T04:00:06.928Z","outcome":"accepted","agentId":"fleet/B-316"}
+{"ts":"2026-08-26T04:00:07.809Z","outcome":"rejected","agentId":"fleet/B-321"}
+{"ts":"2026-08-26T04:00:07.886Z","outcome":"rejected","agentId":"fleet/B-321"}
+{"ts":"2026-08-26T04:00:08.555Z","outcome":"rejected","agentId":"fleet/B-grip13-r2"}
+{"ts":"2026-08-26T04:00:08.633Z","outcome":"rejected","agentId":"fleet/B-grip13-r2"}
