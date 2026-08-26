@@ -2998,8 +2998,10 @@ const retentionReportTool = tool(
       const report = _retention
         ? _retention.computeRetention(merges, { windowDays: days, events, outcomes })
         : { merges: merges.length, survived: 0, regressed: 0, unknown: merges.length, r: null };
-      return { content: [{ type: 'text', text: JSON.stringify(report) }] };
-    } catch (e) {
+      let __vst = null;
+      try { __vst = (_valueClaims && _valueClaims.valueStats) ? _valueClaims.valueStats(path.join(REPO,'memory')) : null; } catch { __vst = null; }
+      const report2 = __vst ? { ...report, valueClaims: { total: __vst.total, open: __vst.open, realized: __vst.realized, unrealized: __vst.unrealized, expired: __vst.expired, realizationRate: __vst.realizationRate } } : report;
+      return { content: [{ type: 'text', text: JSON.stringify(report2) }] };
       return { content: [{ type: 'text', text: `retention_report error: ${e.message}` }] };
     }
   }
