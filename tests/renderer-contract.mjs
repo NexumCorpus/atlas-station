@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import vm from "node:vm";
 
 const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+
+const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
+assert.ok(inlineScripts.length > 0, "renderer should contain executable inline scripts");
+inlineScripts.forEach((match, index) => {
+  assert.doesNotThrow(
+    () => new vm.Script(match[1], { filename: `index.html:inline-${index + 1}` }),
+    `inline renderer script ${index + 1} should parse`,
+  );
+});
+
+assert.match(html, /\.boot-seq\{opacity:1\}/, "renderer must fail open when boot JavaScript fails");
+assert.doesNotMatch(
+  html,
+  /<\/script>\s*\(function\(\)\{var t=document\.getElementById\('thread'\)/,
+  "scroll progress code must remain inside a script element",
+);
+assert.match(
+  html,
+  /id="new-activity-pill"[^>]*>[^<]*<\/button>\s*<\/div>/,
+  "new activity control should close exactly once before the thread container",
+);
 
 assert.match(html, /function submitComposer\(\)/);
 assert.match(html, /e\.preventDefault\(\);\s*submitComposer\(\);/);
