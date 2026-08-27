@@ -1,21 +1,33 @@
-# ATLAS Station
+<div align="center">
+  <img src="./nexum-hero.svg" alt="Atlas Station — evidence-backed autonomous development" width="100%" />
 
-ATLAS Station is the desktop executive surface of Hermes, a local organism for
-evidence-backed autonomous development and discovery. ATLAS speaks and acts;
-Station preserves receipts and memory; wings connect external organs; graders
-keep generated claims separate from verification.
+  <p><strong>A desktop organism that can speak, inspect, build, remember, and show its receipts.</strong></p>
 
-The v1 executive route is:
+  <p><a href="#run-atlas">Run Atlas</a> · <a href="#what-you-can-see">Capabilities</a> · <a href="./ARCHITECTURE.md">Architecture</a> · <a href="https://github.com/NexumCorpus">Nexum Corpus</a></p>
+</div>
+
+---
+
+Atlas Station is the desktop executive surface of Hermes, a local organism for
+evidence-backed autonomous development and discovery. Atlas is the mouth and
+executive cortex; Station is the continuity spine and notary; tools, skills,
+shards, crystals, graders, and background metabolism form the rest of the body.
+
+The interface is designed to make execution legible: current provider, assigned
+model, active lane, tool calls, elapsed work, durable claims, and failures remain
+visible instead of disappearing behind a chat bubble.
+
+The current executive route is:
 
 ```text
-Daniel -> ATLAS / Hermes -> authenticated Codex CLI -> gpt-5.6-luna
+operator -> ATLAS / Hermes -> OpenRouter -> runtime-selected model -> local tools
 ```
 
-This uses the logged-in Codex subscription, not an OpenAI API key. Other local
-tasks are assigned to Codex-family routes according to their purpose and
-failure surface.
+Provider and model identity are injected from current runtime authority and
+recorded in signed attempt metadata. Stale memory is never allowed to decide
+which model claims to be executing.
 
-## v1 capabilities
+## What you can see
 
 - Role-aware direct conversation that survives autonomous background work.
 - Deadline-bounded autonomy with idle discovery, retry, and stale-timer repair.
@@ -31,12 +43,13 @@ failure surface.
   novation cycles while preserving every participant's declared face position.
 - One machine-readable release contract and one full readiness command.
 
-## Run
+## Run Atlas
 
-Requirements: Windows, Node.js 24, Python 3, and a logged-in Codex CLI.
+Requirements: Windows, Node.js 24, Python 3, and an OpenRouter API key.
 
 ```text
 npm install
+# configure OPENROUTER_API_KEY and ATLAS_OPENROUTER_MODEL in .env
 npm start
 ```
 
