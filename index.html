@@ -1293,6 +1293,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
       .replace(/\u00e2\u20ac\u2122/g,'\u2019')
       .replace(/\u00e2\u2020\u2019/g,'\u2192')
       .replace(/\u00e2\u0153\u201c/g,'\u2713')
+      .replace(/\u00c3\u0178\u00c3\u0178/g,'\u21bb')
       .replace(/\u00c2(?=[\s\u00b7])/g,'');
   }
   function esc(s){return displayText(s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
@@ -1389,7 +1390,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
     if(!msg||typeof msg.text!=='string')return false;
     if(msg.role==='atlas'&&msg.text.trim()==='ATLAS_END_TO_END_OK')return true;
     if(msg.role!=='system')return false;
-    return /^(?:fleet sidecar (?:started|exited|start failed)|station ready\b|\[Last Session\b|\u29c9 worker .+ tapped:)/.test(displayText(msg.text));
+    return /^(?:fleet sidecar (?:started|exited|start failed)|station ready\b|\[Last Session\b|\u29c9 worker .+ tapped:|\u21bb running \d+ deferred task)/.test(displayText(msg.text));
   }
   var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t.filter(function(msg){return !isLegacyBootNoise(msg);}):[];}catch(e){return[];}})();
   var restoredAtBoot = thread.length; // messages carried over from the last session â€” the seam is drawn after them
@@ -2062,8 +2063,7 @@ if(m.type==="agent"){
       var el = document.querySelector('[data-gid="' + m.id + '"]');
       if (el) { el.classList.add('gdone'); updateGoalCount(); }
     } else if(m.type==="startup_tasks"&&m.count){
-      thread.push({role:'system',text:'ÃŸÃŸ running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session',error:false,ts:Date.now()});
-      renderThread();
+      addTimelineEvent('>','running '+m.count+' deferred task'+(m.count>1?'s':'')+' from last session','');
     } else if(m.type==="deferred_exec"){
       showToast('Ã–Ã– Deferred: '+(m.task||'').slice(0,60),'info',4000);
       addTimelineEvent('>','deferred task '+m.count+': '+(m.task||'').slice(0,50),'sys');

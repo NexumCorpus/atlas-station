@@ -56,6 +56,8 @@ assert.doesNotMatch(html, /thread\.push\(\{role:'system',text:_lifeText/,
   "sidecar lifecycle telemetry must stay out of the conversation transcript");
 assert.doesNotMatch(html, /thread\.push\(\{role:'system',text:'station ready/,
   "startup topology must stay out of the conversation transcript");
+assert.doesNotMatch(html, /thread\.push\(\{role:'system',text:'ÃŸÃŸ running/,
+  "deferred startup work must stay out of the conversation transcript");
 assert.match(html, /Number\(m\.active\|\|0\)>0\|\|Number\(m\.queued\|\|0\)>0/,
   "cold-cortex queue state should remain visible without replacing the mouth execution rail");
 assert.match(html, /class="msg-copy" aria-label="Copy message"/);

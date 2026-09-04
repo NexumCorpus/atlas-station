@@ -4723,7 +4723,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     } catch {}
   }
   const executionStartedAt = Date.now();
-  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", startTs: executionStartedAt, ...executionIdentity });
+  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", startTs: executionStartedAt, durationMs: null, restored: false, ...executionIdentity });
   // Dynamic self-instructions injection
   const laneRole = source === 'long-mind'
     ? 'You are the replaceable local cortex in a Long Mind experiment. Use only the supplied bounded organs. Inspect evidence, stage mutations through isolated build agents, and return an observation; never merge or self-promote.'

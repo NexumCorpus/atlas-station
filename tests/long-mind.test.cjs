@@ -9,6 +9,8 @@ assert.match(fleetSource, /agents\.get\('ATLAS-METABOLISM'\)/,
   'Long Mind must settle from its metabolism seat rather than stale mouth state');
 assert.match(fleetSource, /let tapOffset = \(\(\) => \{[\s\S]*statSync\(tapsFile\)\.size/,
   'tap polling must begin at the current EOF instead of replaying historical taps');
+assert.match(fleetSource, /state: "working"[\s\S]{0,220}durationMs: null, restored: false/,
+  'a new metabolism turn must clear terminal duration and restored state');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-long-mind-'));
 const mind = createLongMind(root);

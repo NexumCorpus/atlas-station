@@ -179,6 +179,7 @@ app.whenReady().then(async () => {
       window.atlas.emitFleet({ type: 'fleet_lifecycle', state: 'started', generation: 7, pid: 12345, startedAt: new Date().toISOString() });
       window.atlas.emitFleet({ id: 'ATLAS', type: 'agent', state: 'done', restored: true, reply: 'STALE_BOOT_REPLY' });
       window.atlas.emitFleet({ type: 'tap', agentId: 'B-old', state: 'failed', summary: 'STALE_TAP_FAILURE' });
+      window.atlas.emitFleet({ type: 'startup_tasks', count: 1 });
       if (document.querySelectorAll('#thread .msg').length !== chatBeforeBootTelemetry) throw new Error('boot telemetry leaked into conversation');
       if (document.getElementById('thread').innerText.includes('STALE_BOOT_REPLY') || document.getElementById('thread').innerText.includes('STALE_TAP_FAILURE')) throw new Error('restored state or tap history masqueraded as chat');
       window.atlas.emitFleet({ type: 'ingress', state: 'renewed', directiveId: 'event:test', attemptId: 'attempt:test', seq: 9, expiresAt: Date.now() + 30000 });
