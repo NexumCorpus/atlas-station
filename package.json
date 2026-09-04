@@ -16,7 +16,7 @@
     "test:providers": "node tests/codex-provider.test.mjs && node tests/continuity.test.mjs && node tests/openrouter-tools.test.mjs && node tests/abliteration-provider.test.mjs && node tests/ollama-provider.test.mjs && node tests/colibri-provider.test.mjs && node tests/async-organ-process.test.mjs",
     "test:long-mind": "node tests/long-mind.test.cjs",
     "long-mind:status": "node scripts/long-mind.cjs status",
-    "test:mouth": "node tests/mouth-metabolism.test.mjs && node tests/mouth-cancellations.test.cjs && node tests/turn-bound.test.mjs",
+    "test:mouth": "node tests/mouth-metabolism.test.mjs && node tests/mouth-cancellations.test.cjs && node tests/response-vitals.test.cjs && node tests/turn-bound.test.mjs",
     "test:lanes": "node scripts/lane-integration-proof.mjs",
     "test:renderer": "node tests/renderer-contract.mjs",
     "test:renderer:live": "electron tests/renderer-harness.cjs",

@@ -566,6 +566,8 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #cold-cortex.busy::before{background:var(--purple)}
 #cold-cortex.offline{color:#b69776;border-color:rgba(255,173,87,.16)}
 #cold-cortex.offline::before{background:var(--amber)}
+#response-vital{display:none;flex:none;color:#838999;white-space:nowrap;font-variant-numeric:tabular-nums}
+#response-vital.measured{display:inline}
 
 /* organ-rail:v1 */
 #organs{display:flex;gap:10px;align-items:center;padding:3px 12px;border-top:1px solid rgba(157,107,255,.15);font-size:var(--fs-3xs);letter-spacing:.08em;color:#7ab8e8;overflow-x:auto;white-space:nowrap;}
@@ -833,7 +835,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:var(--fs-3xs);padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
       </div>
       <div id="executionrail" class="idle" title="Live execution route and current Atlas state">
-        <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="cold-cortex" title="Optional asynchronous local cognition">cold cortex · off</span><span id="exec-sandbox">—</span>
+        <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="response-vital" title="Latest measured time from ingress to first visible model output"></span><span id="cold-cortex" title="Optional asynchronous local cognition">cold cortex · off</span><span id="exec-sandbox">—</span>
       </div>
       <div id="scroll-progress"></div>
       <div id="thread"></div>
@@ -1706,6 +1708,16 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
         _cold.className=_coldState;
         _cold.textContent='cold cortex · '+_coldState+(_coldBusy?' · '+Number(m.queued||0)+' queued':'');
         _cold.title=(m.model||'Colibri')+' · KV slot '+String(m.cacheSlot==null?'—':m.cacheSlot)+(m.reason?' · '+m.reason:'');
+      }
+      return;
+    }
+    if(m.type==="response_vital"){
+      var _vital=$('response-vital'),_latest=m.record||((m.summary||{}).latest)||{};
+      if(_vital&&Number.isFinite(_latest.firstOutputMs)){
+        var _firstSeconds=_latest.firstOutputMs/1000;
+        _vital.className='measured';
+        _vital.textContent='first output · '+(_firstSeconds<10?_firstSeconds.toFixed(1):Math.round(_firstSeconds))+'s';
+        _vital.title='queue '+Math.round(_latest.queueMs||0)+'ms · admission '+Math.round(_latest.admissionMs||0)+'ms · settled '+Math.round(_latest.settleMs||0)+'ms';
       }
       return;
     }

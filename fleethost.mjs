@@ -49,6 +49,7 @@ import { followAutonomyTurn } from "./scripts/autonomy-policy.mjs";
 const _require = createRequire(import.meta.url);
 const _longMind = _require('./long-mind.cjs').createLongMind(REPO);
 _longMind.recoverInterrupted();
+const _responseVitals = _require('./response-vitals.cjs').createResponseVitals(REPO);
 
 const LONG_MIND_DENIED_TOOLS = new Set([
   'shell', 'auto_build', 'generate_tool', 'revert_build', 'abolish_work',
@@ -4793,6 +4794,12 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   }
   let streamedText = '';
   let streamedThinking = '';
+  let firstOutputObserved = false;
+  const markFirstOutput = () => {
+    if (firstOutputObserved) return;
+    firstOutputObserved = true;
+    try { executionHooks.onFirstOutput?.({ at: Date.now(), provider: executionProvider, model: orchestrationModel }); } catch {}
+  };
   try {
     for await (const m of query({
       prompt: seatPrompt,
@@ -4835,6 +4842,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           streamedThinking = (streamedThinking + m.text).slice(-4096);
           send('orchestrator_thinking', { text: streamedThinking });
         } else if (m.kind === 'text' && typeof m.text === 'string' && m.text) {
+          markFirstOutput();
           streamedText += m.text;
           const cur = agents.get(agentId) || { id: agentId };
           send('agent', { ...cur, state: 'working', partial: true, text: streamedText, ts: new Date().toISOString() });
@@ -4855,6 +4863,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
             send('orchestrator_toolresult', { id: b.tool_use_id || b.id || null, name: b.name || null, ok: !b.is_error, output: String(outText).slice(0, 1200) });
           }
           else if (b.type === "text" && b.text.trim()) {
+            markFirstOutput();
             patch.summary = b.text.trim().slice(0, 160);
             // Stream partial text to GUI in real-time (no persist, no agents Map mutation)
             const cur = agents.get(agentId) || { id: agentId };
@@ -5373,6 +5382,18 @@ async function pollSayInbox() {
   const attempt = { attemptId: claim.attemptId, claimRecordHash: claim.recordHash, contentHash: claim.contentHash, tokenFingerprint: claim.tokenFingerprint, workerPid: process.pid,
     workerStartIdentity: _sidecarLease.owner.startIdentity, providerSessionId: claim.providerSessionId, providerModel: claim.providerModel,
     lane: mouthClaim ? 'mouth' : 'metabolism', startedAt: Date.now() };
+  const responseTraceId = mouthClaim ? _responseVitals.begin({
+    submissionId, directiveId: claim.directiveId, ingressAt: item.createdAt, claimAt: attempt.startedAt,
+  }) : null;
+  let responseVitalSettled = false;
+  let responseTerminalState = 'done';
+  const settleResponseVital = (state, meta = {}) => {
+    if (!responseTraceId || responseVitalSettled) return null;
+    responseVitalSettled = true;
+    const record = _responseVitals.settle(responseTraceId, { state, ...meta });
+    if (record) send('response_vital', { record, summary: _responseVitals.summary() });
+    return record;
+  };
   let renewalTimer = null;
   let progressTimerHandle = null;
   let finished = false;
@@ -5397,6 +5418,7 @@ async function pollSayInbox() {
       : null;
     const volatileCancellation = mouthClaim && submissionId ? _queuedMouthCancellations.delete(submissionId) : false;
     if (mouthClaim && submissionId && (volatileCancellation || durableCancellation?.requested)) {
+      responseTerminalState = 'interrupted';
       const reply = 'Cancelled by operator before provider admission.';
       const out = _sayLog({ directiveId: claim.directiveId, prompt: txt, reply, cancelled: true });
       const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
@@ -5482,6 +5504,7 @@ async function pollSayInbox() {
         }
         try { send('ingress', { state: 'acked', directiveId: claim.directiveId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath: 'deterministic-control', timeline: 'ack' }); } catch {}
       } catch (error) {
+        responseTerminalState = 'failed';
         const failure = String((error && error.message) || error);
         const out = _sayLog({ directiveId: claim.directiveId, control: 'compile-obligations', error: failure });
         const fail = _ingress.fail(INGRESS_DIR, claim.directiveId, failure, _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, {
@@ -5507,11 +5530,15 @@ async function pollSayInbox() {
       directiveId: claim.directiveId,
       submissionId,
       onProviderSpawn(meta) {
+        if (responseTraceId) _responseVitals.mark(responseTraceId, 'providerAt', Date.now());
         attempt.workerPid = meta.pid;
         attempt.workerStartIdentity = meta.startIdentity;
         attempt.providerSessionId = meta.providerSessionId;
         attempt.providerModel = meta.providerModel;
         renew('worker-bound');
+      },
+      onFirstOutput(meta) {
+        if (responseTraceId) _responseVitals.mark(responseTraceId, 'firstOutputAt', meta.at);
       },
     }, _attachments);
     const a = agents.get(mouthClaim ? 'ATLAS' : 'ATLAS-METABOLISM') || {};
@@ -5522,9 +5549,11 @@ async function pollSayInbox() {
     const ack = _ingress.ack(INGRESS_DIR, claim.directiveId, JSON.stringify(out), _sidecarLease, _sidecarLease.owner.epoch, _sidecarLease.token, { ...attempt, executionPath, outboxRecordHash: out && out.recordHash });
     terminalCommitted = true;
     _attachmentsTerminalized = true;
+    settleResponseVital(interrupted ? 'interrupted' : 'done', { provider: a.provider || ACTIVE_PROVIDER, model: a.model || attempt.providerModel });
     try { send('ingress', { state: 'acked', terminalState: interrupted ? 'interrupted' : 'done', directiveId: claim.directiveId, submissionId, seq: ack.seq, outboxRecordHash: out && out.recordHash, executionPath, timeline: 'ack' }); } catch {}
   } catch (e) {
     const failure = String((e && e.message) || e);
+    settleResponseVital('failed', { provider: ACTIVE_PROVIDER, model: attempt.providerModel });
     if (terminalCommitted) {
       try { _ingress.appendError(INGRESS_DIR, e, { phase: 'post-terminal-publication', directiveId: claim.directiveId, attemptId: attempt.attemptId }); } catch {}
       return;
@@ -5539,7 +5568,12 @@ async function pollSayInbox() {
     _attachmentsTerminalized = true;
     try { send('ingress', { state: 'failed', directiveId: claim.directiveId, submissionId, seq: fail.seq, outboxRecordHash: out && out.recordHash, executionPath: failureExecutionPath, reason: failure, timeline: 'fail' }); } catch {}
   } finally {
-    try { if (_attachmentsTerminalized) _ingress.removeImageAttachments(INGRESS_DIR, _attachments); } finally { finish(); }
+    try {
+      if (_attachmentsTerminalized) _ingress.removeImageAttachments(INGRESS_DIR, _attachments);
+    } finally {
+      settleResponseVital(responseTerminalState, { provider: ACTIVE_PROVIDER, model: attempt.providerModel });
+      finish();
+    }
   }
 }
 function sweepIngressImages() {
