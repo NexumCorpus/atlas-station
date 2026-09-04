@@ -4722,7 +4722,8 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       fs.appendFileSync(telFile, JSON.stringify(entry) + '\n', 'utf8');
     } catch {}
   }
-  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", ...executionIdentity });
+  const executionStartedAt = Date.now();
+  set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", startTs: executionStartedAt, ...executionIdentity });
   // Dynamic self-instructions injection
   const laneRole = source === 'long-mind'
     ? 'You are the replaceable local cortex in a Long Mind experiment. Use only the supplied bounded organs. Inspect evidence, stage mutations through isolated build agents, and return an observation; never merge or self-promote.'
@@ -4909,7 +4910,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           summary: full.slice(0, 220),
           finishedAt: new Date().toISOString(),
         });
-        set(agentId, { state: m.subtype === "success" ? "done" : "failed", lane, cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full, lastToolArg: null, session: laneSession });
+        set(agentId, { state: m.subtype === "success" ? "done" : "failed", lane, cost: m.total_cost_usd ?? null, summary: full.slice(0, 220), reply: full, lastToolArg: null, session: laneSession, durationMs: Date.now() - executionStartedAt });
         if (m.subtype !== "success" && !handoff) throw new Error(full || `provider ended with ${m.subtype || 'error'}`);
         if (full) {
           try {
@@ -4989,7 +4990,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       set(agentId, { state: 'done', lane, summary: handoff.acknowledgement, reply: handoff.acknowledgement, lastToolArg: null });
       send('execution', { ...executionIdentity, state: 'handed-off', fromLane: 'mouth', lane: 'metabolism', timeoutMs, task: String(userText || '').slice(0, 220) });
     } else {
-      set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180) });
+      set(agentId, { state: "failed", lane, summary: String(e?.message ?? e).slice(0, 180), durationMs: Date.now() - executionStartedAt });
       throw e;
     }
   } finally {
@@ -5155,7 +5156,9 @@ async function runLongMindCycle() {
   send('long_mind', { state: 'working', cycleId, target, provider: cycleProvider, model: assignment.model, chain: _longMind.status().chain });
   try {
     await enqueueOrchestrate(_longMind.buildPrompt({ cycleId, target, provider: cycleProvider, model: assignment.model }), 'long-mind');
-    const atlas = agents.get('ATLAS') || {};
+    // Long Mind executes through the metabolism seat. Reading the mouth seat
+    // recycled unrelated historical answers and falsely rejected healthy cycles.
+    const atlas = agents.get('ATLAS-METABOLISM') || {};
     const summary = String(atlas.reply || atlas.summary || 'cycle completed without a textual summary').slice(0, 4000);
     const cycleBound = summary.includes(cycleId);
     _longMind.settleCycle({ cycleId, status: cycleBound ? 'observed' : 'rejected', summary, evidence: cycleBound ? ['Atlas execution telemetry; any mutation remains staged pending independent admission'] : ['output omitted the current cycle identifier and may be stale-context imitation'], falsifier: 'the referenced command, artifact, or isolated worktree cannot be independently reproduced', killCondition: 'repeated non-novel cycles or regression on the frozen surface' });
@@ -5597,7 +5600,11 @@ setInterval(sweepIngressImages, 60_000);
 
 // Tap ganglion sensory half: workers tap by appending to .atlas/taps.ndjson;
 const tapsFile = path.join(REPO, '.atlas', 'taps.ndjson');
-let tapOffset = 0;
+// Taps are edge-triggered operator telemetry, not a boot-time history feed.
+// Starting at byte zero replayed every recorded worker completion on restart.
+let tapOffset = (() => {
+  try { return statSync(tapsFile).size; } catch { return 0; }
+})();
 function pollTaps() {
   try {
     let st; try { st = statSync(tapsFile); } catch { return; }

@@ -4,6 +4,12 @@ const os = require('os');
 const path = require('path');
 const { createLongMind, score } = require('../long-mind.cjs');
 
+const fleetSource = fs.readFileSync(path.join(__dirname, '..', 'fleethost.mjs'), 'utf8');
+assert.match(fleetSource, /agents\.get\('ATLAS-METABOLISM'\)/,
+  'Long Mind must settle from its metabolism seat rather than stale mouth state');
+assert.match(fleetSource, /let tapOffset = \(\(\) => \{[\s\S]*statSync\(tapsFile\)\.size/,
+  'tap polling must begin at the current EOF instead of replaying historical taps');
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-long-mind-'));
 const mind = createLongMind(root);
 const id = mind.beginCycle({ provider: 'ollama', model: 'test' });

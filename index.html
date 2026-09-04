@@ -1284,7 +1284,18 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
       setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);},260);
     },dur);
   }
-  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  // Repair known legacy double-decoded UTF-8 at the final display boundary.
+  // This also cleans already-persisted thread entries without rewriting history.
+  function displayText(s){
+    return String(s==null?'':s)
+      .replace(/\u00c2\u00b7/g,'\u00b7')
+      .replace(/\u00e2\u20ac\u201d/g,'\u2014')
+      .replace(/\u00e2\u20ac\u2122/g,'\u2019')
+      .replace(/\u00e2\u2020\u2019/g,'\u2192')
+      .replace(/\u00e2\u0153\u201c/g,'\u2713')
+      .replace(/\u00c2(?=[\s\u00b7])/g,'');
+  }
+  function esc(s){return displayText(s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
   // â”€â”€â”€â”€â”€â”€ activity timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var timelineEvents = [];
@@ -1338,7 +1349,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
   function renderMd(s) {
     // Minimal markdown â†’ safe HTML. Only handles common patterns from ATLAS replies.
     if (!s) return '';
-    var h = String(s);
+    var h = displayText(s);
     // Escape HTML first (safe base)
     h = h.replace(/[&<>]/g, function(c) { return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; });
     // Fenced code blocks (``` ... ```)
@@ -1374,7 +1385,13 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
   var srchMatches = [], srchIdx = 0;
   var kbBroodIdx = -1;
 
-  var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t:[];}catch(e){return[];}})();
+  function isLegacyBootNoise(msg){
+    if(!msg||typeof msg.text!=='string')return false;
+    if(msg.role==='atlas'&&msg.text.trim()==='ATLAS_END_TO_END_OK')return true;
+    if(msg.role!=='system')return false;
+    return /^(?:fleet sidecar (?:started|exited|start failed)|station ready\b|\[Last Session\b|\u29c9 worker .+ tapped:)/.test(displayText(msg.text));
+  }
+  var thread=(function(){try{var s=localStorage.getItem('atlas_thread');var t=s?JSON.parse(s):[];return Array.isArray(t)?t.filter(function(msg){return !isLegacyBootNoise(msg);}):[];}catch(e){return[];}})();
   var restoredAtBoot = thread.length; // messages carried over from the last session â€” the seam is drawn after them
   var agents=new Map();
   var HIST={commits:[],runs:[]};
@@ -1738,9 +1755,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
         : m.state === 'failed'
           ? 'fleet sidecar start failed · generation '+m.generation+' · retrying'
         : 'fleet sidecar exited · generation '+m.generation+' · '+(m.restarting?'restarting':'stopped');
-      thread.push({role:'system',text:_lifeText,error:m.state==='failed'||(m.state==='exited'&&!m.restarting),ts:Date.now()});
       addTimelineEvent(m.state==='started'?'>':m.state==='exited'?'!':'x',_lifeText,m.state==='failed'||(m.state==='exited'&&!m.restarting)?'evfailed':'');
-      renderThread();
       return;
     }
     if(m.type==="autonomy_state"){
@@ -1792,7 +1807,7 @@ if(window.__ORGAN_ROUTER__!=="v1"){
     return true;
   };
 }
-(function(){ var ORGAN_THREAD={tap:1,dream_retry_scheduled:1,crystal_failed:1,deferred_error:1};
+(function(){ var ORGAN_THREAD={dream_retry_scheduled:1,crystal_failed:1,deferred_error:1};
   window.organEvent=function(m){ if(window.organPulse(m.type,(m.summary||m.error||m.state||m.label||""))){ if(ORGAN_THREAD[m.type]){
     var txt={tap:"\u29c9 worker "+(m.agentId||"?")+" tapped: "+(m.state||"?")+" \u2014 "+String(m.summary||"").slice(0,140),
       dream_retry_scheduled:"\u27f3 dream retry scheduled (+15min) after exhaustion",
@@ -1825,6 +1840,9 @@ if(m.type==="orchestrator_tool"||m.type==="orchestrator_toolresult"){
     }
 if(m.type==="agent"){
       if(m.id==="ATLAS"){
+        // Restored terminal state supports continuity and status surfaces; it
+        // is not a fresh answer and must never be injected into conversation.
+        if(m.restored){agents.set("ATLAS",m);updateVitals();return;}
         if(m.partial){
           // Stop is authoritative for the active mouth turn. A buffered provider
           // delta may still arrive after abort; never resurrect speculative text.
@@ -1972,8 +1990,7 @@ if(m.type==="agent"){
       if(m.wtCount>0)health.push(m.wtCount+' live worktree'+(m.wtCount>1?'s':''));
       if(m.branchCount>0)health.push(m.branchCount+' fleet branch'+(m.branchCount>1?'es':''));
       if(health.length===0)health.push('fleet clean');
-      thread.push({role:'system',text:'station ready Â· '+health.join(' Â· '),error:false,ts:Date.now()});
-      renderThread();
+      addTimelineEvent('>','station ready \u00b7 '+health.join(' \u00b7 '),'');
       // ui-grip-r8: queue hint while typing mid-turn
   (function(){
     var inp=document.getElementById('say'), hint=document.getElementById('queuehint');
@@ -2005,8 +2022,7 @@ if(m.type==="agent"){
         }
       }
     } else if(m.type==="sessionctx"&&m.text){
-      thread.push({role:'system',text:m.text,error:false,ts:Date.now()});
-      renderThread();
+      addTimelineEvent('>','prior session context loaded','');
     } else if(m.type==="proposal"){
       var pl = document.getElementById('proposallab');
       var ps = document.getElementById('proposals');
@@ -2283,7 +2299,7 @@ if(m.type==="agent"){
         var cls = msg.role === 'atlas' ? 'atlas' : isUser ? 'user' : 'system';
         if (msg.error) cls += ' error';
         if (msg.interrupted) cls += ' interrupted';
-        var avatar = msg.role === 'atlas' ? 'A' : isUser ? 'D' : 'Â·';
+        var avatar = msg.role === 'atlas' ? 'A' : isUser ? 'D' : '\u00b7';
         var roleLabel = msg.role === 'atlas' ? 'ATLAS' : isUser ? 'Daniel' : 'system';
         var isNew = (i === visible.length - 1);
         var tsStr = formatTs(msg.ts);
@@ -2296,7 +2312,7 @@ if(m.type==="agent"){
         }
         var seam = (restoredAtBoot > 0 && i === restoredAtBoot - 1)
           ? '<div class="thread-seam"><span class="ts-line"></span>' +
-            '<span class="ts-label">' + restoredAtBoot + ' from last session Â· ' +
+            '<span class="ts-label">' + restoredAtBoot + ' from last session \u00b7 ' +
             '<span class="ts-clear" onclick="clearThread()" title="wipe the persisted channel history">clear history</span></span>' +
             '<span class="ts-line"></span></div>'
           : '';
@@ -2560,7 +2576,7 @@ if(m.type==="agent"){
       if(a.state==='working'&&(a.startTs||a.ts)){
         elapsedStr='<span class="card-elapsed">'+elapsed(a.startTs||a.ts)+'</span>';
       }
-      var failDurStr=(a.state==='failed'||failedAgentIds.has(a.id))?(function(){var d=(a.elapsedMs!=null?a.elapsedMs:(a.durationMs!=null?a.durationMs:null));return '<span class="faildur">\u2717 failed'+(d!=null?(' after '+Math.round(d/1000)+'s'):((a.startTs||a.ts)?' Â· '+elapsed(a.startTs||a.ts):''))+'</span>';})():'';
+      var failDurStr=(a.state==='failed'||failedAgentIds.has(a.id))?(function(){var d=(a.elapsedMs!=null?a.elapsedMs:(a.durationMs!=null?a.durationMs:null));return '<span class="faildur">\u2717 failed'+(d!=null?(' after '+Math.round(d/1000)+'s'):'')+'</span>';})():'';
       var meta=(failDurStr||costStr||turnsStr||elapsedStr)
         ?'<div class="card-meta">'+[failDurStr,costStr,turnsStr,elapsedStr].filter(Boolean).join('')+'</div>'
         :'';

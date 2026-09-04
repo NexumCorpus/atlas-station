@@ -42,8 +42,20 @@ assert.match(html, /id="cold-cortex"[^>]*>cold cortex · off<\/span>/);
 assert.match(html, /id="response-vital"/);
 assert.match(html, /id="sh-response"/);
 assert.match(html, /function renderResponseVital\(m\)/);
+assert.match(html, /function displayText\(s\)/,
+  "legacy mojibake must be repaired at the shared display boundary");
+assert.match(html, /function isLegacyBootNoise\(msg\)/,
+  "persisted boot noise must be migrated out of existing conversations");
 assert.match(html, /m\.type==="cold_cortex"/);
 assert.match(html, /m\.type==="response_vital"/);
+assert.match(html, /if\(m\.restored\)\{agents\.set\("ATLAS",m\);updateVitals\(\);return;\}/,
+  "restored Atlas state must not masquerade as a fresh chat reply");
+assert.doesNotMatch(html, /ORGAN_THREAD=\{[^}]*tap:1/,
+  "tap telemetry must stay out of the conversation transcript");
+assert.doesNotMatch(html, /thread\.push\(\{role:'system',text:_lifeText/,
+  "sidecar lifecycle telemetry must stay out of the conversation transcript");
+assert.doesNotMatch(html, /thread\.push\(\{role:'system',text:'station ready/,
+  "startup topology must stay out of the conversation transcript");
 assert.match(html, /Number\(m\.active\|\|0\)>0\|\|Number\(m\.queued\|\|0\)>0/,
   "cold-cortex queue state should remain visible without replacing the mouth execution rail");
 assert.match(html, /class="msg-copy" aria-label="Copy message"/);
