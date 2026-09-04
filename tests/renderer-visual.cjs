@@ -102,6 +102,35 @@ app.whenReady().then(async () => {
     if (!state.composer || state.composer[0] !== 'block' || state.composer[1] < 700) {
       throw new Error(`conversation composer is not a usable primary surface: ${JSON.stringify(state.composer)}`);
     }
+    const compactStates = [];
+    for (const [width, height] of [[900, 800], [680, 760]]) {
+      win.setContentSize(width, height);
+      await new Promise(resolve => setTimeout(resolve, 80));
+      const compact = await win.webContents.executeJavaScript(`(() => {
+        document.body.classList.add('inspector-collapsed');
+        const composer = document.getElementById('composer-shell');
+        const input = document.getElementById('say');
+        const send = document.getElementById('sendbtn');
+        const stop = document.getElementById('stopbtn');
+        const rect = composer?.getBoundingClientRect();
+        return {
+          viewport: [innerWidth, innerHeight],
+          scrollWidth: document.documentElement.scrollWidth,
+          composer: rect ? [Math.round(rect.left), Math.round(rect.right), Math.round(rect.width), Math.round(rect.bottom)] : null,
+          controlsVisible: [input, send, stop].every(el => el && el.getBoundingClientRect().width > 0),
+        };
+      })()`);
+      compactStates.push(compact);
+      if (compact.scrollWidth > compact.viewport[0] + 1) throw new Error(`horizontal overflow at compact width: ${JSON.stringify(compact)}`);
+      if (!compact.composer || compact.composer[0] < 0 || compact.composer[1] > compact.viewport[0] + 1 || compact.composer[2] < width * .8) {
+        throw new Error(`composer escaped compact viewport: ${JSON.stringify(compact)}`);
+      }
+      if (!compact.controlsVisible) throw new Error(`composer controls disappeared at compact width: ${JSON.stringify(compact)}`);
+    }
+    console.log('renderer compact states:', JSON.stringify(compactStates));
+    win.setContentSize(1600, 1000);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await win.webContents.executeJavaScript(`document.body.classList.remove('inspector-collapsed')`);
     win.webContents.invalidate();
     await new Promise(resolve => setTimeout(resolve, 100));
 
