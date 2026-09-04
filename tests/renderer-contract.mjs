@@ -38,6 +38,10 @@ assert.match(html, /sendbtn[^>]*aria-label="Send message"[^>]*disabled/);
 assert.match(html, /id="stopbtn"[^>]*aria-label="Stop Atlas turn"[^>]*hidden/);
 assert.match(html, /id="say"[^>]*title="Enter sends\. Shift\+Enter adds a line break/);
 assert.match(html, /id="typing" role="status" aria-live="polite"/);
+assert.match(html, /id="cold-cortex"[^>]*>cold cortex · off<\/span>/);
+assert.match(html, /m\.type==="cold_cortex"/);
+assert.match(html, /Number\(m\.active\|\|0\)>0\|\|Number\(m\.queued\|\|0\)>0/,
+  "cold-cortex queue state should remain visible without replacing the mouth execution rail");
 assert.match(html, /class="msg-copy" aria-label="Copy message"/);
 assert.match(html, /class="xcbtn"[^>]*aria-label="Cancel agent/);
 assert.match(html, /function cancelAtlasTurn\(\)/);

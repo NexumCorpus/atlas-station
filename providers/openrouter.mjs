@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { Agent, fetch as undiciFetch } from "undici";
 
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const ABLITERATION_API_URL = "https://api.abliteration.ai/v1/chat/completions";
 const DEFAULT_MODEL = "stealth/ox-alpha";
 const DEFAULT_ROUNDS = 24;
 const MAX_ROUNDS = 256;
@@ -45,7 +46,50 @@ function safeError(error) {
     ? ` family=${socket.remoteFamily || "unknown"} written=${Number(socket.bytesWritten) || 0} read=${Number(socket.bytesRead) || 0}`
     : "";
   const detail = causeLabel ? ` (${causeLabel}${socketLabel})` : "";
-  return bounded(`${status}${error?.message || error || "OpenRouter request failed"}${detail}`, 1_200);
+  return bounded(`${status}${error?.message || error || "provider request failed"}${detail}`, 1_200);
+}
+
+export function resolveCompatibleProvider(env = process.env) {
+  const id = String(env.ATLAS_PROVIDER || "openrouter").toLowerCase();
+  if (id === "colibri") {
+    const base = String(env.ATLAS_COLIBRI_API_URL || "http://127.0.0.1:8000/v1").replace(/\/+$/, "");
+    return {
+      id,
+      apiUrl: base.endsWith("/chat/completions") ? base : `${base}/chat/completions`,
+      apiKey: env.ATLAS_COLIBRI_API_KEY || "",
+      model: env.ATLAS_COLIBRI_MODEL || "glm-5.2-colibri",
+      openRouterExtensions: false,
+      source: "colibri-cold-cortex",
+    };
+  }
+  if (id === "ollama") {
+    return {
+      id,
+      apiUrl: env.ATLAS_OLLAMA_API_URL || "http://127.0.0.1:11434/api/chat",
+      apiKey: "",
+      model: env.ATLAS_OLLAMA_MODEL || "qwen3.5:9b",
+      openRouterExtensions: false,
+      source: "ollama-local",
+    };
+  }
+  if (id === "abliteration") {
+    return {
+      id,
+      apiUrl: env.ATLAS_ABLITERATION_API_URL || ABLITERATION_API_URL,
+      apiKey: env.ABLITERATION_API_KEY || "",
+      model: env.ATLAS_ABLITERATION_MODEL || "abliterated-model-large-v2",
+      openRouterExtensions: false,
+      source: "abliteration-directive",
+    };
+  }
+  return {
+    id: "openrouter",
+    apiUrl: env.ATLAS_OPENROUTER_API_URL || OPENROUTER_API_URL,
+    apiKey: env.OPENROUTER_API_KEY || "",
+    model: env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL,
+    openRouterExtensions: true,
+    source: "openrouter-directive",
+  };
 }
 
 function mergeUsage(total, usage) {
@@ -69,6 +113,9 @@ export function decodePowerShellResponseEnvelope(stdout) {
 }
 
 async function fetchBeforeResponse(url, init, env) {
+  // The native transport is HTTPS-only. Local OpenAI-compatible cortices such
+  // as Ollama speak plain HTTP, so always use the platform fetch for loopback.
+  if (String(url).startsWith("http://")) return globalThis.fetch(url, init);
   const transport = String(env.ATLAS_OPENROUTER_TRANSPORT || "global").toLowerCase();
   const requestFetch = transport === "native"
     ? nativeFetch
@@ -226,6 +273,7 @@ function systemPrompt(options) {
 function toolEnvironment(env) {
   const clean = { ...env };
   delete clean.OPENROUTER_API_KEY;
+  delete clean.ABLITERATION_API_KEY;
   return clean;
 }
 
@@ -306,18 +354,40 @@ function runShell(input, cwd, env, signal, ceilingMs) {
 }
 
 function requestBody(messages, env, stream, tools = TOOLS) {
+  const provider = resolveCompatibleProvider(env);
+  if (provider.id === 'ollama') {
+    const body = {
+      model: provider.model,
+      messages,
+      stream,
+      think: String(env.ATLAS_OLLAMA_THINK || '0') === '1',
+      options: {
+        num_predict: Number(env.ATLAS_OPENROUTER_MAX_TOKENS) || 4096,
+        num_ctx: Math.max(4096, Number(env.ATLAS_OLLAMA_CONTEXT_LENGTH) || 32768),
+      },
+    };
+    if (tools.length) body.tools = tools;
+    return body;
+  }
   const body = {
-    model: env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL,
+    model: provider.model,
     messages,
-    reasoning: { effort: env.ATLAS_OPENROUTER_REASONING || "max" },
     max_tokens: Number(env.ATLAS_OPENROUTER_MAX_TOKENS) || 32_768,
-    provider: {
+  };
+  if (provider.id === "colibri") {
+    body.cache_slot = Math.max(0, Math.min(15, Number(env.ATLAS_COLIBRI_CACHE_SLOT) || 1));
+    body.x_colibri_ignore_leading_stop = true;
+    if (String(env.ATLAS_COLIBRI_THINKING || "1") !== "0") body.enable_thinking = true;
+  }
+  if (provider.openRouterExtensions) {
+    body.reasoning = { effort: env.ATLAS_OPENROUTER_REASONING || "max" };
+    body.provider = {
       sort: env.ATLAS_OPENROUTER_PROVIDER_SORT || "latency",
       allow_fallbacks: true,
       require_parameters: true,
       preferred_max_latency: Number(env.ATLAS_OPENROUTER_PREFERRED_MAX_LATENCY) || 15,
-    },
-  };
+    };
+  }
   if (tools.length) {
     body.tools = tools;
     body.tool_choice = "auto";
@@ -330,12 +400,16 @@ function requestBody(messages, env, stream, tools = TOOLS) {
 }
 
 function authHeaders(env) {
-  return {
-    Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+  const provider = resolveCompatibleProvider(env);
+  const headers = {
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://github.com/NexumCorpus/atlas-station",
-    "X-Title": "Atlas Station",
   };
+  if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`;
+  if (provider.openRouterExtensions) {
+    headers["HTTP-Referer"] = "https://github.com/NexumCorpus/atlas-station";
+    headers["X-Title"] = "Atlas Station";
+  }
+  return headers;
 }
 
 function requestMetrics(messages, env, stream, tools) {
@@ -366,6 +440,7 @@ function waitForRetry(ms, signal) {
 }
 
 async function request(messages, env, signal, tools) {
+  const provider = resolveCompatibleProvider(env);
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 1_200_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -375,20 +450,31 @@ async function request(messages, env, signal, tools) {
   const retryBaseMs = Math.max(500, Math.min(15_000, Number(env.ATLAS_OPENROUTER_RETRY_BASE_MS) || 3_000));
   const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const response = await fetchBeforeResponseRetryable(API_URL, {
+    const response = await fetchBeforeResponseRetryable(provider.apiUrl, {
       method: "POST",
       signal: requestSignal,
       headers: authHeaders(env),
       body: requestJson,
     }, env);
     if (response.transportError && attempt < retries && isTransportRetryable({ message: response.transportError })) { await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal); continue; }
-    if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
+    if (response.transportError) throw new Error(`${provider.id} response body failed after admission: ${response.transportError}`);
     const payload = await response.json().catch(() => ({}));
-    if (response.ok) return payload;
+    if (response.ok) {
+      if (provider.id !== 'ollama') return payload;
+      const toolCalls = (payload?.message?.tool_calls || []).map((call, index) => ({
+        id: call.id || `ollama-tool-${index}`,
+        type: 'function',
+        function: { name: call.function?.name, arguments: typeof call.function?.arguments === 'string' ? call.function.arguments : JSON.stringify(call.function?.arguments || {}) },
+      }));
+      return {
+        choices: [{ message: { ...(payload.message || {}), tool_calls: toolCalls.length ? toolCalls : undefined }, finish_reason: payload.done_reason || 'stop' }],
+        usage: { prompt_tokens: payload.prompt_eval_count || 0, completion_tokens: payload.eval_count || 0, total_tokens: (payload.prompt_eval_count || 0) + (payload.eval_count || 0) },
+      };
+    }
     const isRateLimited = response.status === 429;
     const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
     if (transientStatuses.has(response.status) && attempt < attemptsAllowed && await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal)) continue;
-    const error = new Error(payload?.error?.message || response.statusText || "OpenRouter request failed");
+    const error = new Error(payload?.error?.message || response.statusText || `${provider.id} request failed`);
     error.status = response.status;
     throw error;
   }
@@ -405,6 +491,7 @@ async function request(messages, env, signal, tools) {
 // output; tool execution happens later, after successful assembly, so a retry
 // can never replay tool execution.
 async function requestStreaming(messages, env, signal, onDelta, tools) {
+  const provider = resolveCompatibleProvider(env);
   const requestTimeout = Math.min(1_200_000, Math.max(1_000, Number(env.ATLAS_OPENROUTER_REQUEST_TIMEOUT_MS) || 1_200_000));
   const timeoutSignal = AbortSignal.timeout(requestTimeout);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -428,20 +515,20 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
     let semanticSeen = false;
 
     try {
-      const response = await fetchBeforeResponseRetryable(API_URL, {
+      const response = await fetchBeforeResponseRetryable(provider.apiUrl, {
         method: 'POST',
         signal: requestSignal,
         headers: authHeaders(env),
         body: requestJson,
       }, env);
-      if (response.transportError) throw new Error(`OpenRouter response body failed after admission: ${response.transportError}`);
+      if (response.transportError) throw new Error(`${provider.id} response body failed after admission: ${response.transportError}`);
 
       if (!(response.ok && response.body)) {
         const payload = await response.json().catch(() => ({}));
         const isRateLimited = response.status === 429;
         const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
         if (transientStatuses.has(response.status) && attempt < attemptsAllowed && (await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal))) continue;
-        const error = new Error(payload?.error?.message || response.statusText || 'OpenRouter request failed');
+        const error = new Error(payload?.error?.message || response.statusText || `${provider.id} request failed`);
         error.status = response.status;
         throw error;
       }
@@ -491,7 +578,7 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
         continue;
       }
       if (semanticSeen && isTransportRetryable(err)) {
-        throw new Error(`OpenRouter stream failed mid-response after partial output (no replay): ${err?.message || err}`);
+        throw new Error(`${provider.id} stream failed mid-response after partial output (no replay): ${err?.message || err}`);
       }
       throw err;
     }
@@ -541,32 +628,35 @@ function deltaChannel() {
 }
 
 export function createOpenRouterProvider({ env = process.env } = {}) {
-  const model = env.ATLAS_OPENROUTER_MODEL || env.ATLAS_CODEX_MODEL || DEFAULT_MODEL;
+  const compatible = resolveCompatibleProvider(env);
+  const model = compatible.model;
   // ATLAS_OPENROUTER_STREAM=0 forces the legacy non-streaming path (fallback
   // safety: a stream-parser regression must never brick the organism).
   const streamingEnabled = String(env.ATLAS_OPENROUTER_STREAM ?? "1") !== "0";
   return {
-    name: "openrouter",
+    name: compatible.id,
     capabilities: Object.freeze({ maxTurns: true, disallowedTools: true, canUseTool: true, permissionMode: "caller-declared", mcpServers: false, nativeTools: true }),
-    assign() { return { purpose: "organism", route: "openrouter", model, source: "openrouter-directive" }; },
+    assign() { return { purpose: "organism", route: compatible.id, model, source: compatible.source }; },
     probe() {
+      const credentiallessLocal = compatible.id === 'ollama' || compatible.id === 'colibri';
       return {
-        available: Boolean(env.OPENROUTER_API_KEY),
-        credentialConfigured: Boolean(env.OPENROUTER_API_KEY),
+        available: credentiallessLocal || Boolean(compatible.apiKey),
+        credentialConfigured: Boolean(compatible.apiKey),
+        provider: compatible.id,
         model,
         api: streamingEnabled ? "chat-completions-sse" : "chat-completions",
         transport: String(env.ATLAS_OPENROUTER_TRANSPORT || "global").toLowerCase(),
       };
     },
     async *query({ prompt, options = {} } = {}) {
-      if (!env.OPENROUTER_API_KEY) {
-        yield { type: "result", subtype: "error", result: "OPENROUTER_API_KEY is not configured", total_cost_usd: null };
+      if (!compatible.apiKey && compatible.id !== 'ollama' && compatible.id !== 'colibri') {
+        yield { type: "result", subtype: "error", result: `${compatible.id} API key is not configured`, total_cost_usd: null };
         return;
       }
       const statelessSession = options.atlasStatelessSession === true;
       const sessionId = !statelessSession && options.resume && sessions.has(options.resume)
         ? options.resume
-        : `openrouter:${randomUUID()}`;
+        : `${compatible.id}:${randomUUID()}`;
       const messages = sessions.get(sessionId) || [{ role: "system", content: systemPrompt(options) }];
       const disallowed = new Set((options.disallowedTools || []).map((name) => String(name).toLowerCase()));
       const toolsAdvertised = options.permissionMode !== 'plan';
@@ -588,7 +678,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       messages.push({ role: "user", content: Array.isArray(prompt) ? prompt : String(prompt || "") }); // arrays = multimodal blocks (paste-image spec 98f8861)
       if (!statelessSession) sessions.set(sessionId, messages);
       yield { type: "system", subtype: "init", session_id: sessionId };
-      options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: "openrouter", statelessSession, toolCount: availableTools.length });
+      options.onProviderSpawn?.({ pid: process.pid, startIdentity: `${process.pid}:${providerStartedAt}`, providerSessionId: sessionId, providerModel: model, provider: compatible.id, statelessSession, toolCount: availableTools.length });
       try {
         const configuredDefault = Number(env.ATLAS_OPENROUTER_MAX_ROUNDS) || DEFAULT_ROUNDS;
         const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || configuredDefault));
@@ -601,7 +691,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             yield {
               type: 'result',
               subtype: 'error_context_window',
-              result: `OpenRouter request budget exceeded before round ${round + 1} (${roundMetrics.requestBytes} > ${requestByteBudget} bytes)`,
+              result: `${compatible.id} request budget exceeded before round ${round + 1} (${roundMetrics.requestBytes} > ${requestByteBudget} bytes)`,
               total_cost_usd: aggregateUsage.cost ?? null,
               usage: aggregateUsage,
             };
@@ -619,7 +709,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
               else if (d.kind === "tool_arg") yield { type: "assistant_stream", kind: "tool_arg", index: d.index };
             }
             const assembled = await pump;
-            if (!assembled) throw new Error("OpenRouter stream failed");
+            if (!assembled) throw new Error(`${compatible.id} stream failed`);
             message = assembled.message;
             usage = assembled.usage;
             finishReason = assembled.finish_reason || null;
@@ -640,7 +730,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
               yield {
                 type: "result",
                 subtype: "error",
-                result: `OpenRouter returned no assistant message ${JSON.stringify(diagnostic)} [transport=${metrics.transport} stream=${Number(metrics.stream)} messages=${metrics.messages} requestBytes=${metrics.requestBytes} tools=${metrics.tools}]`,
+                result: `${compatible.id} returned no assistant message ${JSON.stringify(diagnostic)} [transport=${metrics.transport} stream=${Number(metrics.stream)} messages=${metrics.messages} requestBytes=${metrics.requestBytes} tools=${metrics.tools}]`,
                 total_cost_usd: null,
               };
               return;
@@ -657,7 +747,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
                 messages.push({ role: 'user', content: 'Continue from the exact cutoff without repeating prior text. Finish the answer.' });
                 continue;
               }
-              yield { type: 'result', subtype: 'error_max_turns', result: 'OpenRouter output remained incomplete at the turn bound (finish_reason=length)', total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
+              yield { type: 'result', subtype: 'error_max_turns', result: `${compatible.id} output remained incomplete at the turn bound (finish_reason=length)`, total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
               return;
             }
             if (!String(message.content || "").trim()) {
@@ -665,7 +755,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
                 messages.push({ role: "user", content: "Your prior response contained no visible content. Return a non-empty direct answer to the operator now." });
                 continue;
               }
-              yield { type: "result", subtype: "error_max_turns", result: "OpenRouter exhausted the turn bound without visible assistant content", total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
+              yield { type: "result", subtype: "error_max_turns", result: `${compatible.id} exhausted the turn bound without visible assistant content`, total_cost_usd: aggregateUsage.cost ?? null, usage: aggregateUsage };
               return;
             }
             yield { type: "result", subtype: "success", result: [...proseSegments, String(message.content || "")].filter(s => s.trim()).join("\n\n"), total_cost_usd: aggregateUsage.cost ?? 0, usage: aggregateUsage };
@@ -692,7 +782,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
               if (validationError) return `tool denied: ${validationError}`;
               let admittedInput = input;
               if (typeof options.canUseTool === 'function') {
-                const verdict = await options.canUseTool(toolName, input, { provider: 'openrouter', sessionId });
+                const verdict = await options.canUseTool(toolName, input, { provider: compatible.id, sessionId });
                 if (!verdict || verdict.behavior !== 'allow') return `tool denied: ${verdict?.message || 'caller policy'}`;
                 if (verdict.updatedInput && typeof verdict.updatedInput === 'object') admittedInput = verdict.updatedInput;
               }

@@ -1,0 +1,24 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { createLongMind, score } = require('../long-mind.cjs');
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-long-mind-'));
+const mind = createLongMind(root);
+const id = mind.beginCycle({ provider: 'ollama', model: 'test' });
+mind.settleCycle({ cycleId: id, status: 'staged', summary: 'candidate only', evidence: ['test:pass'], falsifier: 'holdout fails' });
+mind.recordBoundary({ accepted: 'A', rejected: 'B', discriminator: 'A preserves exact bytes', falsifier: 'recovery hash differs' });
+mind.addCurriculum({ id: 'low', recurrence: 0, verifiability: 1, uncertainty: 0, downstreamReuse: 0, cost: 9 });
+mind.addCurriculum({ id: 'high', recurrence: 3, verifiability: 3, uncertainty: 2, downstreamReuse: 4, cost: 1 });
+assert.equal(mind.selectTarget().id, 'high');
+assert(score({ recurrence: 1 }) > score({ recurrence: 0 }));
+assert(mind.verify().valid);
+assert.throws(() => mind.settleCycle({ cycleId: id, status: 'verified', summary: 'forbidden' }), /external admission/);
+const reloaded = createLongMind(root);
+assert(reloaded.verify().valid);
+assert.equal(reloaded.status().sequence, mind.status().sequence);
+fs.appendFileSync(reloaded.status().ledgerFile, '{"tampered":true}\n');
+assert.equal(reloaded.verify().valid, false);
+fs.rmSync(root, { recursive: true, force: true });
+console.log('long-mind: chain, boundary memory, curriculum, and claim ceiling PASS');

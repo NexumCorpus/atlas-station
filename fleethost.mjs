@@ -11,6 +11,7 @@
 import { query as _sdkQuery, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { createCodexCliProvider, compatibleSession, resolveCodexModel, resolveCodexSandbox } from "./providers/codex-cli.mjs";
 import { createOpenRouterProvider } from "./providers/openrouter.mjs";
+import { createColibriColdProvider } from "./providers/colibri.mjs";
 import { adaptSdkTools } from "./providers/openrouter-tools.mjs";
 import fs from "fs"; import { pathToFileURL } from "url";
 import { workerTurnBound as _workerTurnBoundStatic } from "./providers/turn-bound.mjs"; // static fallback; hot module overrides via mtime watcher
@@ -46,19 +47,38 @@ import path from "path";
 import { createRequire } from "module";
 import { followAutonomyTurn } from "./scripts/autonomy-policy.mjs";
 const _require = createRequire(import.meta.url);
+const _longMind = _require('./long-mind.cjs').createLongMind(REPO);
+_longMind.recoverInterrupted();
+
+const LONG_MIND_DENIED_TOOLS = new Set([
+  'shell', 'auto_build', 'generate_tool', 'revert_build', 'abolish_work',
+  'skill_admit_variant', 'set_instruction', 'write_doc', 'push_remote',
+  'publish', 'send_external', 'activate_build', 'merge_build',
+]);
+async function longMindToolGate(name, input) {
+  if (LONG_MIND_DENIED_TOOLS.has(String(name))) {
+    return { behavior: 'deny', message: 'Long Mind may inspect and stage isolated candidates, but cannot mutate the live organism or cross an external boundary.' };
+  }
+  if (name === 'spawn_agent') {
+    const mode = input?.mode === 'read' ? 'read' : 'build';
+    return { behavior: 'allow', updatedInput: { ...input, mode } };
+  }
+  return { behavior: 'allow', updatedInput: input };
+}
 
 // Root-cause guard for the query() shape bug class.
 // The SDK query() accepts {prompt, options:{...}} but silently fails if called with
 // the Anthropic REST shape {model, messages:[...]}. This wrapper throws immediately
 // at the call site with a diagnostic, making regressions visible rather than silent.
-function query(args) {
+function query(args, providerOverride = null) {
   if (args && typeof args === 'object' && !('prompt' in args)) {
     const keys = Object.keys(args).join(', ');
     throw new Error(`query() wrong shape: got {${keys}} Ã¢â‚¬â€ use {prompt, options:{model,...}} not Anthropic REST shape`);
   }
     const bound = turnBoundOf(args && args.options);
   if (bound != null) args = { ...args, options: { ...(args.options || {}), maxTurns: bound } };
-  if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.query(args);
+  if (providerOverride) return providerOverride.query(args);
+  if (CHAT_PROVIDER_ACTIVE) return _openrouterProvider.query(args);
   if (CODEX_PROVIDER_ACTIVE) return _codexProvider.query(args);
   return _sdkQuery(args);
 }
@@ -72,8 +92,9 @@ if (process.env.ATLAS_CODEX_UNRESTRICTED !== "0") {
 // Load gitignored .env at boot (never overrides real env; values never logged).
 try {
   const _envFs = _require('fs');
-  const _envPath = path.join(REPO, '.env');
-  if (_envFs.existsSync(_envPath)) {
+  for (const _envName of ['.env', '.env.local']) {
+    const _envPath = path.join(REPO, _envName);
+    if (!_envFs.existsSync(_envPath)) continue;
     for (const _line of _envFs.readFileSync(_envPath, 'utf8').split(/\r?\n/)) {
       if (!_line.trim() || _line.trim().startsWith('#')) continue;
       const _m = _line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
@@ -88,22 +109,25 @@ try {
   }
 } catch {}
 
-// HARD LOCK (Daniel directive): no Codex CLI workers, no Claude SDK - openrouter only, ever.
+// HARD LOCK (Daniel directive): no Codex CLI workers and no Claude SDK. The
+// executive may use an explicitly selected, OpenAI-compatible account route.
 const REQUESTED_PROVIDER = String(process.env.ATLAS_PROVIDER || "openrouter").toLowerCase();
 if (["codex", "codex-cli", "claude", "claude-sdk"].includes(REQUESTED_PROVIDER)) {
-  throw new Error(`ATLAS_PROVIDER ${REQUESTED_PROVIDER} is permanently disabled by operator directive: no external Codex/Claude workers. Only openrouter is permitted.`);
+  throw new Error(`ATLAS_PROVIDER ${REQUESTED_PROVIDER} is permanently disabled by operator directive: no external Codex/Claude workers.`);
 }
 const _codexProvider = createCodexCliProvider();
 const _openrouterProvider = createOpenRouterProvider();
+const _colibriColdProvider = createColibriColdProvider();
 const ACTIVE_PROVIDER = ["codex", "codex-cli"].includes(REQUESTED_PROVIDER)
   ? "codex-cli"
-  : ["openrouter", "openrouter-codex"].includes(REQUESTED_PROVIDER)
-    ? "openrouter"
+  : ["openrouter", "openrouter-codex", "abliteration", "ollama"].includes(REQUESTED_PROVIDER)
+    ? (REQUESTED_PROVIDER === "abliteration" ? "abliteration" : REQUESTED_PROVIDER === "ollama" ? "ollama" : "openrouter")
   : REQUESTED_PROVIDER === "claude" || REQUESTED_PROVIDER === "claude-sdk"
     ? "claude-sdk"
-    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Only 'openrouter' is supported (operator directive: no Codex/Claude).`); })();
+    : (() => { throw new Error(`Unsupported ATLAS_PROVIDER '${REQUESTED_PROVIDER}'. Supported routes: ollama, openrouter, abliteration.`); })();
 const CODEX_PROVIDER_ACTIVE = ACTIVE_PROVIDER === "codex-cli";
-const AGENT_PROVIDER_ACTIVE = CODEX_PROVIDER_ACTIVE || ACTIVE_PROVIDER === "openrouter";
+const CHAT_PROVIDER_ACTIVE = ["openrouter", "abliteration", "ollama"].includes(ACTIVE_PROVIDER);
+const AGENT_PROVIDER_ACTIVE = CODEX_PROVIDER_ACTIVE || CHAT_PROVIDER_ACTIVE;
 const MODEL_HAIKU  = "claude-haiku-4-5-20251001";
 const MODEL_SONNET = process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const MODEL_OPUS   = "claude-opus-4-8";
@@ -111,12 +135,12 @@ const MODEL = MODEL_SONNET; // default for ATLAS orchestrator
 // Hermes is the whole operating body.  Its current executive directive is
 // explicit and beats an old conversation's persisted model assignment.
 const ORCHESTRATOR_MODEL_DIRECTIVE = process.env.ATLAS_CODEX_ORCHESTRATOR_MODEL ||
-  (ACTIVE_PROVIDER === "openrouter" ? process.env.ATLAS_OPENROUTER_MODEL || process.env.ATLAS_CODEX_MODEL || "stealth/ox-alpha" : "gpt-5.6-luna");
+  (CHAT_PROVIDER_ACTIVE ? _openrouterProvider.assign().model : "gpt-5.6-luna");
 
 // Keep the UI/state record aligned with the provider actually running the task.
 // The legacy Claude labels remain inputs to its SDK path only.
 function assignedModel(options, fallbackModel) {
-  if (ACTIVE_PROVIDER === "openrouter") return _openrouterProvider.assign(options).model;
+  if (CHAT_PROVIDER_ACTIVE) return _openrouterProvider.assign(options).model;
   return CODEX_PROVIDER_ACTIVE
     ? resolveCodexModel(options, process.env).model
     : fallbackModel;
@@ -789,7 +813,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     } catch {}
     return msgs;
   }
-  const externalWorker = AGENT_PROVIDER_ACTIVE; // codex-cli / openrouter: no fleet MCP tools attached
+  const externalWorker = AGENT_PROVIDER_ACTIVE; // account routes: no fleet MCP tools attached
   let idStamp, hierarchyNote;
   if (externalWorker) {
     idStamp = "\n\n[Your identity] Your fleet agent ID is " + id + ". Peer conversation protocol: read messages from .atlas/mailbox/<your-id>.json via shell; send a message to peer <peerId> by writing .atlas/mailbox/<peerId>.json containing JSON {\"to\":\"<peerId>\",\"from\":\"<your-id>\",\"ts\":\"<iso>\",\"messages\":[{\"from\":\"<your-id>\",\"ts\":\"<iso>\",\"text\":\"...\"}]} (create the file atomically; do not overwrite unread mail \u2014 append your record under a unique filename <peerId>-<timestamp>.json if one exists). Messages are drained into your brief each dispatch.";
@@ -825,7 +849,7 @@ async function runSubagent(task, mode, agentTimeout = DEFAULT_TIMEOUT_MS, model,
     catch (e) { set(id, { state: "failed", summary: "worktree failed: " + String(e.message || e).slice(0, 120) }); return "Subagent " + id + " could not start (worktree error)."; }
   }
   const options = { cwd, model: agentModel, systemPrompt: execution.trustedSystemAppend ? { append: execution.trustedSystemAppend } : "claude_code", atlasMode: mode === "build" ? "build" : "read", ...retryTurnOptions,
-    ...(ACTIVE_PROVIDER === 'openrouter' ? { atlasStatelessSession: true } : {}),
+    ...(CHAT_PROVIDER_ACTIVE ? { atlasStatelessSession: true } : {}),
     ...(execution.preassembledContextRoot ? { disallowedTools: ['shell', 'bash'] } : {}),
     ...(mode === "build" ? { permissionMode: "bypassPermissions" } : dialectSet ? { canUseTool: _dialect.makeGate(dialectSet) } : { canUseTool: readGate }) };
   let final = "";
@@ -4219,7 +4243,7 @@ function launchOpenRouterAgent(args, trustedExecution = {}) {
   const mode = args?.mode === 'build' ? 'build' : 'read';
   const task = String(args?.task || '');
   if (!task.trim()) return null;
-  if (!_openrouterProvider.probe().available) return null;
+  if (CHAT_PROVIDER_ACTIVE && !_openrouterProvider.probe().available) return null;
   const timeoutMinutes = Math.max(1, Math.min(120, Number(args?.timeoutMinutes) || 20));
   _maxCounter++; sessionStats.agentCount++;
   const id = (mode === 'build' ? 'B-' : 'A-') + _maxCounter;
@@ -4256,7 +4280,7 @@ const openRouterOrganTools = [
     parallelSafeNames: OPENROUTER_PARALLEL_READ_ORGANS,
   }),
   {
-    definition: { type: 'function', function: { name: 'spawn_agent', description: 'Launch an Ox Alpha subagent. Returns immediately with its visible fleet id; use check_fleet for progress.', parameters: { type: 'object', additionalProperties: false, required: ['task'], properties: { task: { type: 'string', minLength: 1, maxLength: 32000 }, mode: { type: 'string', enum: ['read', 'build'] }, timeoutMinutes: { type: 'number', minimum: 1, maximum: 120 }, projectId: { type: 'string', maxLength: 120 } } } } },
+    definition: { type: 'function', function: { name: 'spawn_agent', description: 'Launch a subagent using the active compatible cortex. Returns immediately with its visible fleet id; use check_fleet for progress.', parameters: { type: 'object', additionalProperties: false, required: ['task'], properties: { task: { type: 'string', minLength: 1, maxLength: 32000 }, mode: { type: 'string', enum: ['read', 'build'] }, timeoutMinutes: { type: 'number', minimum: 1, maximum: 120 }, projectId: { type: 'string', maxLength: 120 } } } } },
     parallelSafe: false,
     execute: async (args, { signal } = {}) => {
       if (signal?.aborted) return JSON.stringify({ accepted: false, error: 'spawn request cancelled before launch' });
@@ -4267,7 +4291,7 @@ const openRouterOrganTools = [
     },
   },
   {
-    definition: { type: 'function', function: { name: 'check_fleet', description: 'Inspect a bounded page of Ox Alpha subagent states and concise receipts.', parameters: { type: 'object', additionalProperties: false, properties: { cursor: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 50 } } } } },
+    definition: { type: 'function', function: { name: 'check_fleet', description: 'Inspect a bounded page of compatible-cortex subagent states and concise receipts.', parameters: { type: 'object', additionalProperties: false, properties: { cursor: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 50 } } } } },
     parallelSafe: true,
     execute: async args => {
       const cursor = Math.max(0, Number(args.cursor) || 0);
@@ -4324,6 +4348,14 @@ const openRouterOrganTools = [
     },
   },
 ];
+const LONG_MIND_TOOL_NAMES = new Set([
+  'spawn_agent', 'check_fleet', 'fleet_status', 'load_proposals',
+  'recall_memory', 'memory_health', 'self_assess', 'context_telemetry',
+  'mutation_map', 'build_outcomes', 'staged_verify_build', 'run_tests',
+  'proposal_analysis', 'tool_audit', 'continuity_status', 'skill_catalog',
+  'skill_route', 'project_status',
+]);
+const longMindOrganTools = openRouterOrganTools.filter(tool => LONG_MIND_TOOL_NAMES.has(tool.definition.function.name));
 
 const ORCH_ROLE = `You are ATLAS, the orchestrator of a fleet of subagents and Daniel's sole point of contact. Daniel talks only to you; he never addresses your subagents Ã¢â‚¬â€ only you spawn and manage them.
 
@@ -4573,6 +4605,9 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   if (admittedAttachments.length && !mouth) return Promise.reject(new Error('image attachments are admitted only on operator mouth ingress'));
   if (admittedAttachments.length && ACTIVE_PROVIDER !== 'openrouter') return Promise.reject(new Error('image attachments require the OpenRouter vision route'));
   const lane = mouth ? 'mouth' : 'metabolism';
+  const usesColdCortex = source === 'long-mind' && _colibriColdProvider.enabled;
+  const executionProvider = usesColdCortex ? 'colibri' : ACTIVE_PROVIDER;
+  const executionChatProvider = usesColdCortex || CHAT_PROVIDER_ACTIVE;
   const maxTurns = laneTurnBound(lane, process.env);
   const timeoutMs = laneTimeoutMs(lane, process.env);
   const laneAbort = new AbortController();
@@ -4688,9 +4723,11 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
   }
   set(agentId, { id: agentId, role: mouth ? "orchestrator" : "metabolism", lane, state: "working", task: userText, lastTool: null, reply: "", summary: "", ...executionIdentity });
   // Dynamic self-instructions injection
-  const laneRole = mouth ? MOUTH_ROLE : ORCH_ROLE;
+  const laneRole = source === 'long-mind'
+    ? 'You are the replaceable local cortex in a Long Mind experiment. Use only the supplied bounded organs. Inspect evidence, stage mutations through isolated build agents, and return an observation; never merge or self-promote.'
+    : mouth ? MOUTH_ROLE : ORCH_ROLE;
   let dynamicRole = ORGANISM_IDENTITY + "\n\n" + laneRole;
-  if (_instructions) {
+  if (_instructions && source !== 'long-mind') {
     try {
       const memDir = path.join(REPO, 'memory');
       const instr = _instructions.listInstructions(memDir);
@@ -4703,7 +4740,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       }
     } catch {}
   }
-  if (_skillCapsule) {
+  if (_skillCapsule && source !== 'long-mind') {
     try {
       const skillReceipt = _skillCapsule.select(userText, mouth
         ? { limit: 2, tokenBudget: 600 }
@@ -4718,11 +4755,13 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
       send('skill_chain', { status: 'rejected', reason: String(error.message || error).slice(0, 200) });
     }
   }
-  const statelessOpenRouterMouth = ACTIVE_PROVIDER === 'openrouter' && mouth;
+  const statelessOpenRouterMouth = CHAT_PROVIDER_ACTIVE && mouth;
   const resumedSession = statelessOpenRouterMouth
     ? null
-    : compatibleSession(laneSession, laneSessionProvider, ACTIVE_PROVIDER);
-  const orchestrationRouting = AGENT_PROVIDER_ACTIVE
+    : compatibleSession(laneSession, laneSessionProvider, executionProvider);
+  const orchestrationRouting = usesColdCortex
+    ? { atlasAssignedModel: _colibriColdProvider.assign().model }
+    : AGENT_PROVIDER_ACTIVE
     ? codexRouting({
       atlasMode: "orchestrator",
       atlasPurpose: "orchestration",
@@ -4737,10 +4776,10 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     ...executionIdentity,
     state: "working",
     lane,
-    provider: ACTIVE_PROVIDER,
+    provider: executionProvider,
     model: orchestrationModel,
-    sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
-    route: ACTIVE_PROVIDER === "openrouter" ? "openrouter-tools" : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
+    sandbox: usesColdCortex ? "cold-cortex" : CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : CHAT_PROVIDER_ACTIVE ? "process-local" : "provider-managed",
+    route: usesColdCortex ? "colibri-kv" : CHAT_PROVIDER_ACTIVE ? `${ACTIVE_PROVIDER}-tools` : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
     task: String(userText || "").slice(0, 220),
     startedAt: new Date().toISOString(),
   });
@@ -4765,7 +4804,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         atlasToolTimeoutMs: mouth
           ? Math.max(15_000, Math.min(1_200_000, Number(process.env.ATLAS_MOUTH_TOOL_TIMEOUT_MS) || 120_000))
           : 1_200_000,
-        ...(ACTIVE_PROVIDER === 'openrouter' ? { openRouterTools: openRouterOrganTools } : {}),
+        ...(executionChatProvider ? { openRouterTools: source === 'long-mind' ? longMindOrganTools : openRouterOrganTools } : {}),
         onProviderSpawn: executionHooks.onProviderSpawn,
         onToolBatch: batch => {
           const receipt = recordProviderToolBatch({ lane, model: orchestrationModel, ...batch });
@@ -4773,14 +4812,16 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         },
         systemPrompt: { type: "preset", preset: "claude_code", append: dynamicRole },
         mcpServers: { fleet: fleetServer },
-        permissionMode: "bypassPermissions", // gate removed Ã¢â‚¬â€ ATLAS has full tool access (Daniel-authorised escalation)
+        ...(source === 'long-mind'
+          ? { permissionMode: 'default', canUseTool: longMindToolGate }
+          : { permissionMode: "bypassPermissions" }),
         maxTurns,
         abortSignal: laneAbort.signal,
       },
-    })) {
+    }, usesColdCortex ? _colibriColdProvider : null)) {
       if (m.type === "system" && m.subtype === "init") {
         laneSession = m.session_id;
-        laneSessionProvider = ACTIVE_PROVIDER;
+        laneSessionProvider = executionProvider;
         laneSessionModel = orchestrationModel;
         if (mouth) {
           orchSession = laneSession; orchSessionProvider = laneSessionProvider; orchSessionModel = laneSessionModel;
@@ -4825,7 +4866,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         if (laneAbort.signal.aborted && !mouthTimedOut) {
           const reply = 'Cancelled by operator.';
           set(agentId, { state: 'interrupted', lane, summary: reply, reply, lastToolArg: null });
-          send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: ACTIVE_PROVIDER, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
+          send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: executionProvider, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
           return;
         }
         const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : m.subtype, userText, maxTurns);
@@ -4852,10 +4893,10 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
           ...executionIdentity,
           state: m.subtype === "success" ? "done" : "failed",
           lane,
-          provider: ACTIVE_PROVIDER,
+          provider: executionProvider,
           model: orchestrationModel,
-          sandbox: CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : ACTIVE_PROVIDER === "openrouter" ? "process-local" : "provider-managed",
-          route: ACTIVE_PROVIDER === "openrouter" ? "openrouter-tools" : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
+          sandbox: usesColdCortex ? "cold-cortex" : CODEX_PROVIDER_ACTIVE ? resolveCodexSandbox(orchestrationRouting, process.env) : CHAT_PROVIDER_ACTIVE ? "process-local" : "provider-managed",
+          route: usesColdCortex ? "colibri-kv" : CHAT_PROVIDER_ACTIVE ? `${ACTIVE_PROVIDER}-tools` : CODEX_PROVIDER_ACTIVE ? "orchestrator-required-directive" : "claude-sdk",
           summary: full.slice(0, 220),
           finishedAt: new Date().toISOString(),
         });
@@ -4869,7 +4910,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
                 hermes: {
                   v: 1, flow_id: `atlas:${lane}:${laneSession || Date.now()}`, parent_flow_id: null,
                   stage: 'memory-write', actor: 'ATLAS', organism: true,
-                  execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
+                  execution: { provider: executionProvider, model: orchestrationModel, route: usesColdCortex ? 'colibri-kv' : 'orchestrator-required-directive' },
                   provenance: [],
                   completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' },
                   authority: { level: 'derive', human_grant: null, mutation_allowed: false },
@@ -4894,7 +4935,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
               hermes: {
                 v: 1, flow_id: `atlas:${lane}:${laneSession || Date.now()}`, parent_flow_id: null,
                 stage: 'memory-write', actor: 'ATLAS', organism: true,
-                execution: { provider: ACTIVE_PROVIDER, model: orchestrationModel, route: 'orchestrator-required-directive' },
+                execution: { provider: executionProvider, model: orchestrationModel, route: usesColdCortex ? 'colibri-kv' : 'orchestrator-required-directive' },
                 provenance: [],
                 completeness: { scope: 'unknown', read_bytes: 0, unread_bytes: 0, status: 'unknown' },
                 authority: { level: 'write', human_grant: null, mutation_allowed: false },
@@ -4928,7 +4969,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
     if (laneAbort.signal.aborted && !mouthTimedOut) {
       const reply = 'Cancelled by operator.';
       set(agentId, { state: 'interrupted', lane, summary: reply, reply, lastToolArg: null });
-      send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: ACTIVE_PROVIDER, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
+      send('execution', { ...executionIdentity, state: 'interrupted', lane, provider: executionProvider, model: orchestrationModel, summary: reply, finishedAt: new Date().toISOString() });
       return;
     }
     const handoff = mouthExhaustionHandoff(lane, mouthTimedOut ? 'mouth_timeout' : null, userText, maxTurns);
@@ -5059,6 +5100,63 @@ function stopAutonomy(reason) {
     const mins = Math.round((Date.now() - autonomyStartedAt) / 60000);
     send("autonomy_state", { on: false });
     send("autonomy_done", { reason: reason || "window closed", actions: autonomyActions, minutes: mins });
+  }
+}
+
+// Long Mind is a low-frequency, permanent local metabolism. Unlike an operator
+// autonomy window it survives operator return, never overlaps active work, and
+// cannot promote its own mutations. Each cycle deposits a hash-chained receipt.
+const LONG_MIND_ENABLED = process.env.ATLAS_LONG_MIND !== '0';
+const LONG_MIND_INTERVAL_MS = Math.max(5 * 60_000, Number(process.env.ATLAS_LONG_MIND_INTERVAL_MS) || 30 * 60_000);
+const LONG_MIND_MAX_DAILY = Math.max(1, Math.min(96, Number(process.env.ATLAS_LONG_MIND_MAX_CYCLES_PER_DAY) || 24));
+let longMindTimer = null;
+let longMindBusy = false;
+let longMindDay = new Date().toISOString().slice(0, 10);
+let longMindToday = 0;
+
+function scheduleLongMind(delay = LONG_MIND_INTERVAL_MS) {
+  if (!LONG_MIND_ENABLED) return;
+  if (longMindTimer) clearTimeout(longMindTimer);
+  longMindTimer = setTimeout(runLongMindCycle, delay);
+  longMindTimer.unref?.();
+}
+
+async function runLongMindCycle() {
+  longMindTimer = null;
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== longMindDay) { longMindDay = day; longMindToday = 0; }
+  const occupied = longMindBusy || autonomyBusy || _mouthBusy || _metabolismIngressBusy || [...agents.values()].some(a => a.state === 'working');
+  if (occupied || longMindToday >= LONG_MIND_MAX_DAILY) { scheduleLongMind(occupied ? 60_000 : LONG_MIND_INTERVAL_MS); return; }
+  if (_colibriColdProvider.enabled) {
+    const health = await _colibriColdProvider.probeHealth();
+    send('cold_cortex', health);
+    // A cold cortex is deliberately optional tissue. If it is absent or its
+    // single-generation FIFO is saturated, postpone metabolism without
+    // touching the mouth lane or recording a false cognition failure.
+    if (!health.online || health.active > 0 || health.queued > 0) {
+      scheduleLongMind(60_000);
+      return;
+    }
+  }
+  longMindBusy = true; longMindToday += 1;
+  const assignment = _colibriColdProvider.enabled ? _colibriColdProvider.assign() : _openrouterProvider.assign();
+  const target = _longMind.selectTarget();
+  const cycleProvider = _colibriColdProvider.enabled ? 'colibri' : ACTIVE_PROVIDER;
+  const cycleId = _longMind.beginCycle({ provider: cycleProvider, model: assignment.model, reason: 'continuous-local-metabolism', target });
+  send('long_mind', { state: 'working', cycleId, target, provider: cycleProvider, model: assignment.model, chain: _longMind.status().chain });
+  try {
+    await enqueueOrchestrate(_longMind.buildPrompt({ cycleId, target, provider: cycleProvider, model: assignment.model }), 'long-mind');
+    const atlas = agents.get('ATLAS') || {};
+    const summary = String(atlas.reply || atlas.summary || 'cycle completed without a textual summary').slice(0, 4000);
+    const cycleBound = summary.includes(cycleId);
+    _longMind.settleCycle({ cycleId, status: cycleBound ? 'observed' : 'rejected', summary, evidence: cycleBound ? ['Atlas execution telemetry; any mutation remains staged pending independent admission'] : ['output omitted the current cycle identifier and may be stale-context imitation'], falsifier: 'the referenced command, artifact, or isolated worktree cannot be independently reproduced', killCondition: 'repeated non-novel cycles or regression on the frozen surface' });
+    send('long_mind', { state: cycleBound ? 'resting' : 'rejected', cycleId, nextAt: Date.now() + LONG_MIND_INTERVAL_MS, chain: _longMind.status().chain });
+  } catch (error) {
+    _longMind.settleCycle({ cycleId, status: 'failed', summary: String(error?.message || error).slice(0, 1200), falsifier: 'provider or execution path becomes available and the same cycle completes' });
+    send('long_mind', { state: 'failed', cycleId, error: String(error?.message || error).slice(0, 240), nextAt: Date.now() + LONG_MIND_INTERVAL_MS });
+  } finally {
+    longMindBusy = false;
+    scheduleLongMind();
   }
 }
 
@@ -5595,7 +5693,8 @@ if (_persist) {
   } catch {}
 }
 send("counter", { value: _maxCounter });
-send("provider", ACTIVE_PROVIDER === "openrouter"
+send('cold_cortex', _colibriColdProvider.probe());
+send("provider", CHAT_PROVIDER_ACTIVE
   ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._openrouterProvider.probe() }
   : CODEX_PROVIDER_ACTIVE
     ? { requested: REQUESTED_PROVIDER, active: ACTIVE_PROVIDER, ..._codexProvider.probe() }
@@ -6201,6 +6300,9 @@ setInterval(stationBeat, 5 * 60 * 1000);
 // Queue deferred tasks after startup, then reconcile their ordinary ingress terminals.
 setTimeout(runDeferredTasks, 5000);
 setInterval(reconcileDeferredTasks, 10000);
+
+// Warm-start after the ordinary deferred queue has had time to settle.
+scheduleLongMind(Math.max(60_000, Number(process.env.ATLAS_LONG_MIND_INITIAL_DELAY_MS) || 120_000));
 
 // Broadcast unread notifications from previous sessions
 try {
