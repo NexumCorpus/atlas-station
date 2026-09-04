@@ -465,9 +465,10 @@ input:focus-visible,textarea:focus-visible{outline:none}
 #sendbtn:hover{background:rgba(157,107,255,.22);border-color:rgba(157,107,255,.5);color:var(--violet);box-shadow:0 0 8px rgba(157,107,255,.2)}
 #sendbtn:active{transform:translateY(1px);background:rgba(157,107,255,.3)}
 #sendbtn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none;transform:none}
-#sendbtn.stop{color:var(--amber);border-color:rgba(255,194,75,.45);background:rgba(255,194,75,.1)}
-#sendbtn.stop:hover{background:rgba(255,194,75,.2);border-color:rgba(255,194,75,.7);color:var(--amber);box-shadow:0 0 8px rgba(255,194,75,.2)}
-#sendbtn.stopping{color:var(--dim);border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.04);cursor:wait}
+#stopbtn{flex:none;width:28px;height:28px;padding:0;border-radius:var(--r-sm);font-family:inherit;font-size:var(--fs-xs);line-height:1;color:var(--amber);border:1px solid rgba(255,194,75,.45);background:rgba(255,194,75,.1);cursor:pointer;transition:all .15s}
+#stopbtn:hover{background:rgba(255,194,75,.2);border-color:rgba(255,194,75,.7);box-shadow:0 0 8px rgba(255,194,75,.2)}
+#stopbtn:disabled{color:var(--dim);border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.04);cursor:wait;box-shadow:none}
+#stopbtn[hidden]{display:none}
 /* â”€â”€â”€â”€â”€â”€ character counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #say-counter{font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.04em;flex:none;font-variant-numeric:tabular-nums;transition:color .2s;min-width:24px;text-align:right}
 #say-counter.warn{color:var(--amber)}
@@ -636,6 +637,98 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 .toast.ok{border-left-color:#64ff8c}
 .toast.err{border-left-color:var(--ember)}
 .toast .t{color:var(--dim);font-size:var(--fs-3xs);margin-left:8px}
+
+/* station-shell-v2: quiet, task-first desktop hierarchy */
+:root{
+  --bg:#0e0f12;--panel:#121317;--surface:#18191e;--surface-2:#1d1f25;
+  --ink:#eceef4;--fg:var(--ink);--dim:#8b8f9d;--border:#292c34;
+  --violet:#9b8cff;--cyan:#72d5ec;--acid:#65d99b;--amber:#e6b65c;
+  --r-sm:7px;--r-md:10px;--r-lg:16px;
+}
+html,body{font-family:Inter,'Segoe UI Variable','Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5;background:var(--bg);color:#d7dae3}
+body{background-image:radial-gradient(900px 520px at 18% -18%,rgba(122,111,240,.09),transparent 66%)}
+body::after{opacity:.35}
+.mem{height:46px;padding:0 16px;gap:9px;background:rgba(14,15,18,.94);border-bottom:1px solid var(--border);box-shadow:none;letter-spacing:.03em;text-transform:none;font-size:12px}
+.mem .nm{font-size:13px;font-weight:650;letter-spacing:.04em;text-shadow:none}
+.mem>.dim{display:none}
+.haz{width:8px;height:8px;border-radius:50%;background:var(--violet);box-shadow:0 0 0 4px rgba(155,140,255,.1)}
+#counts{color:var(--dim);letter-spacing:0}
+#wcount{color:#dfe7ff;text-shadow:none;font-weight:650}
+#memtoggle,.uiscale-btn,.atg-dur,#atg-stop{border-color:var(--border)!important;border-radius:7px!important;background:var(--surface)!important;color:#aeb2bf!important}
+#vitals,#organs{display:none}
+#main{background:transparent}
+#convcol{min-width:500px;flex:1;border-right:0;background:rgba(14,15,18,.56)}
+#fleetcol{flex:0 0 410px;min-width:330px;background:rgba(17,18,22,.94);border-left:1px solid var(--border);transition:flex-basis .2s ease,min-width .2s ease,opacity .16s ease}
+#coldivider{display:none}
+.convhd{height:62px;padding:8px 22px;border-bottom:1px solid var(--border);background:rgba(16,17,21,.72)}
+.convhd #eye{width:36px;height:36px}
+#sig-ring1,#sig-ring2{animation:none!important}
+.atlas-wordmark{font-family:Inter,'Segoe UI Variable','Segoe UI',system-ui,sans-serif;font-size:14px;letter-spacing:.08em}
+.atlas-tagline{font-size:11px;letter-spacing:.04em;color:var(--dim);opacity:1}
+.sub{font-size:10px;letter-spacing:.04em;text-transform:none;color:#777b88}
+#exportbtn,#inspector-toggle{height:30px;padding:0 10px!important;border:1px solid var(--border)!important;border-radius:8px;background:var(--surface)!important;color:#aeb2bf!important;font-family:inherit!important;font-size:11px!important;letter-spacing:0!important}
+#inspector-toggle{margin-left:auto}
+#exportbtn{margin-left:0!important}
+#executionrail{min-height:34px;padding:0 24px;gap:8px;background:rgba(114,213,236,.025);border-bottom:1px solid rgba(255,255,255,.045);font-family:'Cascadia Mono',Consolas,monospace;font-size:10px;letter-spacing:0}
+#executionrail.working #exec-dot{box-shadow:0 0 0 4px rgba(114,213,236,.1);animation:none}
+#exec-state{text-transform:none;color:#b9bdca}
+#exec-route{color:#8fcfdd}
+#thread{padding:18px 26px 12px;gap:5px;scroll-behavior:smooth}
+.msg{width:min(100%,900px);margin-left:auto!important;margin-right:auto!important;padding:12px 14px;border-radius:10px;gap:12px;animation:none}
+.msg:hover{background:rgba(255,255,255,.022)}
+.msg.atlas{border-left:0;background:transparent}
+.msg.user{border:1px solid rgba(255,255,255,.045);background:rgba(255,255,255,.026);padding-left:14px}
+.msg.system{padding-top:6px;padding-bottom:6px;opacity:.62}
+.msg-avatar{width:24px;height:24px;margin-top:0;font-size:10px}
+.msg.atlas .msg-avatar{background:linear-gradient(145deg,rgba(155,140,255,.28),rgba(114,213,236,.12));box-shadow:none;border-color:rgba(155,140,255,.28)}
+.msg-body{padding-top:1px}
+.msg-meta{margin-bottom:5px}
+.msg-role{font-size:10px;letter-spacing:.04em}
+.msg-time{font-family:'Cascadia Mono',Consolas,monospace;font-size:9px}
+.msg-text{font-size:14px;line-height:1.65;color:#dfe2ea}
+.msg-text pre{border-radius:10px;background:#0c0d10;border-color:#272a31;padding:13px 15px;font-family:'Cascadia Mono',Consolas,monospace}
+#typing{width:min(calc(100% - 52px),900px);margin:0 auto;padding:8px 14px}
+#typing .msg-avatar{width:24px;height:24px;box-shadow:none}
+.typing-dots span{width:4px;height:4px;animation:typing-wave 1.4s ease-in-out infinite}
+#queuehint{font-size:11px;color:#8d91a0}
+#composer-shell{margin:0 24px 20px;border:1px solid #30333c;border-radius:16px;background:rgba(25,26,32,.96);box-shadow:0 16px 38px rgba(0,0,0,.26);overflow:hidden;flex:none}
+#dispatchbar{min-height:31px;padding:7px 11px 0;gap:6px;border:0;background:transparent}
+.dz-lead,.dz-note{display:none}
+.dz-chip{height:24px;padding:0 9px;border-color:transparent;background:rgba(255,255,255,.045);font-family:inherit;font-size:10px;color:#9ca1af;letter-spacing:0}
+.dz-chip:hover{transform:none;border-color:#3a3d47;background:rgba(255,255,255,.075);color:#d7dae3}
+.bar{min-height:56px;margin:0;padding:7px 10px 10px;border:0;background:transparent;box-shadow:none;gap:8px}
+.bar .to,.bar .hint{display:none}
+#say{min-height:40px;max-height:160px;padding:9px 8px;border:0;background:transparent;border-radius:9px;font-family:inherit;font-size:14px;line-height:1.5;box-shadow:none!important;caret-color:#b6aaff}
+#say:focus,body.streaming #say{border:0;background:transparent;box-shadow:none!important}
+#say::placeholder{color:#737784}
+#say-addimg,#stopbtn,#sendbtn{width:34px!important;height:34px!important;padding:0!important;border-radius:10px!important;align-self:flex-end!important}
+#say-addimg{background:transparent!important;border-color:transparent!important;color:#989dab!important}
+#say-addimg:hover{background:rgba(255,255,255,.06)!important;border-color:var(--border)!important;box-shadow:none!important}
+#sendbtn{background:#ded9ff!important;border-color:#ded9ff!important;color:#1a1728!important;font-size:18px!important;letter-spacing:0!important}
+#sendbtn:hover{background:#eeeaff!important;border-color:#eeeaff!important;box-shadow:none!important}
+#sendbtn:disabled{background:#292b32!important;border-color:#292b32!important;color:#747885!important;opacity:1}
+#stopbtn{background:transparent;border-color:#444751;color:#d7b56f}
+#stopbtn:hover{background:rgba(230,182,92,.08);box-shadow:none}
+#say-counter{align-self:flex-end;height:34px;line-height:34px;font-family:'Cascadia Mono',Consolas,monospace;font-size:9px;min-width:18px}
+.inspector-head{height:62px;padding:0 14px;display:flex;align-items:center;border-bottom:1px solid var(--border);background:rgba(16,17,21,.82)}
+.inspector-head strong{display:block;font-size:13px;font-weight:650;color:#e4e6ed}
+.inspector-head span{display:block;margin-top:1px;font-size:10px;color:var(--dim)}
+#tabs{height:38px;padding:4px 8px;gap:2px;border-bottom:1px solid var(--border);background:transparent;overflow-x:auto;position:relative}
+.tab{padding:5px 8px;margin:0;border:0;border-radius:7px;font-family:inherit;font-size:9px;letter-spacing:.04em;color:#777c8a}
+.tab:hover{background:rgba(255,255,255,.04);color:#bec2cd}
+.tab.active{background:rgba(155,140,255,.1);color:#c8c0ff;text-shadow:none}
+.tabbar-ink{display:none}
+#fleetstats{padding:8px 12px;border-bottom-color:rgba(255,255,255,.045);font-family:'Cascadia Mono',Consolas,monospace;font-size:9px;letter-spacing:0}
+.lab{font-family:inherit!important;font-size:10px!important;letter-spacing:.04em!important;color:#838895!important}
+.arow{margin:5px 8px;border-radius:9px;border-color:#292c34;background:rgba(255,255,255,.014);box-shadow:none!important}
+.arow.st-working::before,.arow.st-working::after,.arow.st-needs-you::after{animation:none!important;box-shadow:none!important}
+.arowmain{padding:9px 10px}
+.card-task{font-size:11px}
+#reply{background:#15161b;border-top-color:var(--border)}
+body.inspector-collapsed #fleetcol{flex-basis:0;min-width:0;opacity:0;overflow:hidden;border-left:0}
+body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:#4a465f!important}
+@media(max-width:1180px){#fleetcol{flex-basis:350px}.mem #uiscale,.mem #lifetime{display:none}.msg-text{font-size:13px}}
+@media(max-width:900px){#fleetcol{position:absolute;right:0;top:0;bottom:0;width:min(420px,88vw);z-index:40;box-shadow:-18px 0 45px rgba(0,0,0,.36)}body.inspector-collapsed #fleetcol{width:0}.mem #counts{display:none}#convcol{min-width:0}}
 </style>
 </head>
 <body>
@@ -649,23 +742,23 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     <span class="haz"></span>
     <span class="nm">ATLAS // station</span>
     <span class="dim">// orchestrator</span>
-    <span id="counts"><span id="wcount">0</span> working Â· <span id="subcount">0</span> agents Â· <span id="totalcost">$0.00</span> session</span>
+    <span id="counts"><span id="wcount">0</span> working · <span id="subcount">0</span> agents · <span id="totalcost">$0.00</span> session</span>
     <svg id="spark" width="120" height="18" style="margin-left:12px;display:none"><polyline id="sparkline" fill="none" stroke="#49f" stroke-width="1.5" points=""/></svg><span id="lifetime" style="display:none; color:var(--dim); font-size:var(--fs-3xs); margin-left:12px; padding-left:12px; border-left:1px solid var(--border);"></span>
     <button id="memtoggle" style="margin-left:8px;font-family:inherit;font-size:var(--fs-3xs);padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="browse memory facts">mem</button>
-    <span id="uiscale" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.06em" title="UI scale Â· Ctrl - / Ctrl = Â· Ctrl 0 resets">
-      <button class="uiscale-btn" data-scale="-1" title="smaller (Ctrl -)">âˆ’</button>
+    <span id="uiscale" style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:var(--fs-3xs);color:var(--dim);letter-spacing:.06em" title="UI scale · Ctrl - / Ctrl = · Ctrl 0 resets">
+      <button class="uiscale-btn" data-scale="-1" title="smaller (Ctrl -)">−</button>
       <span id="uiscale-val" style="min-width:30px;text-align:center;color:var(--cyan);font-variant-numeric:tabular-nums">100%</span>
       <button class="uiscale-btn" data-scale="1" title="larger (Ctrl =)">+</button>
     </span>
-    <span id="autonomy-ctl" title="Autonomy â€” grant a window of unbounded self-directed work. I work freely (fill the fractal spiral, develop the alien-architecture) until the time runs out or you return. Nothing irreversible or pushed to remotes without you.">
-      <span class="atg-label">ÃŸÃŸ autonomy</span>
+    <span id="autonomy-ctl" title="Autonomy — grant a window of self-directed work until time expires or you return.">
+      <span class="atg-label">autonomy</span>
       <span id="atg-durs">
         <button class="atg-dur" data-min="30">30m</button>
         <button class="atg-dur" data-min="60">1h</button>
         <button class="atg-dur" data-min="180">3h</button>
       </span>
       <span id="atg-live" style="display:none">
-        <span id="atg-count">â€”</span>
+        <span id="atg-count">—</span>
         <button id="atg-stop" title="end the window now">stop</button>
       </span>
     </span>
@@ -690,7 +783,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
       <div id="srchbar">
         <input id="srchinput" placeholder="search..." autocomplete="off"/>
         <span id="srchcount"></span>
-        <span id="srchclose" style="cursor:pointer;color:var(--dim);font-size:var(--fs-2xs);padding:0 2px" title="close (Esc)">âœ•</span>
+        <span id="srchclose" style="cursor:pointer;color:var(--dim);font-size:var(--fs-2xs);padding:0 2px" title="close (Esc)">×</span>
       </div>
       <div class="convhd">
         <svg id="eye" viewBox="0 0 64 64" width="48" height="48" style="flex:none;cursor:pointer;overflow:visible">
@@ -727,11 +820,12 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
           <!-- Specular highlight -->
           <circle cx="33.5" cy="30.5" r="1.6" fill="white" opacity="0.35"/>
         </svg>
-        <div><div class="atlas-wordmark">ATLAS</div><div class="atlas-tagline">// station</div><div class="sub" id="status">overseer Â· idle</div></div>
+        <div><div class="atlas-wordmark">ATLAS</div><div class="atlas-tagline">// station</div><div class="sub" id="status">overseer · idle</div></div>
+        <button id="inspector-toggle" type="button" aria-label="Toggle task inspector" title="Toggle task inspector">Tasks</button>
         <button id="exportbtn" style="margin-left:auto;font-family:inherit;font-size:var(--fs-3xs);padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;letter-spacing:.08em" title="export conversation to markdown">export</button>
       </div>
       <div id="executionrail" class="idle" title="Live execution route and current Atlas state">
-        <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="exec-sandbox">â€”</span>
+        <span id="exec-dot"></span><span id="exec-state">idle</span><span id="exec-route">awaiting route</span><span id="exec-task">No active Atlas turn.</span><span id="exec-sandbox">—</span>
       </div>
       <div id="scroll-progress"></div>
       <div id="thread"></div>
@@ -740,23 +834,45 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
         <div style="font-size:var(--fs-xs);letter-spacing:.08em">type to talk to ATLAS</div>
         <div style="font-size:var(--fs-3xs);color:var(--dim)">? for shortcuts</div>
       </div>
-      <div id="queuehint" class="queue-hint">queued â€” ATLAS is mid-turn, message will follow</div><div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div><span id="typing-label">thinking <b id="typing-elapsed">0s</b></span></div>
+      <div id="queuehint" class="queue-hint">queued — Atlas is mid-turn; this message will follow</div><div id="typing" role="status" aria-live="polite" aria-label="ATLAS is thinking"><div class="msg-avatar">A</div><div class="typing-dots"><span></span><span></span><span></span></div><span id="typing-label">thinking <b id="typing-elapsed">0s</b></span></div>
       <button id="jumptobottom" title="Jump to bottom" onclick="scrollThread()">&#8595;</button><button id="new-activity-pill" title="Scroll to new activity" onclick="scrollThread(true)">&#8595; new activity</button>
+      <div id="composer-shell">
+        <div id="dispatchbar" class="boot-seq">
+          <span class="dz-lead">dispatch</span>
+          <button class="dz-chip" data-pfx="@build " title="dispatch a build agent (isolated worktree, commits work)">Build agent</button>
+          <button class="dz-chip" data-pfx="@read " title="dispatch a read-only agent (surveys, no writes)">Research agent</button>
+          <span class="dz-note">or talk directly to Atlas</span>
+        </div>
+        <div class="bar boot-seq">
+          <span class="to" id="barprefix">ATLAS</span>
+          <button id="say-addimg" type="button" title="Attach screenshots (PNG, up to 4)" aria-label="Attach images">+</button>
+          <div class="composer-stack">
+            <div id="say-image-tray" title="Pasted images attach to your next message" aria-live="polite"></div>
+            <textarea id="say" rows="1" placeholder="Message Atlas or describe a task…" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;"></textarea>
+          </div>
+          <button id="stopbtn" type="button" title="Stop Atlas (Escape)" aria-label="Stop Atlas turn" hidden>■</button>
+          <button id="sendbtn" type="button" title="Send (Enter)" aria-label="Send message" disabled>↑</button>
+          <span id="say-counter"></span>
+          <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
+          <span class="hint">enter</span>
+        </div>
+      </div>
     </div>
     <div id="coldivider"></div>
     <div id="fleetcol" class="boot-seq">
       <div id="notiftray" style="display:none"></div>
+      <div class="inspector-head"><div><strong>Workspace</strong><span>Tasks, memory, and evidence</span></div></div>
       <div id="tabs">
-        <button class="tab active" data-tab="fleet">FLEET</button>
-        <button class="tab" data-tab="ecology">ECOLOGY</button>
+        <button class="tab active" data-tab="fleet">TASKS</button>
         <button class="tab" data-tab="memory">MEMORY</button>
         <button class="tab" data-tab="station">STATION</button>
-        <button class="tab" data-tab="empire">EMPIRE</button>
+        <button class="tab" data-tab="ecology">ECOLOGY</button>
+        <button class="tab" data-tab="empire">LAB</button>
       </div>
 
 
       <!-- EMPIRE TAB - built by stealth/ox-alpha workers, integrated by ATLAS -->
-      <div id="tab-empire" class="tab-panel">
+      <div id="tab-empire" class="tab-panel" style="display:none">
         <div style="padding:10px 12px;">
           <div style="background:transparent;color:#d8deec;font-size:var(--fs-xs);">
             <div id="empire-header" style="background:transparent;color:#d8deec;font-size:var(--fs-xs);border-bottom:1px solid #2a2f3e;padding-bottom:4px;margin-bottom:6px;">
@@ -772,8 +888,8 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
 
       <!-- FLEET TAB -->
       <div id="tab-fleet" class="tab-panel">
-        <div id="fleetstats">R: 0 Â· B: 0 Â· âœ“: 0 Â· âœ—: 0</div>
-        <div class="lab">ÃŸÃŸ the fleet â€” what ATLAS is running ÃŸÃŸ<span id="broodcount"></span></div>
+        <div id="fleetstats">0 active · 0 complete</div>
+        <div class="lab">Active and recent tasks <span id="broodcount"></span></div>
         <div id="brood"></div>
         <div id="proposallab" class="lab panel-hd" style="display:none"><span class="ph-title">proposals</span><span class="ph-count" id="proposal-count"></span><span class="ph-chevron">Ã€Ã€</span></div>
         <div id="proposals" style="display:none"></div>
@@ -896,26 +1012,6 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
   </div>
 
   <div id="reply"></div>
-
-  <div id="dispatchbar" class="boot-seq">
-    <span class="dz-lead">ÃŸÃŸ dispatch</span>
-    <button class="dz-chip" data-pfx="@build " title="dispatch a build agent (isolated worktree, commits work)">âš’ build</button>
-    <button class="dz-chip" data-pfx="@read " title="dispatch a read-only agent (surveys, no writes)">â—Ž read</button>
-    <span class="dz-note">â€” or just talk; ATLAS routes it</span>
-  </div>
-
-  <div class="bar boot-seq">
-    <span class="to" id="barprefix">Ã†Ã† ATLAS</span>
-    <button id="say-addimg" type="button" title="Attach screenshots (PNG, up to 4)" aria-label="Attach images" style="flex:none;align-self:flex-end;font-family:inherit;font-size:var(--fs-md);line-height:1;width:28px;height:28px;padding:0;background:rgba(157,107,255,.08);border:1px solid rgba(157,107,255,.3);border-radius:var(--r-sm);color:var(--violet);cursor:pointer;transition:all .15s">+</button>
-<div class="composer-stack">
-      <div id="say-image-tray" title="Pasted images attach to your next message" aria-live="polite"></div>
-      <textarea id="say" rows="1" placeholder="tell ATLAS what to doÃ€Ã€ (or @build / @read to dispatch)" title="Enter sends. Shift+Enter adds a line break for code or structured prompts." aria-label="Message ATLAS" autofocus style="overflow:hidden;"></textarea>
-    </div>
-    <button id="sendbtn" title="Send (Enter)" aria-label="Send message" disabled style="flex:none;font-family:inherit;font-size:var(--fs-xs);padding:5px 10px;background:rgba(157,107,255,.13);border:1px solid rgba(157,107,255,.3);border-radius:var(--r-sm);color:rgba(157,107,255,.9);cursor:pointer;transition:all .15s;letter-spacing:.06em;line-height:1">Ã†Ã†</button>
-    <span id="say-counter"></span>
-    <span class="hint" title="keyboard shortcuts" style="cursor:pointer" onclick="toggleKb()">?</span>
-    <span class="hint">enter</span>
-  </div>
 
 <div id="atlaspanel" style="display:none;position:fixed;top:60px;left:14px;z-index:99;width:280px">
   <div id="atlasbox">
@@ -1425,9 +1521,9 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     return a&&a.state==='working'?eventSubmissionId(a):null;
   }
 
-  // The composer is also the mouth's stop surface. Keep this state derived from
+  // Conversation and execution have separate controls. Keep Stop derived from
   // the pending turn/agent snapshot so renderer reconnects do not invent a new
-  // execution or leave a stale Stop button behind.
+  // execution, while Send remains available for steering or queueing new work.
   function atlasTurnActive(){
     var a=agents.get('ATLAS');
     return !!(firstPendingAtlas()||atlasStreaming||(a&&a.state==='working'));
@@ -1445,7 +1541,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     // Stop rendering speculative text immediately, but do not mark the turn
     // interrupted until the sidecar publishes the authoritative lifecycle.
     captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
-    var status=$('status');if(status)status.textContent='overseer Â· stopping';
+    var status=$('status');if(status)status.textContent='overseer · stopping';
     updateComposerState();
     return true;
   }
@@ -1462,7 +1558,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:'interrupted',summary:text,reply:text});
     atlasCancelRequested=false;
     captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
-    var status=$('status');if(status)status.textContent='overseer Â· interrupted';
+    var status=$('status');if(status)status.textContent='overseer · interrupted';
     updateComposerState();renderThread();
     return true;
   }
@@ -1479,7 +1575,7 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     if(!activeSubmissionId||activeSubmissionId===sid){
       agents.set('ATLAS',{...(agents.get('ATLAS')||{id:'ATLAS'}),state:m.state,submissionId:sid,summary:text,reply:text});
       captureOtlForFinal();captureThinkForFinal();clearStreamingMsg();setTyping(false);if(window.__nudge)window.__nudge();
-      var status=$('status');if(status)status.textContent=interrupted?'overseer Â· interrupted':m.state==='failed'?'overseer Â· failed':'overseer Â· idle';
+      var status=$('status');if(status)status.textContent=interrupted?'overseer · interrupted':m.state==='failed'?'overseer · failed':'overseer · idle';
     }
     atlasCancelRequested=false;
     updateComposerState();renderThread();
@@ -1491,9 +1587,9 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     var state=m.state||'idle';
     rail.className=state;
     $('exec-state').textContent=state;
-    if(m.provider||m.model||m.route)$('exec-route').textContent=(m.provider||'provider')+' Â· '+(m.model||'model')+' Â· '+(m.route||'route');
+    if(m.provider||m.model||m.route)$('exec-route').textContent=(m.provider||'provider')+' · '+(m.model||'model')+' · '+(m.route||'route');
     if(m.task||m.summary)$('exec-task').textContent=m.task||m.summary;
-    else if(Number.isFinite(m.elapsedMs))$('exec-task').textContent=(m.lane||'Atlas')+' working Â· '+Math.max(0,Math.round(m.elapsedMs/1000))+'s';
+    else if(Number.isFinite(m.elapsedMs))$('exec-task').textContent=(m.lane||'Atlas')+' working · '+Math.max(0,Math.round(m.elapsedMs/1000))+'s';
     if(m.sandbox)$('exec-sandbox').textContent=m.sandbox;
   }
 
@@ -1596,10 +1692,10 @@ body.streaming #vd-main{animation:vdot-breathe 2s ease-in-out infinite}
     }
     if(m.type==="fleet_lifecycle"){
       var _lifeText = m.state === 'started'
-        ? 'fleet sidecar started Â· generation '+m.generation+' Â· pid '+m.pid
+        ? 'fleet sidecar started · generation '+m.generation+' · pid '+m.pid
         : m.state === 'failed'
-          ? 'fleet sidecar start failed Â· generation '+m.generation+' Â· retrying'
-        : 'fleet sidecar exited Â· generation '+m.generation+' Â· '+(m.restarting?'restarting':'stopped');
+          ? 'fleet sidecar start failed · generation '+m.generation+' · retrying'
+        : 'fleet sidecar exited · generation '+m.generation+' · '+(m.restarting?'restarting':'stopped');
       thread.push({role:'system',text:_lifeText,error:m.state==='failed'||(m.state==='exited'&&!m.restarting),ts:Date.now()});
       addTimelineEvent(m.state==='started'?'Ã†Ã†':m.state==='exited'?'ÃšÃš':'Ã—',_lifeText,m.state==='failed'||(m.state==='exited'&&!m.restarting)?'evfailed':'');
       renderThread();
@@ -1722,7 +1818,7 @@ if(m.type==="agent"){
         if(m.state==="working"){
           if(pend){pend.lastTool=m.lastTool||null;pend.lastToolArg=m.lastToolArg||null;pend.activity=m.summary||null;}
           setTyping(true);
-          $('status').textContent="overseer Â· working";
+          $('status').textContent="overseer · working";
         } else if(m.state==="done"||m.state==="failed"||m.state==="interrupted"){
           captureOtlForFinal();captureThinkForFinal();clearStreamingMsg(); // remove live stream element before final render
           var interrupted=m.state==="interrupted";
@@ -1738,7 +1834,7 @@ if(m.type==="agent"){
           }
           atlasCancelRequested=false;
           setTyping(false);
-          $('status').textContent=interrupted?"overseer Â· interrupted":m.state==="failed"?"overseer Â· failed":"overseer Â· idle";
+          $('status').textContent=interrupted?"overseer · interrupted":m.state==="failed"?"overseer · failed":"overseer · idle";
           updateComposerState();
         }
         renderThread();
@@ -2414,7 +2510,7 @@ if(m.type==="agent"){
       if((a.model||'').includes('haiku'))modelbadge='<span class="mmodel mmodel-h">H</span>';
       else if((a.model||'').includes('opus'))modelbadge='<span class="mmodel mmodel-o">O</span>';
       var cancelBtn=(a.state==='working'||a.state==='needs-you')
-        ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel" aria-label="Cancel agent '+esc(a.id)+'">âœ•</button>'
+        ?'<button class="xcbtn" data-id="'+esc(a.id)+'" title="cancel" aria-label="Cancel agent '+esc(a.id)+'">×</button>'
         :'';
       var costStr=a.cost&&a.cost>0?'<span>$'+Number(a.cost).toFixed(3)+'</span>':'';
       var turnsStr=a.turns?'<span>'+a.turns+'t</span>':'';
@@ -2441,7 +2537,7 @@ if(m.type==="agent"){
           +'<div class="card-badges">'+workBadge+modebadge+modelbadge+cancelBtn+'</div>'
         +'</div>'
         +meta
-        +'<div class="arow-detail"><div class="det-hint">reply from agent</div>'+(expTask?'<div class="det-hint">task'+(expElapsed?' â€” '+esc(expElapsed):'')+'</div><div>'+esc(expTask)+'</div>':'')+detContent+'</div>'
+        +'<div class="arow-detail"><div class="det-hint">reply from agent</div>'+(expTask?'<div class="det-hint">task'+(expElapsed?' — '+esc(expElapsed):'')+'</div><div>'+esc(expTask)+'</div>':'')+detContent+'</div>'
         +'</div>';
     }).join('');
     // Mark all rendered agents as seen (new ones got 'spawning'; won't get it again)
@@ -2489,7 +2585,7 @@ if(m.type==="agent"){
       if (haiku > 0) parts.push('<span style="color:var(--acid)">H:' + haiku + '</span>');
       if (opus > 0) parts.push('<span style="color:var(--mag)">O:' + opus + '</span>');
       if (totalCost > 0) parts.push('<span style="color:var(--amber)">$' + totalCost.toFixed(3) + '</span>');
-      fs.innerHTML = total + ' agent' + (total !== 1 ? 's' : '') + ' Â· ' + parts.join(' Â· ');
+      fs.innerHTML = total + ' agent' + (total !== 1 ? 's' : '') + ' · ' + parts.join(' · ');
     }
   }
 
@@ -2717,16 +2813,21 @@ if(m.type==="agent"){
   function updateComposerState(){
     var input = document.getElementById('say');
     var button = document.getElementById('sendbtn');
-    if (!input || !button) return;
+    var stop = document.getElementById('stopbtn');
+    if (!input || !button || !stop) return;
     var ready = !(window.__sayImagesLoading > 0) && (!!input.value.trim() || !!(window.__sayImages && window.__sayImages.length));
-    var canStop = atlasTurnActive() && !ready;
-    button.classList.toggle('stop', canStop && !atlasCancelRequested);
-    button.classList.toggle('stopping', canStop && atlasCancelRequested);
-    button.disabled = canStop ? atlasCancelRequested : !ready;
-    button.textContent = canStop ? (atlasCancelRequested ? 'Ã€Ã€' : 'Ã–Ã–') : 'Ã†Ã†';
-    button.title = canStop ? (atlasCancelRequested ? 'Stopping AtlasÃ€Ã€' : 'Stop Atlas (Escape)') : 'Send (Enter)';
-    button.setAttribute('aria-label', canStop ? (atlasCancelRequested ? 'Stopping Atlas' : 'Stop Atlas turn') : 'Send message');
+    var canStop = atlasTurnActive();
+    button.disabled = !ready;
+    button.textContent = '↑';
+    button.title = canStop ? 'Send another message (Enter)' : 'Send (Enter)';
+    button.setAttribute('aria-label', canStop ? 'Send another message' : 'Send message');
     button.setAttribute('aria-disabled', button.disabled ? 'true' : 'false');
+    stop.hidden = !canStop;
+    stop.disabled = !canStop || atlasCancelRequested;
+    stop.textContent = atlasCancelRequested ? '…' : '■';
+    stop.title = atlasCancelRequested ? 'Stopping Atlas…' : 'Stop Atlas (Escape)';
+    stop.setAttribute('aria-label', atlasCancelRequested ? 'Stopping Atlas' : 'Stop Atlas turn');
+    stop.setAttribute('aria-disabled', stop.disabled ? 'true' : 'false');
   }
 
   // Parse a command packet out of an ATLAS reply. Returns {prose, options} â€”
@@ -3341,6 +3442,7 @@ if(m.type==="agent"){
       document.getElementById('tab-ecology').style.display = which === 'ecology' ? '' : 'none';
       document.getElementById('tab-memory').style.display = which === 'memory' ? '' : 'none';
       document.getElementById('tab-station').style.display = which === 'station' ? '' : 'none';
+      document.getElementById('tab-empire').style.display = which === 'empire' ? '' : 'none';
       if (which === 'station') loadStationHealth();
       savePrefs({ activeTab: which });
       moveTabInk();
@@ -3407,9 +3509,9 @@ if(m.type==="agent"){
       if (a.state === 'working') working++;
     });
     var bc = document.getElementById('broodcount');
-    if (bc) bc.textContent = total + ' agents' + (working ? ' Â· ' + working + ' active' : '');
+    if (bc) bc.textContent = total + ' tasks' + (working ? ' · ' + working + ' active' : '');
     var fleetTab = document.querySelector('.tab[data-tab="fleet"]');
-    if (fleetTab) { fleetTab.textContent = working > 0 ? 'FLEET Â· ' + working : 'FLEET'; if(window.__moveTabInk)window.__moveTabInk(); }
+    if (fleetTab) { fleetTab.textContent = working > 0 ? 'TASKS · ' + working : 'TASKS'; if(window.__moveTabInk)window.__moveTabInk(); }
   }
   function updateProposalCount() {
     var count = document.querySelectorAll('#proposals .prow').length;
@@ -3839,29 +3941,27 @@ if(m.type==="agent"){
   var sendbtn = document.getElementById('sendbtn');
   if (sendbtn) {
     sendbtn.addEventListener('click', function() {
-      var input=document.getElementById('say');
-      var hasComposerContent=!!(input&&input.value.trim())||!!(window.__sayImages&&window.__sayImages.length);
-      if (atlasTurnActive()&&!hasComposerContent) { cancelAtlasTurn(); return; }
       submitComposer();
-      return;
-      /* Legacy duplicate routing retained below only as unreachable source
-         until the surrounding handler is removed in the next UI cleanup pass.
-      var text = document.getElementById('say').value.trim();
-      if (!text) return;
-      var agentMatch = text.match(/^@(build|read|b|r)\s+([\s\S]+)/i);
-      if (agentMatch) {
-        var mode = agentMatch[1].toLowerCase().startsWith('b') ? 'build' : 'read';
-        var task = agentMatch[2].trim();
-        window.atlas.dispatch(task, null, mode);
-        thread.push({ role:'system', text:'ÃŸÃŸ dispatched ' + mode + ' agent: ' + task.slice(0,60), error:false, ts:Date.now() });
-        renderThread();
-      } else {
-        say(text);
-      }
-      var sayEl = document.getElementById('say');
-      sayEl.value = ''; sayEl.style.height = 'auto';
-      savePrefs({ draft: '' });
-      sayEl.focus(); */
+    });
+  }
+  var stopbtn = document.getElementById('stopbtn');
+  if (stopbtn) stopbtn.addEventListener('click', cancelAtlasTurn);
+
+  var inspectorToggle = document.getElementById('inspector-toggle');
+  function setInspectorCollapsed(collapsed){
+    document.body.classList.toggle('inspector-collapsed', !!collapsed);
+    if(inspectorToggle){
+      inspectorToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      inspectorToggle.textContent = collapsed ? 'Show tasks' : 'Tasks';
+    }
+    try{localStorage.setItem('atlas.inspector.collapsed', collapsed ? '1' : '0');}catch(e){}
+  }
+  if(inspectorToggle){
+    var inspectorCollapsed=false;
+    try{inspectorCollapsed=localStorage.getItem('atlas.inspector.collapsed')==='1';}catch(e){}
+    setInspectorCollapsed(inspectorCollapsed);
+    inspectorToggle.addEventListener('click',function(){
+      setInspectorCollapsed(!document.body.classList.contains('inspector-collapsed'));
     });
   }
 
@@ -3941,11 +4041,11 @@ window.__nudge=function(){if(!document.hidden)return;blinking=true;var on=false;
 var cmds=[
  {n:'Export conversation',k:'export',fn:function(){var b=document.getElementById('exportbtn');if(b)b.click();}},
  {n:'Jump to bottom',k:'end',fn:function(){scrollThread(true);}},
- {n:'Tab: Fleet',k:'1',fn:function(){act(document.querySelector('.tab[data-tab=\"fleet\"]'));}},
+ {n:'Tab: Tasks',k:'1',fn:function(){act(document.querySelector('.tab[data-tab=\"fleet\"]'));}},
  {n:'Tab: Ecology',k:'2',fn:function(){act(document.querySelector('.tab[data-tab=\"ecology\"]'));}},
  {n:'Tab: Memory',k:'3',fn:function(){act(document.querySelector('.tab[data-tab=\"memory\"]'));}},
  {n:'Tab: Station',k:'4',fn:function(){act(document.querySelector('.tab[data-tab=\"station\"]'));}},
- {n:'Tab: Empire',k:'5',fn:function(){act(document.querySelector('.tab[data-tab=\"empire\"]'));}},
+ {n:'Tab: Lab',k:'5',fn:function(){act(document.querySelector('.tab[data-tab=\"empire\"]'));}},
  {n:'Show shortcuts',k:'?',fn:function(){var b=document.querySelector('.kb-overlay-open,[onclick*=\"shortcut\"]');if(b)b.click();}},
  {n:'Focus input',k:'i',fn:function(){var s=document.getElementById('say');if(s)s.focus();}}
 ];

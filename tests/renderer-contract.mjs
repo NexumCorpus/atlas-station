@@ -21,13 +21,21 @@ assert.doesNotMatch(
 );
 assert.match(
   html,
-  /id="new-activity-pill"[^>]*>[^<]*<\/button>\s*<\/div>/,
-  "new activity control should close exactly once before the thread container",
+  /id="new-activity-pill"[^>]*>[^<]*<\/button>\s*<div id="composer-shell">/,
+  "the conversation controls should close before the in-pane composer",
 );
+assert.match(html, /id="composer-shell"[\s\S]*id="say"[\s\S]*id="sendbtn"[\s\S]*<\/div>\s*<\/div>\s*<div id="coldivider"/,
+  "the composer must remain inside the conversation pane");
+assert.match(html, /id="inspector-toggle"[^>]*aria-label="Toggle task inspector"/);
+assert.match(html, /id="tab-empire" class="tab-panel" style="display:none"/,
+  "the Lab panel must not overlap Tasks on startup");
+assert.match(html, /getElementById\('tab-empire'\)\.style\.display = which === 'empire'/,
+  "tab switching must explicitly control the Lab panel");
 
 assert.match(html, /function submitComposer\(\)/);
 assert.match(html, /e\.preventDefault\(\);\s*submitComposer\(\);/);
 assert.match(html, /sendbtn[^>]*aria-label="Send message"[^>]*disabled/);
+assert.match(html, /id="stopbtn"[^>]*aria-label="Stop Atlas turn"[^>]*hidden/);
 assert.match(html, /id="say"[^>]*title="Enter sends\. Shift\+Enter adds a line break/);
 assert.match(html, /id="typing" role="status" aria-live="polite"/);
 assert.match(html, /class="msg-copy" aria-label="Copy message"/);
@@ -45,7 +53,9 @@ assert.match(html, /m\.type==='cancel_reconcile'/);
 assert.match(html, /partialSubmissionId/);
 assert.match(html, /Stop Atlas turn/);
 assert.match(html, /m\.state==="interrupted"/);
-assert.match(html, /classList\.toggle\('stop'/);
+assert.match(html, /stop\.hidden = !canStop/);
+assert.match(html, /stopbtn\.addEventListener\('click', cancelAtlasTurn\)/);
+assert.doesNotMatch(html, /hasComposerContent[\s\S]{0,180}cancelAtlasTurn/, "Send must never multiplex into Stop");
 assert.match(html, /partialState==='cancel-requested'/);
 assert.match(html, /m\.submissionId&&thread\[_pi\]\.submissionId===m\.submissionId/);
 assert.match(html, /on && !atlasCancelRequested/);
@@ -79,4 +89,3 @@ console.log("renderer contract: ALL PASS");
     "@keyframes msg-in must be defined inside a stylesheet",
   );
 }
-
