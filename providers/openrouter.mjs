@@ -353,12 +353,46 @@ function runShell(input, cwd, env, signal, ceilingMs) {
   });
 }
 
+function providerErrorMessage(payload, fallback) {
+  if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error.trim();
+  return payload?.error?.message || payload?.error?.code || fallback;
+}
+
+// Atlas keeps a provider-neutral OpenAI-shaped transcript internally. Ollama's
+// native /api/chat route differs after tool calls: arguments are objects and
+// tool results identify their function with tool_name, not tool_call_id.
+function ollamaMessages(messages) {
+  const namesByCallId = new Map();
+  const converted = [];
+  for (const original of messages) {
+    const message = { ...original };
+    if (Array.isArray(original.tool_calls)) {
+      message.tool_calls = original.tool_calls.map((call, index) => {
+        const name = String(call?.function?.name || '');
+        if (call?.id) namesByCallId.set(String(call.id), name);
+        let args = call?.function?.arguments;
+        if (typeof args === 'string') {
+          try { args = JSON.parse(args); } catch { args = {}; }
+        }
+        return { type: 'function', function: { index, name, arguments: args && typeof args === 'object' ? args : {} } };
+      });
+      delete message.tool_call_id;
+    }
+    if (original.role === 'tool') {
+      message.tool_name = original.tool_name || namesByCallId.get(String(original.tool_call_id || '')) || 'unknown_tool';
+      delete message.tool_call_id;
+    }
+    converted.push(message);
+  }
+  return converted;
+}
+
 function requestBody(messages, env, stream, tools = TOOLS) {
   const provider = resolveCompatibleProvider(env);
   if (provider.id === 'ollama') {
     const body = {
       model: provider.model,
-      messages,
+      messages: ollamaMessages(messages),
       stream,
       think: String(env.ATLAS_OLLAMA_THINK || '0') === '1',
       options: {
@@ -474,7 +508,7 @@ async function request(messages, env, signal, tools) {
     const isRateLimited = response.status === 429;
     const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
     if (transientStatuses.has(response.status) && attempt < attemptsAllowed && await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal)) continue;
-    const error = new Error(payload?.error?.message || response.statusText || `${provider.id} request failed`);
+    const error = new Error(providerErrorMessage(payload, response.statusText || `${provider.id} request failed`));
     error.status = response.status;
     throw error;
   }
@@ -528,7 +562,7 @@ async function requestStreaming(messages, env, signal, onDelta, tools) {
         const isRateLimited = response.status === 429;
         const attemptsAllowed = isRateLimited ? retries + 3 : retries; // 429 gets +3 dedicated attempts
         if (transientStatuses.has(response.status) && attempt < attemptsAllowed && (await waitForRetry(retryDelayMs(response, attempt, retryBaseMs), requestSignal))) continue;
-        const error = new Error(payload?.error?.message || response.statusText || `${provider.id} request failed`);
+        const error = new Error(providerErrorMessage(payload, response.statusText || `${provider.id} request failed`));
         error.status = response.status;
         throw error;
       }

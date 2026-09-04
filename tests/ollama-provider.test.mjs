@@ -29,4 +29,44 @@ try {
   assert(!('provider' in captured.body));
   assert(!('Authorization' in captured.init.headers));
 } finally { globalThis.fetch = oldFetch; }
+
+// Native Ollama tool continuations are not OpenAI wire format. Prove that the
+// provider-neutral transcript is translated before the second model round.
+const roundBodies = [];
+let round = 0;
+globalThis.fetch = async (_url, init) => {
+  roundBodies.push(JSON.parse(init.body));
+  round += 1;
+  if (round === 1) {
+    return new Response(JSON.stringify({
+      message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'probe_tool', arguments: { value: 7 } } }] },
+      done_reason: 'stop',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return new Response(JSON.stringify({ message: { role: 'assistant', content: 'tool-ok' }, done_reason: 'stop' }), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+try {
+  const provider = createOpenRouterProvider({ env });
+  const probeTool = {
+    definition: { type: 'function', function: { name: 'probe_tool', description: 'probe', parameters: { type: 'object', properties: { value: { type: 'number' } }, required: ['value'] } } },
+    execute: async ({ value }) => `value=${value}`,
+  };
+  let final = '';
+  for await (const event of provider.query({ prompt: 'use the probe', options: { maxTurns: 2, openRouterTools: [probeTool], permissionMode: 'bypassPermissions' } })) if (event.type === 'result') final = event.result;
+  assert.equal(final, 'tool-ok');
+  const assistant = roundBodies[1].messages.find(message => message.role === 'assistant' && message.tool_calls);
+  const tool = roundBodies[1].messages.find(message => message.role === 'tool');
+  assert.deepEqual(assistant.tool_calls[0].function.arguments, { value: 7 });
+  assert.equal(tool.tool_name, 'probe_tool');
+  assert(!('tool_call_id' in tool));
+} finally { globalThis.fetch = oldFetch; }
+
+globalThis.fetch = async () => new Response(JSON.stringify({ error: 'native Ollama diagnostic' }), { status: 400, statusText: 'Bad Request', headers: { 'content-type': 'application/json' } });
+try {
+  const provider = createOpenRouterProvider({ env: { ...env, ATLAS_OPENROUTER_HTTP_RETRIES: '0' } });
+  let failure = '';
+  for await (const event of provider.query({ prompt: 'fail clearly', options: { maxTurns: 1 } })) if (event.type === 'result') failure = event.result;
+  assert.match(failure, /native Ollama diagnostic/);
+} finally { globalThis.fetch = oldFetch; }
+
 console.log('ollama provider: OpenAI-compatible local route PASS');
