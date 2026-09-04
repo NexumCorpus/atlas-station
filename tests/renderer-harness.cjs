@@ -21,9 +21,10 @@ app.whenReady().then(async () => {
     },
   });
 
+  const rendererErrors = [];
   win.webContents.on('console-message', (event) => {
     const message = event.message || '';
-    if (/error|uncaught/i.test(message)) console.error('[renderer]', message);
+    if (/error|uncaught/i.test(message)) { rendererErrors.push(message); console.error('[renderer]', message); }
   });
 
   try {
@@ -183,6 +184,7 @@ app.whenReady().then(async () => {
 
       return { enterSent: true, shiftEnterPreserved: true, buildMode: 'build', readMode: 'read', cancelRouted: true, failureVisible: true, autonomyProgressVisible: true, executionHeartbeatVisible: true, fleetGenerationVisible: true };
     })()`);
+    if (rendererErrors.length) throw new Error(`uncaught renderer errors: ${JSON.stringify(rendererErrors)}`);
     console.log('renderer harness: ALL PASS', JSON.stringify(result));
     win.destroy();
     app.exit(0);

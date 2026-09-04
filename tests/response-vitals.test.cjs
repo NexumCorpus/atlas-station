@@ -23,5 +23,7 @@ const host = fs.readFileSync(path.join(__dirname, '..', 'fleethost.mjs'), 'utf8'
 assert.match(host, /onFirstOutput\(meta\)/);
 assert.match(host, /send\('response_vital', \{ record, summary: _responseVitals\.summary\(\) \}\)/);
 assert.match(host, /settleResponseVital\(interrupted \? 'interrupted' : 'done'/);
+const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+assert.match(main, /responseVitals: responseVitals\.summary\(50\)/, 'desktop health hydration must survive a sidecar restart');
 fs.rmSync(root, { recursive: true, force: true });
 console.log('response vitals: durable latency phases and percentiles PASS');

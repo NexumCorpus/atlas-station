@@ -11,6 +11,7 @@ const fs = require("fs");
 const goalStore = require("./goal-store.cjs");
 const ingressJournal = require("./ingress-journal.cjs");
 const selfModification = require("./self-modification.cjs");
+const responseVitals = require("./response-vitals.cjs").createResponseVitals(__dirname);
 const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
 let win = null, fleet = null, counter = 0;
 let fleetGeneration = 0;
@@ -383,7 +384,7 @@ ipcMain.handle("atlas:station-health", async () => {
     daemon = { health, lastRunTs: lastStart.ts, hoursSinceRun: Math.round(hrs * 10) / 10 };
   }
 
-  return { goals, proposals, outcomes, daemon };
+  return { goals, proposals, outcomes, daemon, responseVitals: responseVitals.summary(50) };
 });
 
 // ── Estate engine — the station's own faculties, on screen (2026-07-05) ──────

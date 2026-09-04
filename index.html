@@ -1005,6 +1005,11 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
           </div>
           <div class="sh-divider"></div>
           <div class="sh-section">
+            <div class="sh-sec-title">Responsiveness (last 50)</div>
+            <div id="sh-response"><div class="sh-empty">no measured turns</div></div>
+          </div>
+          <div class="sh-divider"></div>
+          <div class="sh-section">
             <div class="sh-sec-title">Daemon</div>
             <div id="sh-daemon"><div class="sh-empty">loading&hellip;</div></div>
           </div>
@@ -1602,6 +1607,18 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
     else if(Number.isFinite(m.elapsedMs))$('exec-task').textContent=(m.lane||'Atlas')+' working · '+Math.max(0,Math.round(m.elapsedMs/1000))+'s';
     if(m.sandbox)$('exec-sandbox').textContent=m.sandbox;
   }
+  function formatLatency(ms){
+    if(!Number.isFinite(ms))return '—';
+    return ms<1000?Math.round(ms)+'ms':ms<10000?(ms/1000).toFixed(1)+'s':Math.round(ms/1000)+'s';
+  }
+  function renderResponseVital(m){
+    var _vital=$('response-vital'),_latest=(m&&m.record)||(((m&&m.summary)||{}).latest)||{};
+    if(_vital&&Number.isFinite(_latest.firstOutputMs)){
+      _vital.className='measured';
+      _vital.textContent='first output · '+formatLatency(_latest.firstOutputMs);
+      _vital.title='queue '+formatLatency(_latest.queueMs)+' · admission '+formatLatency(_latest.admissionMs)+' · settled '+formatLatency(_latest.settleMs);
+    }
+  }
 
   // â”€â”€â”€â”€â”€â”€ fleet IPC listener â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function renderEcology(payload){
@@ -1712,13 +1729,7 @@ body.inspector-collapsed #inspector-toggle{color:#d5ceff!important;border-color:
       return;
     }
     if(m.type==="response_vital"){
-      var _vital=$('response-vital'),_latest=m.record||((m.summary||{}).latest)||{};
-      if(_vital&&Number.isFinite(_latest.firstOutputMs)){
-        var _firstSeconds=_latest.firstOutputMs/1000;
-        _vital.className='measured';
-        _vital.textContent='first output · '+(_firstSeconds<10?_firstSeconds.toFixed(1):Math.round(_firstSeconds))+'s';
-        _vital.title='queue '+Math.round(_latest.queueMs||0)+'ms · admission '+Math.round(_latest.admissionMs||0)+'ms · settled '+Math.round(_latest.settleMs||0)+'ms';
-      }
+      renderResponseVital(m);
       return;
     }
     if(m.type==="fleet_lifecycle"){
@@ -3675,6 +3686,17 @@ if(m.type==="agent"){
       }
     }
 
+    var responseEl = document.getElementById('sh-response');
+    var rv = data.responseVitals || {};
+    if (responseEl) {
+      if (!rv.samples) responseEl.innerHTML = '<div class="sh-empty">no measured turns</div>';
+      else responseEl.innerHTML = '<div class="sh-daemon">'
+        + '<span class="sh-daemon-status HEALTHY">P50 ' + esc(formatLatency(rv.firstOutputP50Ms)) + '</span>'
+        + '<span class="sh-daemon-ts">P95 ' + esc(formatLatency(rv.firstOutputP95Ms))
+        + ' &middot; queue P95 ' + esc(formatLatency(rv.queueP95Ms)) + ' &middot; ' + Number(rv.samples) + ' turns</span></div>';
+    }
+    if (rv.latest && Number.isFinite(rv.latest.firstOutputMs)) renderResponseVital({ record: rv.latest });
+
     // Daemon
     var daemonEl = document.getElementById('sh-daemon');
     if (daemonEl) {
@@ -3985,6 +4007,7 @@ if(m.type==="agent"){
       inspectorToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       inspectorToggle.textContent = collapsed ? 'Show tasks' : 'Tasks';
     }
+
     try{localStorage.setItem('atlas.inspector.collapsed', collapsed ? '1' : '0');}catch(e){}
   }
   if(inspectorToggle){
