@@ -62,23 +62,34 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 1800));
       const main = document.getElementById('main');
       const composer = document.getElementById('composer-shell');
-      const mojibake = [];
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        const text = node.nodeValue.trim();
-        const parent = node.parentElement;
-        if (text && /[ÂÃâ]/.test(text) && parent && parent.offsetParent !== null) {
-          mojibake.push({ tag: parent.tagName, id: parent.id || '', text: text.slice(0, 100) });
+      const scanVisibleMojibake = () => {
+        const found = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          const text = node.nodeValue.trim();
+          const parent = node.parentElement;
+          if (text && /[ÂÃâ]/.test(text) && parent && parent.offsetParent !== null) {
+            found.push({ tag: parent.tagName, id: parent.id || '', text: text.slice(0, 100) });
+          }
         }
+        return found;
+      };
+      const tabMojibake = {};
+      for (const tab of document.querySelectorAll('.tab[data-tab]')) {
+        tab.click();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        tabMojibake[tab.dataset.tab] = scanVisibleMojibake();
       }
+      document.querySelector('.tab[data-tab="fleet"]')?.click();
+      const mojibake = Object.entries(tabMojibake).flatMap(([tab, rows]) => rows.map(row => ({ tab, ...row })));
       return {
         bodyText: document.body.innerText.slice(0, 180),
         bodyClass: document.body.className,
         viewport: [innerWidth, innerHeight],
         main: main ? [getComputedStyle(main).display, main.offsetWidth, main.offsetHeight] : null,
         composer: composer ? [getComputedStyle(composer).display, composer.offsetWidth, composer.offsetHeight] : null,
-        mojibake,
+        mojibake, tabMojibake,
       };
     })()`);
     console.log('renderer visual state:', JSON.stringify(state));
@@ -94,10 +105,14 @@ app.whenReady().then(async () => {
     win.webContents.invalidate();
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    const image = await win.webContents.capturePage();
-    fs.writeFileSync(output, image.toPNG());
-    console.log(`renderer visual: wrote ${output}`);
+    if (process.env.ATLAS_VISUAL_CAPTURE === '1') {
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      const image = await win.webContents.capturePage();
+      fs.writeFileSync(output, image.toPNG());
+      console.log(`renderer visual: wrote ${output}`);
+    } else {
+      console.log('renderer visual: all tabs passed (capture skipped)');
+    }
     win.destroy();
     app.exit(0);
   } catch (error) {
