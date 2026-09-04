@@ -8,15 +8,26 @@ function readNdjson(name) {
   try { return fs.readFileSync(path.join(memDir, name), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(Boolean); }
   catch { return []; }
 }
-const goals = readNdjson('goals.ndjson');
+function latestByIdentity(rows, identity) {
+  const latest = new Map();
+  for (const row of rows) {
+    const key = identity(row);
+    if (key) latest.set(key, row);
+  }
+  return [...latest.values()];
+}
+
+const goals = latestByIdentity(readNdjson('goals.ndjson'), goal => goal.id || null);
 const outcomes = readNdjson('outcomes.ndjson');
-const proposals = readNdjson('proposals.ndjson');
+const proposals = latestByIdentity(readNdjson('proposals.ndjson'), proposal =>
+  proposal.id || String(proposal.description || '').normalize('NFKC').trim() || null
+);
 const good = outcomes.filter(o => o.rating === 'good').length;
 const qualityTarget = 0.8;
 const goodRate = outcomes.length ? good / outcomes.length : 0;
 let additionalGoodNeeded = 0;
 while (outcomes.length + additionalGoodNeeded < 10000 && (good + additionalGoodNeeded) / (outcomes.length + additionalGoodNeeded) < qualityTarget) additionalGoodNeeded++;
-const pendingHigh = proposals.filter(p => p.priority === 'high' && p.state === 'pending').length;
+const pendingHigh = proposals.filter(p => String(p.priority || '').toLowerCase() === 'high' && p.state === 'pending').length;
 const checks = goals.map(goal => {
   let evidenceMet = null;
   if (goal.area === 'quality') evidenceMet = goodRate >= qualityTarget;

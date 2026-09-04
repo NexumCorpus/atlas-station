@@ -55,7 +55,7 @@ const receipts = require('../independent-receipts.cjs');
   assert.equal(hidden.verdict, 'fail');
   assert.ok(hidden.falsifiers.includes('artifact-toggle-invalid'));
 
-  const managedClaims = path.join('E:/recursive-discovery-engine/runs/xenosoma-receipts', repeat.rdeRunId, 'claims.json');
+  const managedClaims = path.join(receipts.verifierRoot('rde-xenosoma-v1'), 'runs', 'xenosoma-receipts', repeat.rdeRunId, 'claims.json');
   const originalClaims = fs.readFileSync(managedClaims, 'utf8');
   fs.writeFileSync(managedClaims, originalClaims.replace('"status":"pass"', '"status":"fail"'));
   const edited = receipts.runVerifier('rde-xenosoma-v1', rdeBundle);

@@ -11,15 +11,26 @@ assert.match(source, /pendingHigh === 0/);
 assert.match(source, /stateMatchesEvidence/);
 assert.match(source, /strict && !report\.consistent/);
 assert.match(source, /args\.find\(arg => arg !== '--strict'\)/);
+assert.match(source, /latestByIdentity/);
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-goal-audit-'));
 fs.writeFileSync(path.join(tempDir, 'outcomes.ndjson'), JSON.stringify({ rating: 'good' }) + '\n');
-fs.writeFileSync(path.join(tempDir, 'proposals.ndjson'), '');
-fs.writeFileSync(path.join(tempDir, 'goals.ndjson'), JSON.stringify({ id: 'G-test', area: 'quality', state: 'active' }) + '\n');
+fs.writeFileSync(path.join(tempDir, 'proposals.ndjson'), [
+  { id: 'P-amended', priority: 'HIGH', state: 'pending' },
+  { id: 'P-amended', priority: 'HIGH', state: 'consumed' },
+].map(JSON.stringify).join('\n') + '\n');
+fs.writeFileSync(path.join(tempDir, 'goals.ndjson'), [
+  { id: 'G-test', area: 'quality', state: 'done' },
+  { id: 'G-test', area: 'quality', state: 'active', reopenedReason: 'quality regressed' },
+].map(JSON.stringify).join('\n') + '\n');
 const script = path.join(root, 'scripts', 'audit-goals.mjs');
 const normal = spawnSync(process.execPath, [script, tempDir], { cwd: root, encoding: 'utf8' });
 assert.equal(normal.status, 0, 'default audit reports contradictions without failing');
-assert.equal(JSON.parse(normal.stdout).consistent, false);
+const normalReport = JSON.parse(normal.stdout);
+assert.equal(normalReport.consistent, false);
+assert.equal(normalReport.goals.length, 1, 'latest goal amendment is authoritative');
+assert.equal(normalReport.goals[0].state, 'active');
+assert.equal(normalReport.proposals.pendingHigh, 0, 'consumed amendment supersedes stale pending proposal');
 const strict = spawnSync(process.execPath, [script, tempDir, '--strict'], { cwd: root, encoding: 'utf8' });
 assert.equal(strict.status, 2, 'strict audit fails on evidence/status contradiction');
 assert.equal(JSON.parse(strict.stdout).consistent, false);
