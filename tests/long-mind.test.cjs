@@ -11,6 +11,8 @@ assert.match(fleetSource, /let tapOffset = \(\(\) => \{[\s\S]*statSync\(tapsFile
   'tap polling must begin at the current EOF instead of replaying historical taps');
 assert.match(fleetSource, /state: "working"[\s\S]{0,220}durationMs: null, restored: false/,
   'a new metabolism turn must clear terminal duration and restored state');
+assert.match(fleetSource, /source === 'long-mind' \? \{ atlasMaxToolRounds: 6 \}/,
+  'Long Mind must cross from evidence gathering into a bounded synthesis phase');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-long-mind-'));
 const mind = createLongMind(root);

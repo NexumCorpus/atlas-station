@@ -4812,6 +4812,7 @@ async function orchestrate(userText, source = 'user', executionHooks = {}, attac
         atlasToolTimeoutMs: mouth
           ? Math.max(15_000, Math.min(1_200_000, Number(process.env.ATLAS_MOUTH_TOOL_TIMEOUT_MS) || 120_000))
           : 1_200_000,
+        ...(source === 'long-mind' ? { atlasMaxToolRounds: 6 } : {}),
         ...(executionChatProvider ? { openRouterTools: source === 'long-mind' ? longMindOrganTools : openRouterOrganTools } : {}),
         onProviderSpawn: executionHooks.onProviderSpawn,
         onToolBatch: batch => {

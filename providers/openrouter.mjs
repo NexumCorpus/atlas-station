@@ -716,11 +716,22 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
       try {
         const configuredDefault = Number(env.ATLAS_OPENROUTER_MAX_ROUNDS) || DEFAULT_ROUNDS;
         const turnCap = Math.max(1, Math.min(MAX_ROUNDS, Number(options.maxTurns) || configuredDefault));
+        const requestedToolRounds = Number(options.atlasMaxToolRounds);
+        const toolRoundBudget = Number.isFinite(requestedToolRounds)
+          ? Math.max(0, Math.min(turnCap - 1, Math.floor(requestedToolRounds)))
+          : turnCap;
+        let synthesisRequested = false;
         const requestByteBudget = Math.max(262_144, Math.min(16_000_000, Number(env.ATLAS_OPENROUTER_MAX_REQUEST_BYTES) || 3_500_000));
         const proseSegments = [];
         let aggregateUsage = {};
         for (let round = 0; round < turnCap; round++) {
-          const roundMetrics = requestMetrics(messages, env, streamingEnabled, availableTools);
+          const synthesisRound = round >= toolRoundBudget;
+          if (synthesisRound && !synthesisRequested) {
+            messages.push({ role: 'user', content: 'Evidence-gathering budget is complete. Do not call another tool. Synthesize a concise terminal observation now, include every required receipt identifier from the task, and clearly distinguish evidence from inference.' });
+            synthesisRequested = true;
+          }
+          const roundTools = synthesisRound ? [] : availableTools;
+          const roundMetrics = requestMetrics(messages, env, streamingEnabled, roundTools);
           if (roundMetrics.requestBytes > requestByteBudget) {
             yield {
               type: 'result',
@@ -734,7 +745,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
           let message; let usage; let finishReason = null;
           if (streamingEnabled) {
             const ch = deltaChannel();
-            const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d), availableTools)
+            const pump = requestStreaming(messages, env, options.abortSignal, (d) => ch.push(d), roundTools)
               .then((r) => { ch.close(); return r; })
               .catch((e) => { ch.fail(e); return null; });
             for await (const d of ch.drain()) {
@@ -748,7 +759,7 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
             usage = assembled.usage;
             finishReason = assembled.finish_reason || null;
           } else {
-            const payload = await request(messages, env, options.abortSignal, availableTools);
+            const payload = await request(messages, env, options.abortSignal, roundTools);
             const choice = payload?.choices?.[0];
             message = choice?.message;
             usage = payload?.usage || null;
@@ -773,7 +784,10 @@ export function createOpenRouterProvider({ env = process.env } = {}) {
           aggregateUsage = mergeUsage(aggregateUsage, usage);
           messages.push({ role: "assistant", content: message.content || null, tool_calls: message.tool_calls || undefined });
           if (message.content) yield { type: "assistant", message: { content: [{ type: "text", text: String(message.content) }] } };
-          const calls = message.tool_calls || [];
+          // Tool calls emitted after the explicit evidence budget are never
+          // executed. Treat them as empty output and give the tool-less model
+          // another chance to produce its terminal observation.
+          const calls = synthesisRound ? [] : (message.tool_calls || []);
           if (!calls.length) {
             if (finishReason === 'length') {
               if (String(message.content || '').trim()) proseSegments.push(String(message.content));

@@ -61,6 +61,30 @@ try {
   assert(!('tool_call_id' in tool));
 } finally { globalThis.fetch = oldFetch; }
 
+const synthesisBodies = [];
+let synthesisExecutions = 0;
+globalThis.fetch = async (_url, init) => {
+  const body = JSON.parse(init.body);
+  synthesisBodies.push(body);
+  if (synthesisBodies.length <= 2) {
+    return new Response(JSON.stringify({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'probe_tool', arguments: { value: synthesisBodies.length } } }] }, done_reason: 'stop' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return new Response(JSON.stringify({ message: { role: 'assistant', content: 'synthesized' }, done_reason: 'stop' }), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+try {
+  const provider = createOpenRouterProvider({ env });
+  const probeTool = {
+    definition: { type: 'function', function: { name: 'probe_tool', description: 'probe', parameters: { type: 'object', properties: { value: { type: 'number' } } } } },
+    execute: async () => { synthesisExecutions += 1; return 'observed'; },
+  };
+  let final = '';
+  for await (const event of provider.query({ prompt: 'investigate then settle', options: { maxTurns: 4, atlasMaxToolRounds: 2, openRouterTools: [probeTool], permissionMode: 'bypassPermissions' } })) if (event.type === 'result') final = event.result;
+  assert.equal(final, 'synthesized');
+  assert.equal(synthesisExecutions, 2, 'the tool budget must be an execution ceiling');
+  assert.equal(synthesisBodies[2].tools, undefined, 'the synthesis round must advertise no tools');
+  assert.match(synthesisBodies[2].messages.at(-1).content, /Synthesize a concise terminal observation/);
+} finally { globalThis.fetch = oldFetch; }
+
 globalThis.fetch = async () => new Response(JSON.stringify({ error: 'native Ollama diagnostic' }), { status: 400, statusText: 'Bad Request', headers: { 'content-type': 'application/json' } });
 try {
   const provider = createOpenRouterProvider({ env: { ...env, ATLAS_OPENROUTER_HTTP_RETRIES: '0' } });
