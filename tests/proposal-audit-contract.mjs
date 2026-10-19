@@ -53,8 +53,13 @@ try {
   // station machine but absent in clean clones/hermetic worktrees. The
   // policy binds wherever the ledger exists; elsewhere fixtures carry the
   // whole contract.
+  //
+  // CI is excluded: a clone carries only a point-in-time snapshot of that
+  // ledger (runtime state, not source), so the policy cannot be asserted
+  // against whichever copy happened to be committed. The fixtures above still
+  // prove the auditor's detection and exit codes in CI.
   const liveLedger = path.join(root, "memory", "proposals.ndjson");
-  if (fs.existsSync(liveLedger)) {
+  if (!process.env.CI && fs.existsSync(liveLedger)) {
     const live = runAudit(null, null);
     const liveReport = JSON.parse(live.stdout);
     assert.equal(liveReport.pendingHigh.length, 0, "POLICY: no HIGH proposal may remain pending in the live ledger");
@@ -65,7 +70,7 @@ try {
     );
     assert.equal(live.status, 0, "POLICY: live proposal ledger audits clean under --strict");
   } else {
-    console.log("live ledger absent (hermetic clone) - policy leg skipped");
+    console.log("live ledger absent or CI snapshot - policy leg skipped");
   }
 } finally {
   try { fs.rmSync(fixtureDir, { recursive: true, force: true }); } catch {}

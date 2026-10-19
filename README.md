@@ -45,13 +45,34 @@ which model claims to be executing.
 
 ## Run Atlas
 
-Requirements: Windows, Node.js 24, Python 3, and an OpenRouter API key.
+Requirements: Windows, Node.js 24, Python 3, and either an OpenRouter API key or
+a local [Ollama](https://ollama.com) model (no key, no per-token cost).
 
 ```text
-npm install
-# configure OPENROUTER_API_KEY and ATLAS_OPENROUTER_MODEL in .env
+npm ci
+npm test            # behavioral suite, no network or API key needed
+# create .env (gitignored) with ONE of the two routes below
 npm start
 ```
+
+Cloud route (default):
+
+```env
+OPENROUTER_API_KEY=...
+ATLAS_OPENROUTER_MODEL=<model-id>
+```
+
+Key-free local route (run `ollama pull qwen3.5:9b` first; see
+[docs/LONG-MIND.md](docs/LONG-MIND.md)):
+
+```env
+ATLAS_PROVIDER=ollama
+ATLAS_OLLAMA_API_URL=http://127.0.0.1:11434/api/chat
+ATLAS_OLLAMA_MODEL=qwen3.5:9b
+```
+
+`ATLAS_PROVIDER` accepts `openrouter` (default), `ollama`, and `abliteration`.
+Authenticated Codex/Claude worker routes are disabled by design.
 
 To inspect or run the local Work-Eater organ:
 
