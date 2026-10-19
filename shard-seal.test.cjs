@@ -1,4 +1,4 @@
-const { encode, decode, verifyShards } = require('E:/atlas-station/shard-codec.cjs');
+const { encode, decode, verifyShards } = require('./shard-codec.cjs');
 const crypto = require('crypto');
 let pass = 0, fail = 0;
 function t(name, cond) { cond ? pass++ : (fail++, console.log('FAIL: ' + name)); }
@@ -36,7 +36,7 @@ t('empty input round-trip', r3.length === 0);
 
 // 8. decodeVerified: corrupt fragment excluded before reconstruction
 {
-  const { decodeVerified } = require('E:/atlas-station/shard-codec.cjs');
+  const { decodeVerified } = require('./shard-codec.cjs');
   const enc = encode(Buffer.from('decode-verified integrity payload'), 2, 4);
   const frags = { 0: enc.shards[0], 1: enc.shards[1], 2: enc.shards[2], 3: Buffer.from(enc.shards[3]) };
   frags[0][0] ^= 0xff; // bit-rot shard 0
