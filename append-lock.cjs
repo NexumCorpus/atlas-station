@@ -43,7 +43,8 @@ function acquire(lockPath, timeoutMs = 1000) {
       fs.fsyncSync(fd);
       return { fd, token };
     } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
+      // Windows reports EPERM/EBUSY (not EEXIST) while another process is deleting the lock.
+      if (!['EEXIST', 'EPERM', 'EBUSY'].includes(error.code)) throw error;
       if (reapStale(lockPath)) continue;
       Atomics.wait(pause, 0, 0, 20);
     }
