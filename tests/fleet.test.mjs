@@ -102,6 +102,13 @@ async function run() {
     process.exit(0);
   }
 
+  // This is a live-provider test: with no credentials configured there is
+  // nothing to verify, so say so plainly instead of failing a keyless clone.
+  if (/api key is not configured/i.test(result.why || "")) {
+    console.log(`SKIP: no provider credentials configured (${result.why})`);
+    process.exit(0);
+  }
+
   const detail = stderr.trim() ? `\n--- host stderr ---\n${stderr.trim()}` : "";
   console.error(`FAIL: ${result.why}${detail}`);
   process.exit(1);
