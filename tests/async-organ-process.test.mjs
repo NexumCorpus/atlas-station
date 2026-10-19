@@ -2,16 +2,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const source = fs.readFileSync(new URL('../fleethost.mjs', import.meta.url), 'utf8');
+const boundedChildSource = fs.readFileSync(
+  new URL('../providers/bounded-child.mjs', import.meta.url), 'utf8');
 
-function section(start, end) {
-  const from = source.indexOf(start);
-  const to = source.indexOf(end, from + start.length);
+function section(start, end, text = source) {
+  const from = text.indexOf(start);
+  const to = text.indexOf(end, from + start.length);
   assert.ok(from >= 0, `missing section start: ${start}`);
   assert.ok(to > from, `missing section end after ${start}: ${end}`);
-  return source.slice(from, to);
+  return text.slice(from, to);
 }
 
-const helper = section('function runBoundedChild(', 'function extractToolArg(');
+const helper = section(
+  'function runBoundedChild(', 'export { runBoundedChild };', boundedChildSource);
 assert.match(helper, /spawnChild\(/, 'bounded child helper must use asynchronous spawn');
 assert.match(helper, /signal\?\.addEventListener\('abort'/, 'bounded child helper must honor AbortSignal');
 assert.match(helper, /taskkill\.exe[\s\S]*\/T[\s\S]*\/F/, 'Windows cancellation must terminate the process tree');
