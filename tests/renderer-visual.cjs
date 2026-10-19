@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, screen } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -96,10 +96,14 @@ app.whenReady().then(async () => {
     if (state.mojibake.length) {
       throw new Error(`visible mojibake detected: ${JSON.stringify(state.mojibake)}`);
     }
-    if (!state.main || state.main[0] !== 'flex' || state.main[1] < 1200) {
+    // The OS clamps the window to the display: a 1024-wide CI runner cannot honour a 1600 request.
+    const displayWidth = screen.getPrimaryDisplay().workAreaSize.width;
+    const minMain = Math.min(1200, displayWidth);
+    const minComposer = minMain >= 1200 ? 700 : Math.floor(minMain * 0.55);
+    if (!state.main || state.main[0] !== 'flex' || state.main[1] < minMain) {
       throw new Error(`desktop shell did not render at the requested width: ${JSON.stringify(state.main)}`);
     }
-    if (!state.composer || state.composer[0] !== 'block' || state.composer[1] < 700) {
+    if (!state.composer || state.composer[0] !== 'block' || state.composer[1] < minComposer) {
       throw new Error(`conversation composer is not a usable primary surface: ${JSON.stringify(state.composer)}`);
     }
     const compactStates = [];
