@@ -32,6 +32,7 @@ verify*.cjs
 .atlas/sidecar-lease.json*
 .atlas/sidecar-lease-history.ndjson
 .atlas/sidecar-lease-fence-error.ndjson
+.atlas/sidecar-lease.lock
 .atlas/supervisor-registry.ndjson
 .atlas/ingress*.ndjson
 .atlas/provider-tool-batches.ndjson
