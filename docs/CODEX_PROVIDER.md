@@ -1,7 +1,13 @@
 # Codex CLI provider
 
-ATLAS now supports `codex-cli` as its default execution provider. It is a
-provider adapter, not a claim that the Claude Agent SDK and Codex are identical.
+> **Status: retained, not active.** `fleethost.mjs` refuses `ATLAS_PROVIDER=codex`
+> and `codex-cli` ("permanently disabled by operator directive"). The current
+> routes are OpenRouter (default), Ollama, and abliteration; see the README.
+> This page documents the adapter's contract for the code that remains in
+> `providers/codex-cli.mjs`.
+
+`codex-cli` was ATLAS's original execution provider. It is a provider adapter,
+not a claim that the Claude Agent SDK and Codex are identical.
 
 ## Contract
 

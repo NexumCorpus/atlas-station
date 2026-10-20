@@ -158,6 +158,13 @@ function createFetch(sourceBody = html) {
   assert.equal(repositoryEscapeFetched, false, 'GitHub-controlled repository URLs are checked before any request');
   assert.match(maliciousRepository.sample[0].hardExclusions.join(' '), /allowlist/);
 
+  // A scan that could read nothing must say so instead of looking like an empty market.
+  const unreachable = await scanPaidProblems({ sources: [SOURCE], fetchImpl: async () => { throw new Error('fetch failed'); }, cache: false, now: new Date('2026-08-24T12:00:00Z'), limit: 1 });
+  assert.equal(unreachable.scanStatus, 'failed');
+  assert.equal(unreachable.sourcesFailed, 1);
+  assert.match(unreachable.claimCeiling, /Scan failed/);
+  assert.equal(fixed.scanStatus, 'complete', 'a scan that read its sources is complete');
+
   console.log('paid-problem radar: ALL PASS');
 })().catch(error => {
   console.error(error);

@@ -9,9 +9,10 @@
     "spine": "Station"
   },
   "inference": {
-    "provider": "codex-cli",
-    "orchestratorModel": "gpt-5.6-luna",
-    "authentication": "codex-subscription"
+    "defaultRoute": "openrouter",
+    "supportedRoutes": ["openrouter", "ollama", "abliteration"],
+    "disabledRoutes": ["codex", "codex-cli", "claude", "claude-sdk"],
+    "modelSelection": "runtime"
   },
   "requiredScripts": [
     "test:full",

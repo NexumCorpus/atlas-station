@@ -14,6 +14,25 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+// Same rule as fleethost.mjs: .env and .env.local in the repository root are the
+// operator-owned config and override inherited environment variables.
+function withDotEnv(base) {
+  const merged = { ...base };
+  for (const name of ['.env', '.env.local']) {
+    const file = path.join(ROOT, name);
+    if (!fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      if (!line.trim() || line.trim().startsWith('#')) continue;
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!match) continue;
+      let value = match[2];
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      merged[match[1]] = value;
+    }
+  }
+  return merged;
+}
+
 function run(command, commandArgs, options = {}) {
   const started = Date.now();
   const useCmdShim = process.platform === 'win32' && /\.cmd$/i.test(command);
@@ -61,22 +80,38 @@ async function main() {
     contract.requiredFiles.filter((name) => !fs.existsSync(path.join(ROOT, name)))
   ));
 
-  const providerModule = await import(pathToFileURL(path.join(ROOT, 'providers', 'codex-cli.mjs')).href);
-  const assignment = providerModule.resolveCodexModel({ atlasPurpose: 'orchestrator' }, {});
-  const provider = providerModule.createCodexCliProvider();
-  const providerProbe = provider.probe();
-  checks.push(check(
-    'orchestrator-route',
-    assignment.model === contract.inference.orchestratorModel && assignment.purpose === 'orchestrator',
-    assignment
-  ));
-  checks.push(check('codex-cli', providerProbe.available, providerProbe));
+  // The executive route is whatever the fleet sidecar would actually run: the
+  // same ATLAS_PROVIDER / .env resolution as fleethost.mjs, restricted to the
+  // routes the contract supports. Codex and Claude worker routes are disabled.
+  const env = args.has('--no-dotenv') ? { ...process.env } : withDotEnv(process.env);
+  const requestedRoute = String(env.ATLAS_PROVIDER || contract.inference.defaultRoute).toLowerCase();
+  const routeSupported = contract.inference.supportedRoutes.includes(requestedRoute)
+    && !contract.inference.disabledRoutes.includes(requestedRoute);
+  checks.push(check('executive-route', routeSupported, {
+    requested: requestedRoute,
+    supported: contract.inference.supportedRoutes,
+    disabled: contract.inference.disabledRoutes,
+  }));
+
+  let provider = null;
+  let assignment = null;
+  let providerProbe = null;
+  if (routeSupported) {
+    const providerModule = await import(pathToFileURL(path.join(ROOT, 'providers', 'openrouter.mjs')).href);
+    provider = providerModule.createOpenRouterProvider({ env });
+    assignment = provider.assign();
+    providerProbe = provider.probe();
+  }
+  checks.push(check('model-assigned', Boolean(assignment && assignment.model), assignment || 'no supported route selected'));
+  // "Configured" means a credential is present, or the route is a local one that needs none.
+  // It does not call the provider, so it cannot say the endpoint is reachable.
+  checks.push(check('provider-configured', providerProbe && providerProbe.available, providerProbe || 'no supported route selected'));
 
   const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
   checks.push(check(
     'operator-doc-truth',
-    readme.includes('Hermes') && readme.includes('gpt-5.6-luna') && !readme.includes('Current status (MVP)'),
-    'README must describe current Hermes/Codex v1 rather than the legacy MVP'
+    readme.includes('Hermes') && readme.includes('OpenRouter') && !readme.includes('Current status (MVP)'),
+    'README must describe the current Hermes route rather than the legacy MVP'
   ));
 
   const commands = [];
@@ -84,11 +119,21 @@ async function main() {
     commands.push(run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'test:full']));
   }
   if (args.has('--organism')) {
-    commands.push(run(
-      process.env.PYTHON_BIN || 'python',
-      ['E:\\station\\station.py', 'organism', 'run'],
-      { timeout: 10 * 60 * 1000 }
-    ));
+    // The rehearsal lives in the separate NexumCorpus/station repository.
+    const stationCli = env.STATION_CLI || 'E:\\station\\station.py';
+    const python = env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+    if (fs.existsSync(stationCli)) {
+      commands.push(run(python, [stationCli, 'organism', 'run'], { timeout: 10 * 60 * 1000 }));
+    } else {
+      commands.push({
+        ok: false,
+        command: [python, stationCli, 'organism', 'run'].join(' '),
+        status: null,
+        durationMs: 0,
+        outputTail: '',
+        error: `Station CLI not found at ${stationCli}. Clone NexumCorpus/station and set STATION_CLI to its station.py.`,
+      });
+    }
   }
 
   const gitStatus = run('git', ['status', '--porcelain'], { timeout: 30_000 });
@@ -116,7 +161,7 @@ async function main() {
     status: checks.every((item) => item.ok) ? 'ready' : 'not-ready',
     sourceHead: run('git', ['rev-parse', 'HEAD'], { timeout: 30_000 }).outputTail.trim(),
     dirty,
-    provider: { name: provider.name, probe: providerProbe, assignment },
+    provider: { name: provider ? provider.name : requestedRoute, probe: providerProbe, assignment },
     checks,
   };
 

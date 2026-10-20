@@ -1,9 +1,12 @@
 import { execFileSync } from "child_process";
 import path from "path";
 import { mkdirSync } from "fs";
+import { fileURLToPath } from "url";
 
-const REPO = process.env.ATLAS_REPO || "E:\\atlas-station";
-const WT_BASE = process.env.ATLAS_WT || "E:\\atlas-wt";
+// Default to the checkout this file lives in; the build worktrees sit beside it.
+// A checkout at E:\atlas-station therefore keeps E:\atlas-station and E:\atlas-wt.
+const REPO = process.env.ATLAS_REPO || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const WT_BASE = process.env.ATLAS_WT || path.join(path.dirname(REPO), "atlas-wt");
 
 function gitC(args) { return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }); }
 function makeWorktree(id) {

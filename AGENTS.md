@@ -7,7 +7,9 @@ not from inherited prose alone.
 ## Required behavior
 
 - Use the task's real failure surface to choose a model. The ATLAS executive
-  route is `gpt-5.6-luna` through the authenticated Codex CLI subscription.
+  route is the provider selected at runtime (`ATLAS_PROVIDER`: OpenRouter by
+  default, or Ollama or abliteration). Codex and Claude worker routes are
+  disabled by operator directive.
 - Preserve direct Daniel/ATLAS dialogue separately from autonomy and system
   traffic.
 - Do not call repeated work a new spiral. Seal every completed improvement with

@@ -483,6 +483,9 @@ async function scanPaidProblems(options = {}) {
     hardExclusions: candidate.hardExclusions,
   }));
   const sourceReceipts = sourceReads.map(item => item.receipt);
+  const failedSources = sourceReads.filter(item => item.ok === false).length;
+  // 'failed' = nothing could be read, so an empty result says nothing about the market.
+  const scanStatus = sourceReads.length > 0 && failedSources === sourceReads.length ? 'failed' : failedSources > 0 ? 'partial' : 'complete';
   const scanRoot = hash({ protocolHash, sourceReceipts, sample: compactSample });
   const workPacket = buildWorkPacket(ranked[0] || null, scanRoot, nowIso, targetWeeklyUsd);
   return {
@@ -497,13 +500,17 @@ async function scanPaidProblems(options = {}) {
     opportunities: ranked.slice(0, 5),
     workPacket,
     scanRoot,
+    scanStatus,
+    sourcesFailed: failedSources,
     authority: {
       level: 'observe',
       mutationsPerformed: [],
       externalActionsPerformed: [],
       note: 'This scan cannot claim, comment, fork, push, submit, publish, spend, or grant itself authority.',
     },
-    claimCeiling: ranked.length
+    claimCeiling: scanStatus === 'failed'
+      ? `Scan failed: none of ${sourceReads.length} source(s) could be read, so this run observed nothing and supports no economic claim (empty is not the same as no market).`
+      : ranked.length
       ? `Observed ${ranked.length} E0 lead(s). Demand for Atlas, acceptance, repeatability, and revenue remain unproved.`
       : 'No candidate survived deterministic read-only gates; no economic claim is supported.',
   };
