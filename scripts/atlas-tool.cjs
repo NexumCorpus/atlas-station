@@ -156,6 +156,11 @@ async function main() {
   const result = await handlers[name](parse(name, process.argv.slice(3)));
   process.stdout.write(`${JSON.stringify({ schema: 1, tool: name, ok: true, result }, null, 2)}\n`);
   if (name === 'compile_claim' && result.verdict !== 'admitted') process.exitCode = 2;
+  // A scan that read nothing must not look like an empty market: exit 3 when every source failed.
+  if (name === 'economic_radar' && result.scanStatus === 'failed') {
+    process.stderr.write(`ATLAS TOOL: economic_radar read 0 of ${result.sourceReceipts.length} sources; receipt printed, exiting 3\n`);
+    process.exitCode = 3;
+  }
 }
 
 main().catch((error) => {

@@ -12,6 +12,9 @@ function startWing(manifestPath, { spoolDir, onEvent }) {
     cwd: path.dirname(manifestPath),
     env: { ...process.env, WING_SPOOL: spoolDir },
   });
+  // A wing polls its spool and never notices its parent die, so a host that exits
+  // early (a failed test, a crash) would leave the child running. Reap it on exit.
+  process.once('exit', () => { try { child.kill(); } catch {} });
   let buf = '';
   child.stdout.on('data', (d) => {
     buf += d;

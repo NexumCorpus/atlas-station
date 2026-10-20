@@ -24,9 +24,43 @@ starting the fleet or sending external work.
 npm run test:full
 ```
 
-This runs `test:all` and then the PTY smoke suite. The smoke suite validates
-that the local Claude sidecar seam is alive; it remains separate from the
-deterministic gate because it depends on an installed local CLI.
+This runs `test:all` and then the smoke suite. The smoke suite `require()`s every
+root-level `.cjs` module (except the two Electron-process ones) and fails if any
+of them throws; it needs no installed CLI.
+
+### Full test surface
+
+`npm test` is only the first step. `test:all` and `test:full` also need three
+public sibling repositories at the commits CI pins, `pip install -e` for
+Director2, and three environment variables. Without them five suites
+(`test:causal-xenosoma`, `test:independent-receipts`, `test:wing:d2`,
+`test:wing:felt`, `test:mission`) fail on missing paths; the three wing suites
+now stop at once and say what is missing instead of waiting out a timeout.
+
+```bash
+# run from the atlas-station checkout; the siblings go in a folder beside it
+SIB="$(cd .. && pwd)/atlas-siblings" && mkdir -p "$SIB"
+git clone https://github.com/NexumCorpus/boundary "$SIB/boundary"
+git -C "$SIB/boundary" checkout c2b925eec081b5b70affa3bbb19fb00cfd7dffb0
+git clone https://github.com/NexumCorpus/recursive-discovery-engine "$SIB/recursive-discovery-engine"
+git -C "$SIB/recursive-discovery-engine" checkout 8b317fd123d63d8349ec77a4f705eff3f226e3b2
+git clone https://github.com/NexumCorpus/director2 "$SIB/director2-harness"
+git -C "$SIB/director2-harness" checkout f5bd0cb8c474d4a7ade2a2f295f4520329cad892
+python3 -m pip install -e "$SIB/director2-harness"   # inside a virtualenv on Debian/Ubuntu
+export ATLAS_BOUNDARY_REPO="$SIB/boundary"
+export ATLAS_RDE_REPO="$SIB/recursive-discovery-engine"
+export D2_HARNESS="$SIB/director2-harness"
+npm run test:full
+```
+
+In PowerShell, set the same three variables with `$env:NAME = 'path'`. These
+pins match `.github/workflows/ci.yml`, which instead maps the folder to drive `E:`
+on a Windows runner.
+
+On Linux the two Electron suites (`test:renderer:live`, `test:renderer:visual`)
+need a display (use `xvfb-run`) and a non-root user, because Electron refuses to
+run as root without `--no-sandbox`. `test:fleet` prints `SKIP` and exits 0 when
+no provider credentials are configured.
 
 ## Fleet lifecycle identity
 
@@ -52,17 +86,20 @@ npm run audit:outcomes
 npm run test:outcome-audit
 ```
 
-The audit is read-only. `--strict` intentionally exits nonzero while the
-historical opaque outcomes for A-132, A-133, and A-134 remain unresolved.
-That failure is evidence of debt, not a reason to weaken the audit.
+The audit is read-only. `--strict` exits nonzero while any historical opaque
+outcome is unresolved; on the author's live ledger that was A-132, A-133, and
+A-134, and that failure is evidence of debt, not a reason to weaken the audit.
+A fresh clone has no run records (`memory/runs.jsonl` is gitignored), so there
+`audit:outcomes` reports `total: 0` and `--strict` exits 0. The figures in this
+section describe the author's live ledger, not something a clone can reproduce.
 The JSON report also emits a remediation queue for each opaque record; this
 queue requires recovered run evidence or an explicit human disposition and
 never authorizes rewriting history.
 
 The outcome report also computes `goodRate`, `qualityTarget`, `targetMet`, and
-`additionalGoodNeeded`. The target is strictly greater than 80%; with the
-current 14/18 historical rating, three additional evidenced good outcomes are
-needed.
+`additionalGoodNeeded`. The target is strictly greater than 80%; when this was
+written the author's live ledger stood at 14/18, so three additional evidenced
+good outcomes were needed.
 
 Proposal queue integrity
 
@@ -74,7 +111,10 @@ npm run test:proposal-audit
 The proposal audit requires that no HIGH proposal remains `pending`. It also
 reports historical deferred HIGH records missing `nextAction` or
 `retryCondition`; strict mode remains nonzero until those records are
-reconciled with evidence.
+reconciled with evidence. `test:proposal-audit` asserts that policy only against
+a live ledger: it skips that check on CI and when `memory/proposals.ndjson` is
+still byte-identical to the committed snapshot (the state of a fresh clone,
+which carries one pending HIGH proposal). The hermetic fixtures run everywhere.
 
 Autonomy continuation
 

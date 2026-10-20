@@ -11,14 +11,14 @@ Daniel
   -> Electron cockpit (index.html + preload.cjs)
   -> lifecycle owner (main.cjs)
   -> ATLAS / fleet sidecar (fleethost.mjs)
-  -> provider adapter (providers/codex-cli.mjs)
-  -> authenticated Codex CLI subscription
+  -> provider adapter (providers/openrouter.mjs)
+  -> OpenRouter, Ollama, or abliteration (selected by ATLAS_PROVIDER)
 ```
 
-The ATLAS executive route resolves to `gpt-5.6-luna`. Build, read, research,
-and memory tasks use purpose-specific Codex-family routes. The retained Claude
-SDK is a compatibility provider and is not the identity or default execution
-path.
+The ATLAS executive route is whatever `ATLAS_PROVIDER` selects at runtime;
+OpenRouter is the default. The Codex CLI adapter and the Claude SDK are retained
+in the tree but their worker routes are disabled by operator directive, and
+neither is the identity or default execution path.
 
 ## State and continuity
 

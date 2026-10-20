@@ -12,9 +12,11 @@ const goalStore = require("./goal-store.cjs");
 const ingressJournal = require("./ingress-journal.cjs");
 const selfModification = require("./self-modification.cjs");
 const responseVitals = require("./response-vitals.cjs").createResponseVitals(__dirname);
-const NODE = process.env.NODE_BIN || "C:\\Program Files\\nodejs\\node.exe";
+const { resolveNodeBin, nextRestart } = require("./fleet-launch.cjs");
+const NODE = resolveNodeBin();
 let win = null, fleet = null, counter = 0;
 let fleetGeneration = 0;
+let fastFleetExits = 0;
 let pendingActivationRestart = false;
 let intentionalFleetStop = false;
 let fleetWatchdog = null;
@@ -102,7 +104,15 @@ function startFleet() {
     if (win) {
       const restarting = activationRestart || !stoppedBySupervisor;
       win.webContents.send("fleet", { type: "fleet_lifecycle", state: "exited", generation, code, exitedAt, observedBy, restarting });
-      if (restarting) setTimeout(() => { if (!fleet) startFleet(); }, 0);
+      if (restarting) {
+        // An activation restart is deliberate and immediate. An unplanned exit backs off
+        // when the sidecar keeps dying right after launch (for example, no Node to run it).
+        const retry = activationRestart
+          ? { fastExits: 0, delayMs: 0 }
+          : nextRestart({ uptimeMs: Date.now() - Date.parse(startedAt), fastExits: fastFleetExits });
+        fastFleetExits = retry.fastExits;
+        setTimeout(() => { if (!fleet) startFleet(); }, retry.delayMs);
+      }
     }
   };
   child.on("message", (m) => {
@@ -114,7 +124,11 @@ function startFleet() {
   });
   if (child.stderr) child.stderr.on("data", () => {});
   child.on("exit", (code) => settleFleetExit(code, 'exit-event'));
-  child.on("error", () => { if (!child.pid) settleFleetExit(null, 'spawn-error'); });
+  child.on("error", (err) => {
+    if (child.pid) return;
+    if (win) win.webContents.send("fleet", { type: "error", m: `Cannot start the fleet sidecar with "${NODE}": ${String((err && err.message) || err)}. Install Node.js 24 or set NODE_BIN to its path.` });
+    settleFleetExit(null, 'spawn-error');
+  });
   // Windows can occasionally lose/delay a ChildProcess exit notification after
   // an external tree kill. The supervisor therefore verifies the owned PID;
   // settlement is idempotent, so event and watchdog may safely race.

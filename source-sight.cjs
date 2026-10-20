@@ -9,6 +9,20 @@ const OMIT = new Set(['.agentplug', '.agentplug-kv', '.atlas', '.claude', '.git'
 const MAX_FILES = 512;
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_TOTAL_BYTES = 8 * 1024 * 1024;
+const MAX_QUERY_CHARS = 200;
+const MAX_TERMS = 12;
+const MAX_RESULTS = 50;
+
+// Reported verbatim in every response so a caller can tell a bounded scan from a complete one.
+const LIMITS = Object.freeze({
+  maxFiles: MAX_FILES,
+  maxFileBytes: MAX_FILE_BYTES,
+  maxTotalBytes: MAX_TOTAL_BYTES,
+  maxQueryChars: MAX_QUERY_CHARS,
+  maxQueryTerms: MAX_TERMS,
+  maxResults: MAX_RESULTS,
+  scope: 'inside the repository root; symlinks are never followed',
+});
 
 function hash(bytes) {
   return `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
@@ -16,10 +30,10 @@ function hash(bytes) {
 
 function termsFor(query) {
   const normalized = query.normalize('NFKC').trim();
-  if (!normalized || normalized.length > 200) throw new Error('query must contain 1 through 200 characters');
+  if (!normalized || normalized.length > MAX_QUERY_CHARS) throw new Error(`query must contain 1 through ${MAX_QUERY_CHARS} characters`);
   const terms = [...new Set((normalized.toLocaleLowerCase('en-US').match(/[\p{L}\p{N}_-]+/gu) || []).filter((term) => term.length > 1))];
   if (!terms.length) throw new Error('query must contain a searchable letter or number');
-  return { normalized, lower: normalized.toLocaleLowerCase('en-US'), terms: terms.slice(0, 12) };
+  return { normalized, lower: normalized.toLocaleLowerCase('en-US'), terms: terms.slice(0, MAX_TERMS) };
 }
 
 function within(root, target) {
@@ -52,7 +66,7 @@ function sourceFiles(root, scope) {
 function searchSource({ root = __dirname, query, scope = '.', limit = 20 } = {}) {
   root = path.resolve(root);
   if (!fs.statSync(root).isDirectory()) throw new Error('source root must be a directory');
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('limit must be an integer from 1 through 50');
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RESULTS) throw new Error(`limit must be an integer from 1 through ${MAX_RESULTS}`);
   const needle = termsFor(String(query ?? ''));
   const inventory = sourceFiles(root, scope);
   const results = [];
@@ -94,6 +108,7 @@ function searchSource({ root = __dirname, query, scope = '.', limit = 20 } = {})
     query: needle.normalized,
     terms: needle.terms,
     scope: path.relative(root, path.resolve(root, scope || '.')).replaceAll('\\', '/') || '.',
+    limits: LIMITS,
     scannedFiles,
     scannedBytes,
     fileLimitReached: inventory.fileLimitReached,

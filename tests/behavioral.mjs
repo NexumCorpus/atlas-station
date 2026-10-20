@@ -332,7 +332,7 @@ console.log('\n15. resonance: true Jaccard similarity');
   // Subset: A=['b','c'] ⊂ B=['a','b','c','d']: intersection=2, union=4 → 0.5
   const s2 = similarity(['b','c'], ['a','b','c','d']);
   assert(Math.abs(s2 - 0.5) < 1e-9, 'subset: 2/4 = 0.5, got ' + s2);
-  console.log('  PASS: true Jaccard (all 4 assertions)');
+  console.log('  (true Jaccard: the 4 assertions above are counted)');
 }
 
 // ─── 16. goal-store: addGoal/listGoals/resolveGoal roundtrip ────────────────
@@ -424,10 +424,6 @@ console.log('\n14. fleethost structural invariants');
   assert(queryCallCount >= 2, 'safeQuery wrapper and SDK import are present (found ' + queryCallCount + ')');
 }
 
-// ─── Summary ──────────────────────────────────────────────────────────────
-console.log(`\nResults: ${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
-
 // ─── 19. fleet mailbox persistence ──────────────────────────────
 console.log('\n19. fleet mailbox persistence (send → restart-simulate → read)');
 {
@@ -480,3 +476,7 @@ console.log('\n19. fleet mailbox persistence (send → restart-simulate → read
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// ─── Summary ──────────────────────────────────────────────────────────────
+console.log(`\nResults: ${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);
